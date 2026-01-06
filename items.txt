@@ -1,0 +1,62 @@
+Seller:							
+Super:							
+Location:							
+Date:							
+					ช่องนี้ใส่จำนวนสินค้า ที่ AI ดูจากรูป		
+ITEM 	DESCRIPTION 	BARCODE 	SELLER CODE	BEFORE COUNT QTY 	CURRENT COUNT QTY 	VARIANCE 	REMARKS 
+SK-C-250	NestMe Birdnest All In Daily cream SPF 50 PA+++ 30 g.	8859109851509	299857	15	10	5	
+SK-C-255	NestMe Anti-Melasma set (25g. NestMe Birdnest Anti-Melasma Aqua cream +10g. NestMe Birdnest SpotLess HD spot Corrector)	8859109851554	299853	15		15	
+SK-CD-136	NestMe Birdnest Collagen White Facial Foam 50 g	8859109860365	299858	15		15	
+SK-C-261	NestMe Birdnest Gluta Super C Ampoule 15 ml.	8859109851615	302290	15		15	
+SK-C-251	NestMe Birdnest Age Delay Emulsion 30 g.	8859109851516	299855	15		15	
+SK-C-246	NestMe Birdnest Anti-Melasma Aqua cream 25g.	8859109851462	299851	15		15	
+SK-TCI-113	PrimaNest Vita  Deep Define 30 capsules	8859109863137	296397	15		15	
+SK-CD-137	NestMe Birdnest Aqua Sun Protect SPF 50 PA++++ 30g.	8859109860372	299860	15		15	
+SK-DK-001	PrimaNest Hydrating Birdnest Sun Gel SPF50+ PA++++ 50 g.	8859109893011	282654	15		15	
+SK-C-103	PrimaNest Intense Serum 30 ml.	8859109850038	268168	15		15	
+SK-C-128	PrimaNest Nest Cream 30 g.	8859109850281	268169	15		15	
+SK-C-129	PrimaNest Aqua Nest Cream 30 g.	8859109850298	268167	15		15	
+SK-C-126	PrimaNest Birdnest Total protect SPF50+ PA++++ 30 g.	8859109850267	268166	15		15	
+SK-C-170	PrimaNest Whitening Birdnest Vitamin C Essence 30 ml.	8859109850700	271015	15		15	
+SK-CD-105	PrimaNest Birdnest Over Night Mask 25 g.	8859109860051	271700	15		15	
+SK-TCI-101	PrimaNest Birdnest Aqua Young mask 22 ml. x 1 pcs.	8859109863014	273891	15		15	
+SK-C-179	PrimaNest Birdnest Facial Cream Foam 120 ml.	8859109850793	273893	15		15	
+SK-C-177	PrimaNest Supreme Gold Birdnest Serum 30 ml.	8859109850779	275431	15		15	
+SK-C-176	PrimaNest Supreme Birdnest Cream 50 g.	8859109850762	275430	15		15	
+SK-C-224	PrimaNest Whitening Birdnest Vitamin C essence 15 ml. (Watsons)	8859109851240	283156	15		15	
+SK-ML-001	PrimaNest Birdnest Face Powder 10g. SPF 25 PA+++ 01 light beige	8859109897019	283158	15		15	
+SK-ML-002	PrimaNest Birdnest Face Powder 10g. SPF 25 PA+++ 02 Natural beige	8859109897026	283159	15		15	
+SK-ML-003	PrimaNest Birdnest Face Powder 10g. SPF 25 PA+++ 03 Honey beige	8859109897033	283160	15		15	
+SK-SI-004	PrimaNest Birdnest Beauty White Mask 25 ml. x1 pcs.	8859109895046	286684	15		15	
+SK-SI-006	PrimaNest Birdnest Beauty White Mask 25 ml. x7 pcs.	8859109895060	286686	15		15	
+SK-C-210	PrimaNest Super Moist Body Lotion Vitamin E birdnest therapy Fleurs d’Orange 200 ml.	8859109851103	286688	15		15	
+SK-CD-123	NestMe BB Birdnest Tone up SPF35 PA+++ 7 g.	8859109860235	291470	15		15	
+SK-C-217	NestMe Anti-Melasma cream 7 g.	8859109851172	291472	15		15	
+SK-C-216	PrimaNest Birdnest Luminis anti-Melasma Cream 30g.	8859109851165	292810	15		15	
+SK-C-233	PrimaNest Birdnest Luminis Anti-Melasma Spot Corrector 15 g.	8859109851332	293941	15		15	
+SK-C-228	PrimaNest Hydra Surge Moisturizing cream 45 g.	8859109851288	293942	15		15	
+SK-BD-001	PrimaNest Acne Clear Moisturizing Gel Facial Wash 110 ml.	8859109898016	294470	15		15	
+SK-BD-003	PrimaNest Acne Clear Moisturizing Fluid Cream 50 ml. (ฟลูอิทบำรุงผิวหน้า)	8859109898030	294469	15		15	
+SK-TCI-112	PrimaNest Vita Multi Collagen Biotin & Zinc 8g. X 10	8859109863120	294605	15		15	
+SK-SUR-001	PrimaNest Hydra Surge pH5 Gentle Toner 150 ml.	8859109899013	294472	15		15	
+SK-BD-006	PrimaNest Acne Set PrimaNest Acne Clear moisturizing gel facial wash 50 ml.+PrimaNest Acne Clear moisturizing fluid cream 10 ml.+PrimaNest Acne Clear on the spot treatment gel 10 g.	8859109898061	294473	15		15	
+SK-CD-129	PrimaNest Birdnest Bright Bambina Facial Cream Foam 120 ml.	8859109860297	294471	15		15	
+SK-SI-013	PrimaNest Birdnest 7 Peptides Hydra Young mask 25 ml.	8859109895138	312985	15		15	
+SK-BD-016	NestMe Birdnest Scar gel 10 g.	8859109898160	311465	15		15	
+SK-CD-135	NestMe Birdnest Collagen White Facial Foam 100 g.	8859109860358	303510	15		15	
+SK-C-257	NestMe Birdnest Gluta Super C Ampoule 30 ml.	8859109851578	305608	15		15	
+SK-C-178	PrimaNest Supreme Birdnest eye gel 15 g.	8859109850786	275429	15		15	
+SK-C-278	NestMe Birdnest Pro-Balance Facial Cleansing Foam 100 g.	8859109851783	309650	15		15	
+SK-CD-134	NestMe Birdnest Perfect Matte BB Cream SPF35 PA+++ 25 g.	8859109860341	311464	15		15	
+SK-JL-101	PrimaNest Total Age Control Hyaluron Lift 30 ml.	8859109896012	302940	15		15	
+SK-AEC-001	PrimaNest Whitening Birdnest HYA Watery Cream 30 g.	8859109894018	312984	15		15	
+SK-C-277	NestMe Birdnest Pro-Balance Moisturizing Cream 45 g.	8859109851776	309644	15		15	
+SK-C-262	NestMe Birdnest Age Delay Lifting cream 50 g.	8859109851622	307203	15		15	
+SK-TCI-115	PrimaNest Vita ImuNa 10 supplyment 4g x 10 pcs (box)	8859109863151	298688	15		15	
+SK-C-249	NestMe Birdnest SpotLess HD spot Corrector 10 g.	8859109851493	313218	15		15	
+SET-18010	set NestMe Birdnest Aqua Sun Protect SPF 50 PA++++ 30g. + NestMe Birdnest Age Delay Emulsion 30 g.	8859109890102	304778	15		15	
+SK-BD-002	PrimaNest Acne Clear on the Spot Treatment Gel 10 g.	8859109898023	292809	15		15	
+SK-BD-015	NestMe Birdnest Acne gel 5 g.	8859109898153	311455	15		15	
+SET-18009	set NestMe Birdnest Collagen White Facial Foam 100 g. + NestMe Birdnest Gluta Super C Ampoule 15 ml.	8859109890096	300286	15		15	
+SK-SI-012	NestMe Birdnest Hydro Boost Mask 25 ml.	8859109895121	312048	15		15	
+SK-TCI-120	Primanest Vita Probio 11 Syn-Balance  (box) 2.5 g. x 15 pcs	8859109863205	309684	15		15	
