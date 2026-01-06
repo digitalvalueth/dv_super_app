@@ -1,6 +1,5 @@
 import { auth, db } from "@/config/firebase";
 import { User } from "@/types";
-import * as Google from "expo-auth-session/providers/google";
 import * as WebBrowser from "expo-web-browser";
 import {
   signOut as firebaseSignOut,
@@ -14,68 +13,81 @@ import { doc, getDoc, setDoc, Timestamp } from "firebase/firestore";
 // Configure WebBrowser for better UX
 WebBrowser.maybeCompleteAuthSession();
 
-// Google OAuth Config
-// Get these from Firebase Console -> Authentication -> Sign-in method -> Google -> Web SDK configuration
-const GOOGLE_WEB_CLIENT_ID = process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID;
-const GOOGLE_IOS_CLIENT_ID = process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID;
-const GOOGLE_ANDROID_CLIENT_ID =
-  process.env.EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID;
-
 /**
- * Sign in with Google using expo-auth-session
+ * Process Google Auth with Firebase (for native Google Sign-In)
  */
-export const signInWithGoogle = async (): Promise<User | null> => {
+export const processGoogleAuth = async (
+  idToken: string
+): Promise<User | null> => {
   try {
-    const [request, response, promptAsync] = Google.useAuthRequest({
-      webClientId: GOOGLE_WEB_CLIENT_ID,
-      iosClientId: GOOGLE_IOS_CLIENT_ID,
-      androidClientId: GOOGLE_ANDROID_CLIENT_ID,
-    });
-
-    const result = await promptAsync();
-
-    if (result.type !== "success") {
-      throw new Error("Google sign in cancelled or failed");
-    }
-
-    const { id_token } = result.params;
-
+    console.log("🔥 Creating Firebase credential...");
     // Create Firebase credential with Google ID token
-    const credential = GoogleAuthProvider.credential(id_token);
+    const credential = GoogleAuthProvider.credential(idToken);
 
+    console.log("🔥 Signing in to Firebase...");
     // Sign in to Firebase with credential
     const userCredential = await signInWithCredential(auth, credential);
     const firebaseUser = userCredential.user;
 
-    // Check if user exists in Firestore
-    const userDoc = await getDoc(doc(db, "users", firebaseUser.uid));
+    console.log("✅ Firebase Auth Success:", firebaseUser.email);
 
-    if (userDoc.exists()) {
-      // User exists, return user data
-      return userDoc.data() as User;
-    } else {
+    // Try to get user from Firestore (with offline handling)
+    try {
+      console.log("📄 Fetching user from Firestore...");
+      const userDoc = await getDoc(doc(db, "users", firebaseUser.uid));
+
+      if (userDoc.exists()) {
+        console.log("✅ User found in Firestore");
+        return userDoc.data() as User;
+      }
+
+      console.log("📝 Creating new user in Firestore...");
       // New user, create user document
       const newUser: User = {
         uid: firebaseUser.uid,
         email: firebaseUser.email || "",
         name: firebaseUser.displayName || "User",
-        companyId: "company-001", // TODO: Get from registration flow
-        branchId: "branch-001", // TODO: Get from registration flow
-        role: "employee", // Default role
+        companyId: "company-001",
+        branchId: "branch-001",
+        role: "employee",
         photoURL: firebaseUser.photoURL || undefined,
         createdAt: Timestamp.now(),
         updatedAt: Timestamp.now(),
       };
 
       await setDoc(doc(db, "users", firebaseUser.uid), newUser);
+      console.log("✅ User created in Firestore");
 
       return newUser;
+    } catch (firestoreError: any) {
+      console.warn(
+        "⚠️ Firestore error (offline?), using Firebase Auth data:",
+        firestoreError.message
+      );
+
+      // Fallback: return user from Firebase Auth only
+      const fallbackUser: User = {
+        uid: firebaseUser.uid,
+        email: firebaseUser.email || "",
+        name: firebaseUser.displayName || "User",
+        companyId: "company-001",
+        branchId: "branch-001",
+        role: "employee",
+        photoURL: firebaseUser.photoURL || undefined,
+        createdAt: Timestamp.now(),
+        updatedAt: Timestamp.now(),
+      };
+
+      return fallbackUser;
     }
   } catch (error: any) {
-    console.error("Error signing in with Google:", error);
-    throw new Error(error.message || "Failed to sign in with Google");
+    console.error("❌ Error processing Google Auth:", error);
+    throw new Error(error.message || "Failed to authenticate with Firebase");
   }
 };
+
+// Note: Use processGoogleAuth directly with native GoogleSignin module
+// expo-auth-session is not needed for React Native apps
 
 /**
  * Sign out current user
