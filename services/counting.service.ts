@@ -158,15 +158,15 @@ const addToCountingHistory = async (
   sessionId: string,
   historyData: CountingHistory
 ): Promise<void> => {
+  const historyRef = doc(db, `users/${userId}/countingHistory`, sessionId);
+
   try {
-    const historyRef = doc(db, `users/${userId}/countingHistory`, sessionId);
-    await updateDoc(historyRef, historyData);
-  } catch (error) {
+    await updateDoc(historyRef, historyData as any);
+  } catch {
     // If document doesn't exist, create it
-    const historyRef = doc(db, `users/${userId}/countingHistory`, sessionId);
     await addDoc(
       collection(db, `users/${userId}/countingHistory`),
-      historyData
+      historyData as any
     );
   }
 };

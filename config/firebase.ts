@@ -26,7 +26,12 @@ const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
 export const auth = initializeAuth(app, {
   persistence: getReactNativePersistence(AsyncStorage),
 });
-export const db = getFirestore(app);
+
+// Initialize Firestore with specific database ID
+// Use environment variable if you have multiple databases
+const databaseId = process.env.EXPO_PUBLIC_FIRESTORE_DATABASE_ID || "(default)";
+export const db = getFirestore(app, databaseId);
+
 export const storage = getStorage(app);
 export const functions = getFunctions(app);
 
