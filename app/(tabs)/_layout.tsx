@@ -10,15 +10,21 @@ export default function TabLayout() {
   const user = useAuthStore((state) => state.user);
   const loading = useAuthStore((state) => state.loading);
 
+  console.log("📍 TabLayout - loading:", loading, "user:", user?.email);
+
   // If user is not authenticated, redirect to login
   if (!loading && !user) {
+    console.log("🚀 TabLayout - Redirecting to /(login)");
     return <Redirect href="/(login)" />;
   }
 
   // If user doesn't have company/branch assigned, redirect to pending approval
   if (!loading && user && (!user.companyId || !user.branchId)) {
+    console.log("🚀 TabLayout - Redirecting to /pending-approval");
     return <Redirect href="/pending-approval" />;
   }
+
+  console.log("✅ TabLayout - Showing tabs");
 
   const bgColor = Platform.OS === "android" ? colors.card : null;
   const indicatorBgColor =

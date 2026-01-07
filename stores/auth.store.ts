@@ -34,16 +34,22 @@ export const useAuthStore = create<AuthState>((set) => ({
 
     try {
       // Listen to auth state changes
-      onAuthStateChange(async (firebaseUser) => {
+      const unsubscribe = onAuthStateChange(async (firebaseUser) => {
         if (firebaseUser) {
+          console.log("🔐 User authenticated, fetching user data...");
           const userData = await getCurrentUser();
           set({ user: userData, loading: false });
         } else {
+          console.log("🔓 No authenticated user");
           set({ user: null, loading: false });
         }
       });
+
+      // Return unsubscribe function for cleanup
+      return unsubscribe;
     } catch (error: any) {
-      set({ error: error.message, loading: false });
+      console.error("❌ Auth initialization error:", error);
+      set({ error: error.message, user: null, loading: false });
     }
   },
 
