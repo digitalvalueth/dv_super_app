@@ -50,6 +50,7 @@ export interface Branch {
 export interface Product {
   id: string;
   companyId: string;
+  branchId?: string;
   sku: string;
   name: string;
   description?: string;
@@ -137,6 +138,7 @@ export interface CountingHistory {
 // ==================== UI Types ====================
 
 export interface ProductWithAssignment extends Product {
+  productId?: string; // SK-C-250 (field in Firestore document)
   assignment?: UserAssignment;
   status: AssignmentStatus;
   beforeCountQty?: number;
