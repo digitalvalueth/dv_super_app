@@ -210,9 +210,7 @@ export default function HomeScreen() {
         renderItem={renderProduct}
         keyExtractor={(item) => item.id}
         contentContainerStyle={
-          products.length === 0
-            ? styles.emptyContainer
-            : [styles.listContent, { paddingBottom: 120 }]
+          products.length === 0 ? styles.emptyContainer : styles.listContent
         }
         refreshing={refreshing}
         onRefresh={handleRefresh}
