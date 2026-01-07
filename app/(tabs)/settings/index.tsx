@@ -159,7 +159,10 @@ export default function ProfileScreen() {
   if (!user) return null;
 
   return (
-    <SafeAreaView style={[styles.safeArea, { backgroundColor: colors.card }]}>
+    <SafeAreaView
+      style={[styles.safeArea, { backgroundColor: colors.card }]}
+      edges={["top"]}
+    >
       <StatusBar
         barStyle={isDark ? "light-content" : "dark-content"}
         backgroundColor={colors.card}
