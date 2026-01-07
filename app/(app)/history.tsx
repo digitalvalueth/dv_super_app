@@ -1,11 +1,18 @@
+import { useTheme } from "@/stores/theme.store";
 import { StyleSheet, Text, View } from "react-native";
 
 export default function HistoryScreen() {
+  const { colors } = useTheme();
+
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { backgroundColor: colors.background }]}>
       <Text style={styles.emoji}>📊</Text>
-      <Text style={styles.title}>ประวัติการนับสินค้า</Text>
-      <Text style={styles.subtitle}>Coming Soon...</Text>
+      <Text style={[styles.title, { color: colors.text }]}>
+        ประวัติการนับสินค้า
+      </Text>
+      <Text style={[styles.subtitle, { color: colors.textSecondary }]}>
+        Coming Soon...
+      </Text>
     </View>
   );
 }
@@ -15,7 +22,6 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: "center",
     alignItems: "center",
-    backgroundColor: "#f5f5f5",
   },
   emoji: {
     fontSize: 80,
@@ -24,11 +30,9 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 20,
     fontWeight: "600",
-    color: "#333",
     marginBottom: 8,
   },
   subtitle: {
     fontSize: 14,
-    color: "#999",
   },
 });

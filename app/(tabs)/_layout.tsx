@@ -1,89 +1,43 @@
-import { Tabs } from "expo-router";
-import React from "react";
-import { Platform, StyleSheet } from "react-native";
-
-import { HapticTab } from "@/components/haptic-tab";
 import { useTheme } from "@/stores/theme.store";
 import { Ionicons } from "@expo/vector-icons";
-import { BlurView } from "expo-blur";
+import { Icon, Label, NativeTabs } from "expo-router/unstable-native-tabs";
+import React from "react";
+import { Platform } from "react-native";
 
 export default function TabLayout() {
-  const { colors, isDark } = useTheme();
+  const { colors } = useTheme();
+
+  const bgColor = Platform.OS === "android" ? colors.card : null;
+  const indicatorBgColor =
+    Platform.OS === "android" ? colors.border : undefined;
+  const foregroundColor = Platform.OS === "android" ? colors.text : undefined;
 
   return (
-    <Tabs
-      screenOptions={{
-        tabBarActiveTintColor: colors.primary,
-        tabBarInactiveTintColor: colors.textSecondary,
-        tabBarStyle: {
-          position: "absolute",
-          bottom: 25,
-          left: 20,
-          right: 20,
-          elevation: 0,
-          backgroundColor:
-            Platform.OS === "ios" ? "transparent" : colors.card + "f0",
-          borderRadius: 25,
-          height: 70,
-          paddingBottom: 10,
-          paddingTop: 10,
-          borderTopWidth: 0,
-          ...Platform.select({
-            ios: {
-              shadowColor: "#000",
-              shadowOffset: { width: 0, height: 10 },
-              shadowOpacity: 0.25,
-              shadowRadius: 20,
-            },
-            android: {
-              elevation: 8,
-            },
-          }),
-        },
-        tabBarBackground: () =>
-          Platform.OS === "ios" ? (
-            <BlurView
-              intensity={80}
-              tint={isDark ? "dark" : "light"}
-              style={StyleSheet.absoluteFill}
-            />
-          ) : null,
-        headerShown: false,
-        tabBarButton: HapticTab,
-        tabBarShowLabel: true,
-        tabBarLabelStyle: {
-          fontSize: 12,
-          fontWeight: "600",
-          marginTop: 4,
-        },
+    <NativeTabs
+      backgroundColor={bgColor}
+      indicatorColor={indicatorBgColor}
+      disableTransparentOnScrollEdge={true}
+      iconColor={foregroundColor}
+      labelStyle={{
+        color: foregroundColor,
       }}
     >
-      <Tabs.Screen
-        name="index"
-        options={{
-          title: "สินค้า",
-          tabBarIcon: ({ color, focused }) => (
-            <Ionicons
-              name={focused ? "cube" : "cube-outline"}
-              size={24}
-              color={color}
-            />
-          ),
-        }}
-      />
-      <Tabs.Screen
-        name="explore"
-        options={{
-          title: "โปรไฟล์",
-          tabBarIcon: ({ color, focused }) => (
-            <Ionicons
-              name={focused ? "person" : "person-outline"}
-              size={24}
-              color={color}
-            />
-          ),
-        }}
-      />
-    </Tabs>
+      <NativeTabs.Trigger name="index">
+        <Label>สินค้า</Label>
+        {Platform.OS === "ios" ? (
+          <Icon sf="cube" />
+        ) : (
+          <Ionicons name="cube-outline" size={24} color={foregroundColor} />
+        )}
+      </NativeTabs.Trigger>
+      <NativeTabs.Trigger name="explore">
+        <Label>โปรไฟล์</Label>
+        {Platform.OS === "ios" ? (
+          <Icon sf="person" />
+        ) : (
+          <Ionicons name="person-outline" size={24} color={foregroundColor} />
+        )}
+      </NativeTabs.Trigger>
+    </NativeTabs>
   );
 }
