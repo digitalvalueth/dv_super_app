@@ -175,7 +175,7 @@ export interface CountingFormData {
 // ==================== Navigation Types ====================
 
 export type RootStackParamList = {
-  "(auth)": undefined;
+  "(login)": undefined;
   "(app)": undefined;
 };
 

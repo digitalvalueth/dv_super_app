@@ -8,11 +8,13 @@ import {
   Alert,
   Image,
   ScrollView,
+  StatusBar,
   StyleSheet,
   Text,
   TouchableOpacity,
   View,
 } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 
 type SettingItemWithComponent = {
   icon: keyof typeof Ionicons.glyphMap;
@@ -31,7 +33,7 @@ type SettingItem = SettingItemWithComponent | SettingItemWithPress;
 export default function ProfileScreen() {
   const user = useAuthStore((state) => state.user);
   const logout = useAuthStore((state) => state.logout);
-  const { colors, mode } = useTheme();
+  const { colors, isDark, mode } = useTheme();
   const setMode = useThemeStore((state) => state.setMode);
 
   const handleLogout = () => {
@@ -44,7 +46,7 @@ export default function ProfileScreen() {
           try {
             await signOut();
             logout();
-            router.replace("/(auth)/login");
+            router.replace("/(login)");
           } catch {
             Alert.alert("เกิดข้อผิดพลาด", "ไม่สามารถออกจากระบบได้");
           }
@@ -157,133 +159,173 @@ export default function ProfileScreen() {
   if (!user) return null;
 
   return (
-    <ScrollView
-      style={[styles.container, { backgroundColor: colors.background }]}
-    >
-      {/* Profile Header */}
-      <View style={[styles.header, { backgroundColor: colors.card }]}>
-        <View style={styles.avatarContainer}>
-          {user?.photoURL ? (
-            <Image source={{ uri: user.photoURL }} style={styles.avatar} />
-          ) : (
-            <View
-              style={[
-                styles.avatarPlaceholder,
-                { backgroundColor: colors.primary + "30" },
-              ]}
-            >
-              <Ionicons name="person" size={40} color={colors.primary} />
-            </View>
-          )}
-        </View>
-
-        <Text style={[styles.userName, { color: colors.text }]}>
-          {user?.name || "User"}
+    <SafeAreaView style={[styles.safeArea, { backgroundColor: colors.card }]}>
+      <StatusBar
+        barStyle={isDark ? "light-content" : "dark-content"}
+        backgroundColor={colors.card}
+      />
+      <View
+        style={[
+          styles.header,
+          { backgroundColor: colors.card, borderBottomColor: colors.border },
+        ]}
+      >
+        <Text style={[styles.headerTitle, { color: colors.text }]}>
+          โปรไฟล์
         </Text>
-        <Text style={[styles.userEmail, { color: colors.textSecondary }]}>
-          {user?.email}
-        </Text>
-
-        <View
-          style={[styles.roleBadge, { backgroundColor: colors.primary + "20" }]}
-        >
-          <Ionicons name="shield-checkmark" size={14} color={colors.primary} />
-          <Text style={[styles.roleText, { color: colors.primary }]}>
-            {user?.role === "employee" ? "พนักงาน" : user?.role}
-          </Text>
-        </View>
       </View>
+      <ScrollView
+        style={[styles.container, { backgroundColor: colors.background }]}
+      >
+        {/* Profile Header */}
+        <View style={[styles.profileHeader, { backgroundColor: colors.card }]}>
+          <View style={styles.avatarContainer}>
+            {user?.photoURL ? (
+              <Image source={{ uri: user.photoURL }} style={styles.avatar} />
+            ) : (
+              <View
+                style={[
+                  styles.avatarPlaceholder,
+                  { backgroundColor: colors.primary + "30" },
+                ]}
+              >
+                <Ionicons name="person" size={40} color={colors.primary} />
+              </View>
+            )}
+          </View>
 
-      {/* Settings Sections */}
-      {settingsSections.map((section, sectionIndex) => (
-        <View key={sectionIndex} style={styles.section}>
-          <Text style={[styles.sectionTitle, { color: colors.textSecondary }]}>
-            {section.title}
+          <Text style={[styles.userName, { color: colors.text }]}>
+            {user?.name || "User"}
+          </Text>
+          <Text style={[styles.userEmail, { color: colors.textSecondary }]}>
+            {user?.email}
           </Text>
 
-          <View style={[styles.sectionCard, { backgroundColor: colors.card }]}>
-            {section.items.map((item, itemIndex) => (
-              <View key={itemIndex}>
-                {"component" in item ? (
-                  <View style={styles.settingItem}>
-                    <View style={styles.settingItemLeft}>
-                      <Ionicons
-                        name={item.icon}
-                        size={22}
-                        color={colors.primary}
-                      />
-                      <Text
-                        style={[styles.settingLabel, { color: colors.text }]}
-                      >
-                        {item.label}
-                      </Text>
-                    </View>
-                    {item.component}
-                  </View>
-                ) : (
-                  <TouchableOpacity
-                    style={[
-                      styles.settingItem,
-                      itemIndex < section.items.length - 1 && {
-                        borderBottomWidth: 1,
-                        borderBottomColor: colors.border,
-                      },
-                    ]}
-                    onPress={item.onPress}
-                  >
-                    <View style={styles.settingItemLeft}>
-                      <Ionicons
-                        name={item.icon}
-                        size={22}
-                        color={colors.primary}
-                      />
-                      <Text
-                        style={[styles.settingLabel, { color: colors.text }]}
-                      >
-                        {item.label}
-                      </Text>
-                    </View>
-                    <Ionicons
-                      name="chevron-forward"
-                      size={20}
-                      color={colors.textSecondary}
-                    />
-                  </TouchableOpacity>
-                )}
-              </View>
-            ))}
+          <View
+            style={[
+              styles.roleBadge,
+              { backgroundColor: colors.primary + "20" },
+            ]}
+          >
+            <Ionicons
+              name="shield-checkmark"
+              size={14}
+              color={colors.primary}
+            />
+            <Text style={[styles.roleText, { color: colors.primary }]}>
+              {user?.role === "employee" ? "พนักงาน" : user?.role}
+            </Text>
           </View>
         </View>
-      ))}
 
-      {/* Logout Button */}
-      <TouchableOpacity
-        style={[
-          styles.logoutButton,
-          { backgroundColor: colors.card, borderColor: colors.error },
-        ]}
-        onPress={handleLogout}
-      >
-        <Ionicons name="log-out" size={22} color={colors.error} />
-        <Text style={[styles.logoutText, { color: colors.error }]}>
-          ออกจากระบบ
-        </Text>
-      </TouchableOpacity>
+        {/* Settings Sections */}
+        {settingsSections.map((section, sectionIndex) => (
+          <View key={sectionIndex} style={styles.section}>
+            <Text
+              style={[styles.sectionTitle, { color: colors.textSecondary }]}
+            >
+              {section.title}
+            </Text>
 
-      <View style={styles.footer}>
-        <Text style={[styles.footerText, { color: colors.textSecondary }]}>
-          Super Fitt v1.0.0
-        </Text>
-      </View>
-    </ScrollView>
+            <View
+              style={[styles.sectionCard, { backgroundColor: colors.card }]}
+            >
+              {section.items.map((item, itemIndex) => (
+                <View key={itemIndex}>
+                  {"component" in item ? (
+                    <View style={styles.settingItem}>
+                      <View style={styles.settingItemLeft}>
+                        <Ionicons
+                          name={item.icon}
+                          size={22}
+                          color={colors.primary}
+                        />
+                        <Text
+                          style={[styles.settingLabel, { color: colors.text }]}
+                        >
+                          {item.label}
+                        </Text>
+                      </View>
+                      {item.component}
+                    </View>
+                  ) : (
+                    <TouchableOpacity
+                      style={[
+                        styles.settingItem,
+                        itemIndex < section.items.length - 1 && {
+                          borderBottomWidth: 1,
+                          borderBottomColor: colors.border,
+                        },
+                      ]}
+                      onPress={item.onPress}
+                    >
+                      <View style={styles.settingItemLeft}>
+                        <Ionicons
+                          name={item.icon}
+                          size={22}
+                          color={colors.primary}
+                        />
+                        <Text
+                          style={[styles.settingLabel, { color: colors.text }]}
+                        >
+                          {item.label}
+                        </Text>
+                      </View>
+                      <Ionicons
+                        name="chevron-forward"
+                        size={20}
+                        color={colors.textSecondary}
+                      />
+                    </TouchableOpacity>
+                  )}
+                </View>
+              ))}
+            </View>
+          </View>
+        ))}
+
+        {/* Logout Button */}
+        <TouchableOpacity
+          style={[
+            styles.logoutButton,
+            { backgroundColor: colors.card, borderColor: colors.error },
+          ]}
+          onPress={handleLogout}
+        >
+          <Ionicons name="log-out" size={22} color={colors.error} />
+          <Text style={[styles.logoutText, { color: colors.error }]}>
+            ออกจากระบบ
+          </Text>
+        </TouchableOpacity>
+
+        <View style={styles.footer}>
+          <Text style={[styles.footerText, { color: colors.textSecondary }]}>
+            Super Fitt v1.0.0
+          </Text>
+        </View>
+      </ScrollView>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
+  safeArea: {
     flex: 1,
   },
   header: {
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+  },
+  headerTitle: {
+    fontSize: 34,
+    fontWeight: "700",
+    letterSpacing: 0.4,
+  },
+  container: {
+    flex: 1,
+  },
+  profileHeader: {
     alignItems: "center",
     paddingVertical: 32,
     paddingHorizontal: 20,

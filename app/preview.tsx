@@ -3,7 +3,8 @@ import { StyleSheet, Text, View } from "react-native";
 export default function PreviewScreen() {
   return (
     <View style={styles.container}>
-      <Text>Preview Screen - Coming Soon</Text>
+      <Text style={styles.text}>👁️ Preview Screen</Text>
+      <Text style={styles.subtitle}>Coming Soon</Text>
     </View>
   );
 }
@@ -13,5 +14,15 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: "center",
     alignItems: "center",
+    backgroundColor: "#000",
+  },
+  text: {
+    fontSize: 24,
+    color: "#fff",
+    marginBottom: 8,
+  },
+  subtitle: {
+    fontSize: 16,
+    color: "#999",
   },
 });

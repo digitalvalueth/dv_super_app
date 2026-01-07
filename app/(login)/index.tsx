@@ -65,7 +65,7 @@ export default function LoginScreen() {
       if (user) {
         console.log("✅ Firebase Auth Success:", user.email);
         setUser(user);
-        router.replace("/(app)");
+        router.replace("/(tabs)/products");
       }
     } catch (error: any) {
       console.error("❌ Google Sign-In Error:", error);
