@@ -1,4 +1,8 @@
 import { db } from "@/config/firebase";
+import {
+  sendAccessApproved,
+  sendAccessRejected,
+} from "@/services/notification.service";
 import { useTheme } from "@/stores/theme.store";
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
@@ -90,10 +94,10 @@ export default function AccessRequestsScreen() {
 
   const showCompanyBranchSelector = (request: AccessRequest) => {
     // For now, just approve with default company/branch
-    // TODO: Add company/branch selector UI
+    // Format: companyCode|companyName, branchCode|branchName
     Alert.prompt(
-      "กำหนดบริษัท",
-      "กรุณาใส่ Company ID และ Branch ID (คั่นด้วยเครื่องหมายจุลภาค)",
+      "กำหนดบริษัทและสาขา",
+      "รูปแบบ: รหัสบริษัท|ชื่อบริษัท, รหัสสาขา|ชื่อสาขา",
       [
         { text: "ยกเลิก", style: "cancel" },
         {
@@ -101,38 +105,68 @@ export default function AccessRequestsScreen() {
           onPress: async (input?: string) => {
             if (!input) return;
 
-            const [companyId, branchId] = input
-              .split(",")
-              .map((s: string) => s.trim());
-
-            if (!companyId || !branchId) {
+            const parts = input.split(",").map((s: string) => s.trim());
+            if (parts.length !== 2) {
               Alert.alert(
                 "ข้อมูลไม่ครบ",
-                "กรุณาใส่ Company ID และ Branch ID ให้ครบถ้วน"
+                "กรุณาใส่ข้อมูลบริษัทและสาขาให้ครบถ้วน"
               );
               return;
             }
 
-            await approveRequest(request, companyId, branchId);
+            const [companyPart, branchPart] = parts;
+            const [companyCode, companyName] = companyPart
+              .split("|")
+              .map((s) => s.trim());
+            const [branchCode, branchName] = branchPart
+              .split("|")
+              .map((s) => s.trim());
+
+            if (!companyCode || !companyName || !branchCode || !branchName) {
+              Alert.alert(
+                "ข้อมูลไม่ครบ",
+                "กรุณาใส่ รหัส|ชื่อ ของทั้งบริษัทและสาขา"
+              );
+              return;
+            }
+
+            await approveRequest(request, {
+              companyCode,
+              companyName,
+              branchCode,
+              branchName,
+            });
           },
         },
       ],
       "plain-text",
-      "company-001, branch-001"
+      "SF001|Super Fitt, BKK01|สาขากรุงเทพฯ"
     );
   };
 
   const approveRequest = async (
     request: AccessRequest,
-    companyId: string,
-    branchId: string
+    data: {
+      companyCode: string;
+      companyName: string;
+      branchCode: string;
+      branchName: string;
+    }
   ) => {
     try {
+      // Generate unique IDs
+      const companyId = `company_${Date.now()}`;
+      const branchId = `branch_${Date.now()}`;
+
       // Update user with company/branch/role
       const userRef = doc(db, "users", request.userId);
       await updateDoc(userRef, {
         companyId,
+        companyCode: data.companyCode,
+        companyName: data.companyName,
         branchId,
+        branchCode: data.branchCode,
+        branchName: data.branchName,
         role: "employee",
         updatedAt: new Date(),
       });
@@ -143,6 +177,13 @@ export default function AccessRequestsScreen() {
         status: "approved",
         updatedAt: new Date(),
       });
+
+      // Send notification to user
+      await sendAccessApproved(
+        request.userId,
+        data.companyName,
+        data.branchName
+      );
 
       Alert.alert("สำเร็จ", "อนุมัติคำขอเรียบร้อยแล้ว");
       loadAccessRequests(); // Reload list
@@ -168,6 +209,9 @@ export default function AccessRequestsScreen() {
                 status: "rejected",
                 updatedAt: new Date(),
               });
+
+              // Send notification to user
+              await sendAccessRejected(request.userId);
 
               Alert.alert("สำเร็จ", "ปฏิเสธคำขอเรียบร้อยแล้ว");
               loadAccessRequests();
