@@ -196,7 +196,10 @@ export default function HomeScreen() {
 
   if (loading && products.length === 0) {
     return (
-      <SafeAreaView style={[styles.safeArea, { backgroundColor: colors.card }]}>
+      <SafeAreaView
+        style={[styles.safeArea, { backgroundColor: colors.card }]}
+        edges={["top"]}
+      >
         <StatusBar
           barStyle={isDark ? "light-content" : "dark-content"}
           backgroundColor={colors.card}
@@ -222,7 +225,10 @@ export default function HomeScreen() {
   }
 
   return (
-    <SafeAreaView style={[styles.safeArea, { backgroundColor: colors.card }]}>
+    <SafeAreaView
+      style={[styles.safeArea, { backgroundColor: colors.card }]}
+      edges={["top"]}
+    >
       <StatusBar
         barStyle={isDark ? "light-content" : "dark-content"}
         backgroundColor={colors.card}
