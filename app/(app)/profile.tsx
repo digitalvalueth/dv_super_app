@@ -159,6 +159,7 @@ export default function ProfileScreen() {
   return (
     <ScrollView
       style={[styles.container, { backgroundColor: colors.background }]}
+      contentContainerStyle={styles.scrollContent}
     >
       {/* Profile Header */}
       <View style={[styles.header, { backgroundColor: colors.card }]}>
@@ -282,6 +283,9 @@ export default function ProfileScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+  },
+  scrollContent: {
+    paddingBottom: 120,
   },
   header: {
     alignItems: "center",
