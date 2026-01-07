@@ -3,8 +3,10 @@ import { getApps, initializeApp } from "firebase/app";
 import {
   addDoc,
   collection,
+  doc,
   getFirestore,
   Timestamp,
+  updateDoc,
 } from "firebase/firestore";
 import * as fs from "fs";
 import * as path from "path";
@@ -28,9 +30,8 @@ console.log("🔑 Firebase Config:", {
 });
 
 // Initialize Firebase
-const app = getApps().length === 0 
-  ? initializeApp(firebaseConfig) 
-  : getApps()[0];
+const app =
+  getApps().length === 0 ? initializeApp(firebaseConfig) : getApps()[0];
 
 // Initialize Firestore with specific database ID
 const databaseId = process.env.EXPO_PUBLIC_FIRESTORE_DATABASE_ID || "(default)";
@@ -96,57 +97,88 @@ async function seedData() {
   try {
     console.log("🌱 Starting to seed data...");
 
+    // User ID to assign
+    const targetUserId = "IvaVtv1ZI2aHtZYwL4okPn2HZ733";
+
     // 1. Create Company
     console.log("\n📦 Creating company...");
-    const companyId = "super-company-001";
+    const companyCode = "SF001";
+    const companyName = "Super Fitt";
     const companyData = {
-      companyId: companyId, // Add ID as field
-      name: "Super Company",
+      code: companyCode,
+      name: companyName,
       address: "Bangkok, Thailand",
       phone: "02-xxx-xxxx",
-      email: "contact@supercompany.com",
+      email: "contact@superfitt.com",
+      status: "active",
       createdAt: Timestamp.now(),
       updatedAt: Timestamp.now(),
     };
 
-    // Use addDoc to auto-generate document ID
+    // Use addDoc - document ID becomes companyId
     const companyRef = await addDoc(collection(db, "companies"), companyData);
+    const companyId = companyRef.id; // Use document ID as companyId
     console.log(
       "✅ Company created:",
-      companyData.name,
-      "| Doc ID:",
-      companyRef.id
+      companyName,
+      `(${companyCode})`,
+      "| companyId:",
+      companyId
     );
 
     // 2. Create Branch
     console.log("\n🏢 Creating branch...");
-    const branchId = "branch-001";
+    const branchCode = "BKK01";
+    const branchName = "สาขากรุงเทพฯ";
     const branchData = {
-      branchId: branchId, // Add ID as field
       companyId: companyId,
-      name: "Main Branch",
+      code: branchCode,
+      name: branchName,
       address: "Bangkok Branch, Thailand",
       phone: "02-xxx-xxxx",
       createdAt: Timestamp.now(),
       updatedAt: Timestamp.now(),
     };
 
-    // Use addDoc to auto-generate document ID
-    const branchRef = await addDoc(
-      collection(db, "companies", companyRef.id, "branches"),
-      branchData
-    );
+    // Use addDoc - document ID becomes branchId
+    const branchRef = await addDoc(collection(db, "branches"), branchData);
+    const branchId = branchRef.id; // Use document ID as branchId
     console.log(
       "✅ Branch created:",
-      branchData.name,
-      "| Doc ID:",
-      branchRef.id
+      branchName,
+      `(${branchCode})`,
+      "| branchId:",
+      branchId
     );
 
-    // 3. Parse and Create Products
+    // 3. Update User with Company/Branch info
+    console.log("\n👤 Updating user with company/branch...");
+    const userRef = doc(db, "users", targetUserId);
+    await updateDoc(userRef, {
+      companyId: companyId,
+      companyCode: companyCode,
+      companyName: companyName,
+      branchId: branchId,
+      branchCode: branchCode,
+      branchName: branchName,
+      role: "admin",
+      updatedAt: Timestamp.now(),
+    });
+    console.log("✅ User updated:", targetUserId);
+    console.log(`   - Company: ${companyName} (${companyCode}) [${companyId}]`);
+    console.log(`   - Branch: ${branchName} (${branchCode}) [${branchId}]`);
+    console.log(`   - Role: admin`);
+
+    // 4. Parse and Create Products
     console.log("\n📦 Parsing products from items.txt...");
     const itemsPath = path.join(__dirname, "..", "items.txt");
     const products = parseItemsFile(itemsPath);
+
+    // Update products with new company/branch IDs
+    products.forEach((p) => {
+      p.companyId = companyId;
+      p.branchId = branchId;
+    });
 
     console.log(`Found ${products.length} products`);
     console.log("\n📝 Creating products in Firestore...");
@@ -195,12 +227,12 @@ async function seedData() {
     console.log(`   ✅ Success: ${successCount}`);
     console.log(`   ❌ Errors: ${errorCount}`);
 
-    // 4. Create Sample User Assignment
-    console.log("\n👤 Creating sample user assignment...");
-    const assignmentId = "assignment-001";
+    // 5. Create Sample User Assignment
+    console.log("\n📋 Creating sample user assignment...");
+    const assignmentId = `assignment_${Date.now()}`;
     const assignmentData = {
-      assignmentId: assignmentId, // Add ID as field
-      userId: "sample-user-id", // Will be replaced when real user logs in
+      assignmentId: assignmentId,
+      userId: targetUserId,
       companyId: companyId,
       branchId: branchId,
       productIds: products.slice(0, 10).map((p) => p.id), // Assign first 10 products
@@ -220,10 +252,11 @@ async function seedData() {
 
     console.log("\n🎉 Data seeding completed successfully!");
     console.log("\n📊 Summary:");
-    console.log(`   - Companies: 1`);
-    console.log(`   - Branches: 1`);
+    console.log(`   - Companies: 1 (${companyName})`);
+    console.log(`   - Branches: 1 (${branchName})`);
     console.log(`   - Products: ${successCount}`);
     console.log(`   - Assignments: 1`);
+    console.log(`   - User Updated: ${targetUserId}`);
 
     process.exit(0);
   } catch (error) {

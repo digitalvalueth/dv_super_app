@@ -1,9 +1,11 @@
+import { db } from "@/config/firebase";
 import { signOut } from "@/services/auth.service";
 import { useAuthStore } from "@/stores/auth.store";
 import { ThemeMode, useTheme, useThemeStore } from "@/stores/theme.store";
 import { Ionicons } from "@expo/vector-icons";
-import { router } from "expo-router";
-import React from "react";
+import { router, useFocusEffect } from "expo-router";
+import { collection, getDocs, query, where } from "firebase/firestore";
+import React, { useCallback, useState } from "react";
 import {
   Alert,
   Image,
@@ -20,12 +22,14 @@ type SettingItemWithComponent = {
   icon: keyof typeof Ionicons.glyphMap;
   label: string;
   component: React.ReactNode;
+  badge?: number;
 };
 
 type SettingItemWithPress = {
   icon: keyof typeof Ionicons.glyphMap;
   label: string;
   onPress: () => void;
+  badge?: number;
 };
 
 type SettingItem = SettingItemWithComponent | SettingItemWithPress;
@@ -35,6 +39,29 @@ export default function ProfileScreen() {
   const logout = useAuthStore((state) => state.logout);
   const { colors, isDark, mode } = useTheme();
   const setMode = useThemeStore((state) => state.setMode);
+  const [unreadCount, setUnreadCount] = useState(0);
+
+  // Load unread notifications count
+  useFocusEffect(
+    useCallback(() => {
+      const loadUnreadCount = async () => {
+        if (!user) return;
+        try {
+          const notificationsRef = collection(db, "notifications");
+          const q = query(
+            notificationsRef,
+            where("userId", "==", user.uid),
+            where("read", "==", false)
+          );
+          const snapshot = await getDocs(q);
+          setUnreadCount(snapshot.size);
+        } catch (error) {
+          console.error("Error loading unread count:", error);
+        }
+      };
+      loadUnreadCount();
+    }, [user])
+  );
 
   const handleLogout = () => {
     Alert.alert("ออกจากระบบ", "คุณต้องการออกจากระบบหรือไม่?", [
@@ -142,6 +169,12 @@ export default function ProfileScreen() {
       title: "บัญชี",
       items: [
         {
+          icon: "mail",
+          label: "กล่องข้อความ",
+          badge: unreadCount,
+          onPress: () => router.push("/(tabs)/settings/inbox"),
+        },
+        {
           icon: "person",
           label: "แก้ไขโปรไฟล์",
           onPress: () => Alert.alert("Coming Soon", "ฟีเจอร์นี้กำลังพัฒนา"),
@@ -150,11 +183,6 @@ export default function ProfileScreen() {
           icon: "time",
           label: "ประวัติการเข้าใช้งาน",
           onPress: () => router.push("/(tabs)/settings/login-history"),
-        },
-        {
-          icon: "notifications",
-          label: "การแจ้งเตือน",
-          onPress: () => Alert.alert("Coming Soon", "ฟีเจอร์นี้กำลังพัฒนา"),
         },
       ],
     },
@@ -236,9 +264,48 @@ export default function ProfileScreen() {
               color={colors.primary}
             />
             <Text style={[styles.roleText, { color: colors.primary }]}>
-              {user?.role === "employee" ? "พนักงาน" : user?.role}
+              {user?.role === "employee"
+                ? "พนักงาน"
+                : user?.role === "admin"
+                ? "ผู้ดูแลระบบ"
+                : user?.role === "super_admin"
+                ? "ผู้ดูแลระบบสูงสุด"
+                : user?.role === "supervisor"
+                ? "หัวหน้างาน"
+                : user?.role}
             </Text>
           </View>
+
+          {/* Company & Branch Info Badges */}
+          {user?.companyId && (
+            <View style={styles.badgeContainer}>
+              <View
+                style={[
+                  styles.infoBadge,
+                  { backgroundColor: "#10b981" + "20" },
+                ]}
+              >
+                <Ionicons name="business" size={14} color="#10b981" />
+                <Text style={[styles.infoBadgeText, { color: "#10b981" }]}>
+                  {user?.companyName || user?.companyCode || user?.companyId}
+                </Text>
+              </View>
+
+              {user?.branchId && (
+                <View
+                  style={[
+                    styles.infoBadge,
+                    { backgroundColor: "#f59e0b" + "20" },
+                  ]}
+                >
+                  <Ionicons name="location" size={14} color="#f59e0b" />
+                  <Text style={[styles.infoBadgeText, { color: "#f59e0b" }]}>
+                    {user?.branchName || user?.branchCode || user?.branchId}
+                  </Text>
+                </View>
+              )}
+            </View>
+          )}
         </View>
 
         {/* Settings Sections */}
@@ -283,11 +350,25 @@ export default function ProfileScreen() {
                       onPress={item.onPress}
                     >
                       <View style={styles.settingItemLeft}>
-                        <Ionicons
-                          name={item.icon}
-                          size={22}
-                          color={colors.primary}
-                        />
+                        <View style={styles.iconWithBadge}>
+                          <Ionicons
+                            name={item.icon}
+                            size={22}
+                            color={colors.primary}
+                          />
+                          {item.badge && item.badge > 0 ? (
+                            <View
+                              style={[
+                                styles.notificationBadge,
+                                { backgroundColor: colors.error },
+                              ]}
+                            >
+                              <Text style={styles.badgeText}>
+                                {item.badge > 99 ? "99+" : item.badge}
+                              </Text>
+                            </View>
+                          ) : null}
+                        </View>
                         <Text
                           style={[styles.settingLabel, { color: colors.text }]}
                         >
@@ -389,6 +470,25 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: "600",
   },
+  badgeContainer: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    justifyContent: "center",
+    gap: 8,
+    marginTop: 12,
+  },
+  infoBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 16,
+    gap: 4,
+  },
+  infoBadgeText: {
+    fontSize: 12,
+    fontWeight: "600",
+  },
 
   // Sections
   section: {
@@ -418,6 +518,25 @@ const styles = StyleSheet.create({
     alignItems: "center",
     gap: 12,
     flex: 1,
+  },
+  iconWithBadge: {
+    position: "relative",
+  },
+  notificationBadge: {
+    position: "absolute",
+    top: -6,
+    right: -8,
+    minWidth: 18,
+    height: 18,
+    borderRadius: 9,
+    justifyContent: "center",
+    alignItems: "center",
+    paddingHorizontal: 4,
+  },
+  badgeText: {
+    color: "#fff",
+    fontSize: 10,
+    fontWeight: "700",
   },
   settingLabel: {
     fontSize: 16,
