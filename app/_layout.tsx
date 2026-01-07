@@ -11,10 +11,6 @@ import "react-native-reanimated";
 import { useColorScheme } from "@/hooks/use-color-scheme";
 import { useAuthStore } from "@/stores/auth.store";
 
-export const unstable_settings = {
-  anchor: "(app)",
-};
-
 export default function RootLayout() {
   const colorScheme = useColorScheme();
   const initialize = useAuthStore((state) => state.initialize);
@@ -27,8 +23,11 @@ export default function RootLayout() {
   return (
     <ThemeProvider value={colorScheme === "dark" ? DarkTheme : DefaultTheme}>
       <Stack>
-        <Stack.Screen name="(auth)" options={{ headerShown: false }} />
-        <Stack.Screen name="(app)" options={{ headerShown: false }} />
+        <Stack.Screen name="(login)" options={{ headerShown: false }} />
+        <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+        <Stack.Screen name="camera" options={{ headerShown: false }} />
+        <Stack.Screen name="preview" options={{ headerShown: false }} />
+        <Stack.Screen name="result" options={{ headerShown: false }} />
         <Stack.Screen
           name="modal"
           options={{ presentation: "modal", title: "Modal" }}

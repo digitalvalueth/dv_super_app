@@ -10,16 +10,18 @@ import {
   ActivityIndicator,
   FlatList,
   Image,
+  StatusBar,
   StyleSheet,
   Text,
   TouchableOpacity,
   View,
 } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 
 export default function HomeScreen() {
   const user = useAuthStore((state) => state.user);
   const { products, setProducts, setLoading, loading } = useProductStore();
-  const { colors } = useTheme();
+  const { colors, isDark } = useTheme();
   const [refreshing, setRefreshing] = useState(false);
 
   useEffect(() => {
@@ -58,7 +60,7 @@ export default function HomeScreen() {
 
     // Navigate to camera
     router.push({
-      pathname: "/(app)/camera",
+      pathname: "/",
       params: {
         productId: product.id,
         productName: product.name,
@@ -194,47 +196,94 @@ export default function HomeScreen() {
 
   if (loading && products.length === 0) {
     return (
-      <View style={[styles.centered, { backgroundColor: colors.background }]}>
-        <ActivityIndicator size="large" color={colors.primary} />
-        <Text style={[styles.loadingText, { color: colors.textSecondary }]}>
-          กำลังโหลดรายการสินค้า...
-        </Text>
-      </View>
+      <SafeAreaView style={[styles.safeArea, { backgroundColor: colors.card }]}>
+        <StatusBar
+          barStyle={isDark ? "light-content" : "dark-content"}
+          backgroundColor={colors.card}
+        />
+        <View
+          style={[
+            styles.header,
+            { backgroundColor: colors.card, borderBottomColor: colors.border },
+          ]}
+        >
+          <Text style={[styles.headerTitle, { color: colors.text }]}>
+            รายการสินค้า
+          </Text>
+        </View>
+        <View style={[styles.centered, { backgroundColor: colors.background }]}>
+          <ActivityIndicator size="large" color={colors.primary} />
+          <Text style={[styles.loadingText, { color: colors.textSecondary }]}>
+            กำลังโหลดรายการสินค้า...
+          </Text>
+        </View>
+      </SafeAreaView>
     );
   }
 
   return (
-    <View style={[styles.container, { backgroundColor: colors.background }]}>
-      <FlatList
-        data={products}
-        renderItem={renderProduct}
-        keyExtractor={(item) => item.id}
-        contentContainerStyle={
-          products.length === 0 ? styles.emptyContainer : styles.listContent
-        }
-        refreshing={refreshing}
-        onRefresh={handleRefresh}
-        ListEmptyComponent={
-          !loading ? (
-            <View style={styles.centered}>
-              <Text style={styles.emptyEmoji}>📦</Text>
-              <Text style={[styles.emptyText, { color: colors.text }]}>
-                ไม่มีรายการสินค้าที่ต้องนับ
-              </Text>
-              <Text
-                style={[styles.emptySubtext, { color: colors.textSecondary }]}
-              >
-                ลากลงเพื่อรีเฟรช หรือติดต่อผู้ดูแลระบบเพื่อมอบหมายงาน
-              </Text>
-            </View>
-          ) : null
-        }
+    <SafeAreaView style={[styles.safeArea, { backgroundColor: colors.card }]}>
+      <StatusBar
+        barStyle={isDark ? "light-content" : "dark-content"}
+        backgroundColor={colors.card}
       />
-    </View>
+      <View
+        style={[
+          styles.header,
+          { backgroundColor: colors.card, borderBottomColor: colors.border },
+        ]}
+      >
+        <Text style={[styles.headerTitle, { color: colors.text }]}>
+          รายการสินค้า
+        </Text>
+      </View>
+      <View style={[styles.container, { backgroundColor: colors.background }]}>
+        <FlatList
+          data={products}
+          renderItem={renderProduct}
+          keyExtractor={(item) => item.id}
+          contentContainerStyle={
+            products.length === 0
+              ? styles.emptyContainer
+              : [styles.listContent, { paddingBottom: 110 }]
+          }
+          refreshing={refreshing}
+          onRefresh={handleRefresh}
+          ListEmptyComponent={
+            !loading ? (
+              <View style={styles.centered}>
+                <Text style={styles.emptyEmoji}>📦</Text>
+                <Text style={[styles.emptyText, { color: colors.text }]}>
+                  ไม่มีรายการสินค้าที่ต้องนับ
+                </Text>
+                <Text
+                  style={[styles.emptySubtext, { color: colors.textSecondary }]}
+                >
+                  ลากลงเพื่อรีเฟรช หรือติดต่อผู้ดูแลระบบเพื่อมอบหมายงาน
+                </Text>
+              </View>
+            ) : null
+          }
+        />
+      </View>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
+  safeArea: {
+    flex: 1,
+  },
+  header: {
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+  },
+  headerTitle: {
+    fontSize: 34,
+    fontWeight: "700",
+    letterSpacing: 0.4,
+  },
   container: {
     flex: 1,
   },
@@ -249,6 +298,7 @@ const styles = StyleSheet.create({
     padding: 20,
   },
   centered: {
+    flex: 1,
     justifyContent: "center",
     alignItems: "center",
     padding: 20,
