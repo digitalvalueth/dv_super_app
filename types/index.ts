@@ -6,9 +6,9 @@ export interface User {
   uid: string;
   email: string;
   name: string;
-  companyId: string;
-  branchId: string;
-  role: UserRole;
+  companyId?: string; // Optional until admin assigns
+  branchId?: string; // Optional until admin assigns
+  role?: UserRole; // Optional until admin assigns
   photoURL?: string;
   createdAt: Timestamp;
   updatedAt: Timestamp;

@@ -123,6 +123,21 @@ export default function ProfileScreen() {
         },
       ],
     },
+    // Show admin section only for admin users
+    ...(user?.role === "admin" || user?.role === "super_admin"
+      ? [
+          {
+            title: "การจัดการ",
+            items: [
+              {
+                icon: "people",
+                label: "คำขอเข้าใช้งาน",
+                onPress: () => router.push("/settings/access-requests" as any),
+              },
+            ] as SettingItem[],
+          },
+        ]
+      : []),
     {
       title: "บัญชี",
       items: [
@@ -130,6 +145,11 @@ export default function ProfileScreen() {
           icon: "person",
           label: "แก้ไขโปรไฟล์",
           onPress: () => Alert.alert("Coming Soon", "ฟีเจอร์นี้กำลังพัฒนา"),
+        },
+        {
+          icon: "time",
+          label: "ประวัติการเข้าใช้งาน",
+          onPress: () => router.push("/(tabs)/settings/login-history"),
         },
         {
           icon: "notifications",

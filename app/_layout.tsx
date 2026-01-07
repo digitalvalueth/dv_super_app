@@ -25,13 +25,17 @@ export default function RootLayout() {
       <Stack>
         <Stack.Screen name="(login)" options={{ headerShown: false }} />
         <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-        <Stack.Screen name="camera" options={{ headerShown: false }} />
-        <Stack.Screen name="preview" options={{ headerShown: false }} />
-        <Stack.Screen name="result" options={{ headerShown: false }} />
         <Stack.Screen
-          name="modal"
-          options={{ presentation: "modal", title: "Modal" }}
+          name="onboarding/index"
+          options={{ headerShown: false }}
         />
+        <Stack.Screen
+          name="pending-approval/index"
+          options={{ headerShown: false }}
+        />
+        <Stack.Screen name="camera/index" options={{ headerShown: false }} />
+        <Stack.Screen name="preview/index" options={{ headerShown: false }} />
+        <Stack.Screen name="result/index" options={{ headerShown: false }} />
       </Stack>
       <StatusBar style="auto" />
     </ThemeProvider>

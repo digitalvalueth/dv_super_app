@@ -13,6 +13,9 @@
       "bundleIdentifier": "com.itswatthachai.superfitt",
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false,
+        "NSCameraUsageDescription": "ใช้กล้องเพื่อถ่ายรูปสินค้าสำหรับนับจำนวน",
+        "NSPhotoLibraryUsageDescription": "เข้าถึงคลังรูปภาพเพื่อเลือกรูปสินค้า",
+        "NSLocationWhenInUseUsageDescription": "ใช้ตำแหน่งเพื่อบันทึกสถานที่นับสินค้า",
         "CFBundleURLTypes": [
           {
             "CFBundleURLSchemes": [
@@ -31,7 +34,14 @@
       },
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false,
-      "package": "com.itswatthachai.superfitt"
+      "package": "com.itswatthachai.superfitt",
+      "permissions": [
+        "CAMERA",
+        "READ_EXTERNAL_STORAGE",
+        "WRITE_EXTERNAL_STORAGE",
+        "ACCESS_FINE_LOCATION",
+        "ACCESS_COARSE_LOCATION"
+      ]
     },
     "web": {
       "output": "static",
@@ -51,7 +61,25 @@
           }
         }
       ],
-      "@react-native-google-signin/google-signin"
+      "@react-native-google-signin/google-signin",
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "ใช้กล้องเพื่อถ่ายรูปสินค้าสำหรับนับจำนวน"
+        }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "เข้าถึงคลังรูปภาพเพื่อเลือกรูปสินค้า"
+        }
+      ],
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "ใช้ตำแหน่งเพื่อบันทึกสถานที่นับสินค้า"
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true,
