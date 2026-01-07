@@ -1,10 +1,24 @@
+import { useAuthStore } from "@/stores/auth.store";
 import { useTheme } from "@/stores/theme.store";
 import { Ionicons } from "@expo/vector-icons";
+import { Redirect } from "expo-router";
 import { Icon, Label, NativeTabs } from "expo-router/unstable-native-tabs";
 import { Platform } from "react-native";
 
 export default function TabLayout() {
   const { colors } = useTheme();
+  const user = useAuthStore((state) => state.user);
+  const loading = useAuthStore((state) => state.loading);
+
+  // If user is not authenticated, redirect to login
+  if (!loading && !user) {
+    return <Redirect href="/(login)" />;
+  }
+
+  // If user doesn't have company/branch assigned, redirect to pending approval
+  if (!loading && user && (!user.companyId || !user.branchId)) {
+    return <Redirect href="/pending-approval" />;
+  }
 
   const bgColor = Platform.OS === "android" ? colors.card : null;
   const indicatorBgColor =

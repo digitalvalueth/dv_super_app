@@ -23,6 +23,9 @@ export default function HomeScreen() {
   const { products, setProducts, setLoading, loading } = useProductStore();
   const { colors, isDark } = useTheme();
   const [refreshing, setRefreshing] = useState(false);
+  const [filter, setFilter] = useState<
+    "all" | "pending" | "in_progress" | "completed"
+  >("all");
 
   useEffect(() => {
     loadProducts();
@@ -58,12 +61,15 @@ export default function HomeScreen() {
       return;
     }
 
-    // Navigate to camera
+    // Navigate to product details
     router.push({
-      pathname: "/",
+      pathname: "/(tabs)/products/details",
       params: {
         productId: product.id,
         productName: product.name,
+        productSKU: product.sku,
+        productImage: product.imageUrl || "",
+        beforeQty: product.beforeCountQty?.toString() || "0",
       },
     });
   };
@@ -79,16 +85,57 @@ export default function HomeScreen() {
     }
   };
 
+  const getStatusIcon = (status: string): keyof typeof Ionicons.glyphMap => {
+    switch (status) {
+      case "completed":
+        return "checkmark-circle";
+      case "in_progress":
+        return "time";
+      default:
+        return "ellipse-outline";
+    }
+  };
+
   const getStatusText = (status: string) => {
     switch (status) {
       case "completed":
-        return "✅ นับแล้ว";
+        return "นับแล้ว";
       case "in_progress":
-        return "⏳ กำลังนับ";
+        return "กำลังนับ";
       default:
-        return "⚪ รอนับ";
+        return "รอนับ";
     }
   };
+
+  const filteredProducts = products.filter((product) => {
+    if (filter === "all") return true;
+    if (filter === "pending")
+      return !product.status || product.status === "pending";
+    return product.status === filter;
+  });
+
+  const filters = [
+    {
+      key: "all" as const,
+      label: "ทั้งหมด",
+      icon: "grid" as keyof typeof Ionicons.glyphMap,
+    },
+    {
+      key: "pending" as const,
+      label: "รอนับ",
+      icon: "ellipse-outline" as keyof typeof Ionicons.glyphMap,
+    },
+    {
+      key: "in_progress" as const,
+      label: "กำลังนับ",
+      icon: "time" as keyof typeof Ionicons.glyphMap,
+    },
+    {
+      key: "completed" as const,
+      label: "นับแล้ว",
+      icon: "checkmark-circle" as keyof typeof Ionicons.glyphMap,
+    },
+  ];
 
   const renderProduct = ({ item }: { item: ProductWithAssignment }) => (
     <TouchableOpacity
@@ -110,7 +157,7 @@ export default function HomeScreen() {
           >
             <Ionicons
               name="cube-outline"
-              size={48}
+              size={40}
               color={colors.textSecondary}
             />
           </View>
@@ -123,22 +170,15 @@ export default function HomeScreen() {
             { backgroundColor: getStatusColor(item.status) },
           ]}
         >
-          <Text style={styles.statusBadgeText}>
-            {getStatusText(item.status)}
-          </Text>
+          <Ionicons name={getStatusIcon(item.status)} size={14} color="#fff" />
         </View>
       </View>
 
       {/* Product Info */}
       <View style={styles.productInfo}>
-        <View style={styles.productHeader}>
-          <Text style={styles.productSKU}>{item.sku}</Text>
-          {item.category && (
-            <View style={styles.categoryBadge}>
-              <Text style={styles.categoryText}>{item.category}</Text>
-            </View>
-          )}
-        </View>
+        <Text style={styles.productSKU} numberOfLines={1}>
+          {item.sku}
+        </Text>
 
         <Text
           style={[styles.productName, { color: colors.text }]}
@@ -148,40 +188,29 @@ export default function HomeScreen() {
         </Text>
 
         {/* Metrics */}
-        <View style={styles.metricsContainer}>
-          <View style={[styles.metric, { backgroundColor: colors.background }]}>
+        <View style={styles.metricsRow}>
+          <View style={styles.metricItem}>
             <Ionicons
               name="cube-outline"
-              size={16}
+              size={14}
               color={colors.textSecondary}
             />
-            <Text style={[styles.metricLabel, { color: colors.textSecondary }]}>
-              จำนวนเดิม
-            </Text>
-            <Text style={[styles.metricValue, { color: colors.text }]}>
+            <Text style={[styles.metricText, { color: colors.textSecondary }]}>
               {item.beforeCountQty || 0}
             </Text>
           </View>
 
           {item.variance !== undefined && (
-            <View
-              style={[styles.metric, { backgroundColor: colors.background }]}
-            >
+            <View style={styles.metricItem}>
               <Ionicons
                 name={item.variance >= 0 ? "trending-up" : "trending-down"}
-                size={16}
+                size={14}
                 color={item.variance >= 0 ? "#4caf50" : "#f44336"}
               />
               <Text
-                style={[styles.metricLabel, { color: colors.textSecondary }]}
-              >
-                ส่วนต่าง
-              </Text>
-              <Text
                 style={[
-                  styles.metricValue,
-                  item.variance > 0 && styles.variancePositive,
-                  item.variance < 0 && styles.varianceNegative,
+                  styles.metricText,
+                  { color: item.variance >= 0 ? "#4caf50" : "#f44336" },
                 ]}
               >
                 {item.variance > 0 ? "+" : ""}
@@ -190,6 +219,12 @@ export default function HomeScreen() {
             </View>
           )}
         </View>
+
+        <Text
+          style={[styles.statusText, { color: getStatusColor(item.status) }]}
+        >
+          {getStatusText(item.status)}
+        </Text>
       </View>
     </TouchableOpacity>
   );
@@ -242,14 +277,49 @@ export default function HomeScreen() {
         <Text style={[styles.headerTitle, { color: colors.text }]}>
           รายการสินค้า
         </Text>
+
+        {/* Filter Buttons */}
+        <View style={styles.filterContainer}>
+          {filters.map((f) => (
+            <TouchableOpacity
+              key={f.key}
+              style={[
+                styles.filterButton,
+                {
+                  backgroundColor:
+                    filter === f.key ? colors.primary : colors.background,
+                  borderColor:
+                    filter === f.key ? colors.primary : colors.border,
+                },
+              ]}
+              onPress={() => setFilter(f.key)}
+            >
+              <Ionicons
+                name={f.icon}
+                size={16}
+                color={filter === f.key ? "#fff" : colors.textSecondary}
+              />
+              <Text
+                style={[
+                  styles.filterText,
+                  { color: filter === f.key ? "#fff" : colors.textSecondary },
+                ]}
+              >
+                {f.label}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </View>
       </View>
       <View style={[styles.container, { backgroundColor: colors.background }]}>
         <FlatList
-          data={products}
+          data={filteredProducts}
           renderItem={renderProduct}
           keyExtractor={(item) => item.id}
+          numColumns={2}
+          columnWrapperStyle={styles.row}
           contentContainerStyle={
-            products.length === 0
+            filteredProducts.length === 0
               ? styles.emptyContainer
               : [styles.listContent, { paddingBottom: 110 }]
           }
@@ -258,14 +328,22 @@ export default function HomeScreen() {
           ListEmptyComponent={
             !loading ? (
               <View style={styles.centered}>
-                <Text style={styles.emptyEmoji}>📦</Text>
+                <Ionicons
+                  name="cube-outline"
+                  size={80}
+                  color={colors.textSecondary}
+                />
                 <Text style={[styles.emptyText, { color: colors.text }]}>
-                  ไม่มีรายการสินค้าที่ต้องนับ
+                  {filter === "all"
+                    ? "ไม่มีรายการสินค้า"
+                    : `ไม่มีสินค้า${
+                        filters.find((f) => f.key === filter)?.label
+                      }`}
                 </Text>
                 <Text
                   style={[styles.emptySubtext, { color: colors.textSecondary }]}
                 >
-                  ลากลงเพื่อรีเฟรช หรือติดต่อผู้ดูแลระบบเพื่อมอบหมายงาน
+                  ลากลงเพื่อรีเฟรช
                 </Text>
               </View>
             ) : null
@@ -282,20 +360,43 @@ const styles = StyleSheet.create({
   },
   header: {
     paddingHorizontal: 16,
-    paddingVertical: 12,
+    paddingTop: 12,
+    paddingBottom: 8,
     borderBottomWidth: StyleSheet.hairlineWidth,
   },
   headerTitle: {
     fontSize: 34,
     fontWeight: "700",
     letterSpacing: 0.4,
+    marginBottom: 12,
+  },
+  filterContainer: {
+    flexDirection: "row",
+    gap: 8,
+    paddingBottom: 8,
+  },
+  filterButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 20,
+    borderWidth: 1,
+    gap: 6,
+  },
+  filterText: {
+    fontSize: 13,
+    fontWeight: "600",
   },
   container: {
     flex: 1,
   },
   listContent: {
-    padding: 16,
-    paddingBottom: 32,
+    padding: 8,
+  },
+  row: {
+    gap: 8,
+    paddingHorizontal: 8,
   },
   emptyContainer: {
     flexGrow: 1,
@@ -313,13 +414,10 @@ const styles = StyleSheet.create({
     marginTop: 12,
     fontSize: 16,
   },
-  emptyEmoji: {
-    fontSize: 80,
-    marginBottom: 16,
-  },
   emptyText: {
     fontSize: 18,
     fontWeight: "600",
+    marginTop: 16,
     marginBottom: 8,
   },
   emptySubtext: {
@@ -327,20 +425,21 @@ const styles = StyleSheet.create({
     textAlign: "center",
   },
 
-  // Product Card - AllTrails inspired
+  // Product Card - Grid View
   productCard: {
-    borderRadius: 16,
-    marginBottom: 16,
+    flex: 1,
+    borderRadius: 12,
+    marginBottom: 8,
     overflow: "hidden",
     shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
+    shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.1,
-    shadowRadius: 8,
-    elevation: 4,
+    shadowRadius: 4,
+    elevation: 2,
   },
   imageContainer: {
     width: "100%",
-    height: 200,
+    height: 120,
     backgroundColor: "#f0f0f0",
     position: "relative",
   },
@@ -357,77 +456,58 @@ const styles = StyleSheet.create({
   },
   statusBadge: {
     position: "absolute",
-    top: 12,
-    right: 12,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 20,
-  },
-  statusBadgeText: {
-    color: "#fff",
-    fontSize: 12,
-    fontWeight: "600",
+    top: 8,
+    right: 8,
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    justifyContent: "center",
+    alignItems: "center",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 3,
+    elevation: 3,
   },
 
   // Product Info
   productInfo: {
-    padding: 16,
-  },
-  productHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: 8,
+    padding: 12,
   },
   productSKU: {
-    fontSize: 14,
+    fontSize: 11,
     fontWeight: "600",
     color: "#4285f4",
-    letterSpacing: 0.5,
-  },
-  categoryBadge: {
-    backgroundColor: "#f0f4ff",
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 12,
-  },
-  categoryText: {
-    fontSize: 11,
-    color: "#4285f4",
-    fontWeight: "500",
+    letterSpacing: 0.3,
+    marginBottom: 4,
   },
   productName: {
-    fontSize: 16,
+    fontSize: 14,
     fontWeight: "600",
-    marginBottom: 12,
-    lineHeight: 22,
+    marginBottom: 8,
+    lineHeight: 18,
+    height: 36,
   },
 
   // Metrics
-  metricsContainer: {
+  metricsRow: {
     flexDirection: "row",
-    gap: 16,
+    gap: 8,
+    marginBottom: 8,
   },
-  metric: {
-    flex: 1,
+  metricItem: {
     flexDirection: "row",
     alignItems: "center",
-    padding: 12,
-    borderRadius: 12,
-    gap: 6,
+    gap: 4,
   },
-  metricLabel: {
+  metricText: {
     fontSize: 12,
+    fontWeight: "600",
   },
-  metricValue: {
-    fontSize: 14,
-    fontWeight: "700",
-    marginLeft: "auto",
-  },
-  variancePositive: {
-    color: "#4caf50",
-  },
-  varianceNegative: {
-    color: "#f44336",
+  statusText: {
+    fontSize: 11,
+    fontWeight: "600",
+    textAlign: "center",
+    paddingVertical: 4,
   },
 });

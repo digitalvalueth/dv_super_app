@@ -1,15 +1,21 @@
 import { processGoogleAuth } from "@/services/auth.service";
 import { useAuthStore } from "@/stores/auth.store";
+import { useTheme } from "@/stores/theme.store";
+import { Ionicons } from "@expo/vector-icons";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { GoogleSignin } from "@react-native-google-signin/google-signin";
+import { LinearGradient } from "expo-linear-gradient";
 import { router } from "expo-router";
 import { useEffect, useState } from "react";
 import {
   ActivityIndicator,
+  StatusBar,
   StyleSheet,
   Text,
   TouchableOpacity,
   View,
 } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 
 // Google OAuth Config
 const GOOGLE_WEB_CLIENT_ID = process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID;
@@ -20,6 +26,7 @@ const GOOGLE_ANDROID_CLIENT_ID =
 export default function LoginScreen() {
   const setUser = useAuthStore((state) => state.setUser);
   const setError = useAuthStore((state) => state.setError);
+  const { colors, isDark } = useTheme();
   const [isLoading, setIsLoading] = useState(false);
 
   // Configure Google Sign In
@@ -65,7 +72,17 @@ export default function LoginScreen() {
       if (user) {
         console.log("✅ Firebase Auth Success:", user.email);
         setUser(user);
-        router.replace("/(tabs)/products");
+
+        // Check if onboarding is completed
+        const onboardingCompleted = await AsyncStorage.getItem(
+          "onboarding_completed"
+        );
+
+        if (onboardingCompleted === "true") {
+          router.replace("/(tabs)/products");
+        } else {
+          router.replace("/onboarding");
+        }
       }
     } catch (error: any) {
       console.error("❌ Google Sign-In Error:", error);
@@ -86,88 +103,213 @@ export default function LoginScreen() {
   };
 
   return (
-    <View style={styles.container}>
-      <View style={styles.content}>
-        <Text style={styles.title}>Super Fitt</Text>
-        <Text style={styles.subtitle}>ระบบนับสินค้าด้วย AI</Text>
+    <SafeAreaView
+      style={[styles.container, { backgroundColor: colors.background }]}
+      edges={["top", "bottom"]}
+    >
+      <StatusBar barStyle={isDark ? "light-content" : "dark-content"} />
 
-        <View style={styles.illustration}>
-          <Text style={styles.emoji}>📦</Text>
+      {/* Gradient Background */}
+      <LinearGradient
+        colors={
+          isDark
+            ? ["#000000", "#1a1a1a", "#000000"]
+            : ["#ffffff", "#f8f9fa", "#ffffff"]
+        }
+        style={styles.gradient}
+      />
+
+      <View style={styles.content}>
+        {/* Logo Icon */}
+        <View
+          style={[
+            styles.logoContainer,
+            { backgroundColor: colors.primary + "20" },
+          ]}
+        >
+          <Ionicons name="cube" size={80} color={colors.primary} />
         </View>
 
+        {/* App Name */}
+        <Text style={[styles.title, { color: colors.text }]}>Super Fitt</Text>
+        <Text style={[styles.subtitle, { color: colors.textSecondary }]}>
+          ระบบนับสินค้าด้วย AI
+        </Text>
+
+        {/* Features */}
+        <View style={styles.featuresContainer}>
+          <View style={styles.feature}>
+            <View
+              style={[
+                styles.featureIcon,
+                { backgroundColor: colors.primary + "15" },
+              ]}
+            >
+              <Ionicons name="camera" size={24} color={colors.primary} />
+            </View>
+            <Text style={[styles.featureText, { color: colors.textSecondary }]}>
+              นับสินค้าอัตโนมัติ
+            </Text>
+          </View>
+
+          <View style={styles.feature}>
+            <View
+              style={[
+                styles.featureIcon,
+                { backgroundColor: colors.primary + "15" },
+              ]}
+            >
+              <Ionicons name="bar-chart" size={24} color={colors.primary} />
+            </View>
+            <Text style={[styles.featureText, { color: colors.textSecondary }]}>
+              รายงานแบบเรียลไทม์
+            </Text>
+          </View>
+
+          <View style={styles.feature}>
+            <View
+              style={[
+                styles.featureIcon,
+                { backgroundColor: colors.primary + "15" },
+              ]}
+            >
+              <Ionicons
+                name="shield-checkmark"
+                size={24}
+                color={colors.primary}
+              />
+            </View>
+            <Text style={[styles.featureText, { color: colors.textSecondary }]}>
+              ปลอดภัยสูง
+            </Text>
+          </View>
+        </View>
+
+        {/* Login Button */}
         <TouchableOpacity
-          style={[styles.button, isLoading && styles.buttonDisabled]}
+          style={[
+            styles.button,
+            { backgroundColor: colors.primary },
+            isLoading && styles.buttonDisabled,
+          ]}
           onPress={handleGoogleLogin}
           disabled={isLoading}
+          activeOpacity={0.8}
         >
           {isLoading ? (
             <ActivityIndicator color="#fff" />
           ) : (
-            <Text style={styles.buttonText}>🔐 เข้าสู่ระบบด้วย Google</Text>
+            <>
+              <Ionicons
+                name="logo-google"
+                size={24}
+                color="#fff"
+                style={styles.googleIcon}
+              />
+              <Text style={styles.buttonText}>เข้าสู่ระบบด้วย Google</Text>
+            </>
           )}
         </TouchableOpacity>
 
-        <Text style={styles.note}>
+        <Text style={[styles.note, { color: colors.textSecondary }]}>
           ใช้บัญชี Google ของบริษัทในการเข้าสู่ระบบ
         </Text>
       </View>
-    </View>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#f5f5f5",
+  },
+  gradient: {
+    position: "absolute",
+    left: 0,
+    right: 0,
+    top: 0,
+    bottom: 0,
   },
   content: {
     flex: 1,
     justifyContent: "center",
     alignItems: "center",
-    padding: 20,
+    padding: 24,
+  },
+  logoContainer: {
+    width: 160,
+    height: 160,
+    borderRadius: 80,
+    justifyContent: "center",
+    alignItems: "center",
+    marginBottom: 32,
+    shadowColor: "#4285f4",
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.3,
+    shadowRadius: 16,
+    elevation: 8,
   },
   title: {
-    fontSize: 36,
-    fontWeight: "bold",
-    color: "#333",
+    fontSize: 48,
+    fontWeight: "800",
+    letterSpacing: -1,
     marginBottom: 8,
   },
   subtitle: {
     fontSize: 18,
-    color: "#666",
-    marginBottom: 40,
+    fontWeight: "500",
+    marginBottom: 48,
   },
-  illustration: {
-    marginBottom: 60,
+  featuresContainer: {
+    flexDirection: "row",
+    gap: 24,
+    marginBottom: 48,
   },
-  emoji: {
-    fontSize: 100,
+  feature: {
+    alignItems: "center",
+    gap: 8,
+  },
+  featureIcon: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  featureText: {
+    fontSize: 12,
+    fontWeight: "500",
   },
   button: {
-    backgroundColor: "#4285f4",
-    paddingHorizontal: 32,
-    paddingVertical: 16,
-    borderRadius: 12,
-    minWidth: 280,
+    flexDirection: "row",
     alignItems: "center",
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
+    justifyContent: "center",
+    paddingHorizontal: 32,
+    paddingVertical: 18,
+    borderRadius: 16,
+    minWidth: 300,
+    gap: 12,
+    shadowColor: "#4285f4",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 5,
   },
   buttonDisabled: {
-    backgroundColor: "#ccc",
+    opacity: 0.6,
+  },
+  googleIcon: {
+    marginRight: 4,
   },
   buttonText: {
     color: "#fff",
-    fontSize: 16,
-    fontWeight: "600",
+    fontSize: 17,
+    fontWeight: "700",
   },
   note: {
     marginTop: 24,
-    fontSize: 14,
-    color: "#999",
+    fontSize: 13,
     textAlign: "center",
+    paddingHorizontal: 32,
   },
 });
