@@ -7,6 +7,64 @@ const GEMINI_API_KEY = process.env.EXPO_PUBLIC_GEMINI_API_KEY || "";
 const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
 
 /**
+ * Count barcodes in image using Gemini AI
+ * Returns only the count as a number
+ */
+export const countBarcodesInImage = async (
+  imageBase64: string
+): Promise<{ count: number; processingTime: number }> => {
+  try {
+    const startTime = Date.now();
+
+    const model = genAI.getGenerativeModel({
+      model: "gemini-2.5-flash",
+    });
+
+    const prompt = `You are a barcode detection expert. Look at this image and count ALL visible barcodes.
+
+Instructions:
+1. Count every barcode you can see (EAN-13, UPC, Code 128, QR codes, etc.)
+2. Include partially visible barcodes
+3. Count barcodes that are stacked or overlapping
+4. Be thorough and accurate
+
+IMPORTANT: Return ONLY a single number representing the total count.
+Do not include any other text, explanation, or formatting.
+If no barcodes are visible, return 0.
+
+Examples of valid responses:
+5
+12
+0
+23`;
+
+    const result = await model.generateContent([
+      prompt,
+      {
+        inlineData: {
+          data: imageBase64,
+          mimeType: "image/jpeg",
+        },
+      },
+    ]);
+
+    const response = await result.response;
+    const text = response.text().trim();
+
+    // Parse count from response
+    const count = parseInt(text, 10) || 0;
+    const processingTime = Date.now() - startTime;
+
+    console.log(`🔍 Gemini barcode count: ${count} (${processingTime}ms)`);
+
+    return { count, processingTime };
+  } catch (error) {
+    console.error("Error counting barcodes with Gemini:", error);
+    throw error;
+  }
+};
+
+/**
  * Count products in image using Gemini AI
  */
 export const countProductsInImage = async (
@@ -19,7 +77,7 @@ export const countProductsInImage = async (
 
     // Get generative model
     const model = genAI.getGenerativeModel({
-      model: "gemini-1.5-flash", // or 'gemini-1.5-pro' for better accuracy
+      model: "gemini-2.5-flash", // Updated to latest model
     });
 
     // Construct prompt

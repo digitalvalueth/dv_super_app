@@ -1,35 +1,70 @@
-import { Tabs } from 'expo-router';
-import React from 'react';
-
-import { HapticTab } from '@/components/haptic-tab';
-import { IconSymbol } from '@/components/ui/icon-symbol';
-import { Colors } from '@/constants/theme';
-import { useColorScheme } from '@/hooks/use-color-scheme';
+import { useAuthStore } from "@/stores/auth.store";
+import { useTheme } from "@/stores/theme.store";
+import { Ionicons } from "@expo/vector-icons";
+import { Redirect } from "expo-router";
+import { Icon, Label, NativeTabs } from "expo-router/unstable-native-tabs";
+import { Platform } from "react-native";
 
 export default function TabLayout() {
-  const colorScheme = useColorScheme();
+  const { colors } = useTheme();
+  const user = useAuthStore((state) => state.user);
+  const loading = useAuthStore((state) => state.loading);
+
+  console.log("📍 TabLayout - loading:", loading, "user:", user?.email);
+
+  // If user is not authenticated, redirect to login
+  if (!loading && !user) {
+    console.log("🚀 TabLayout - Redirecting to /(login)");
+    return <Redirect href="/(login)" />;
+  }
+
+  // If user doesn't have company/branch assigned, redirect to pending approval
+  if (!loading && user && (!user.companyId || !user.branchId)) {
+    console.log("🚀 TabLayout - Redirecting to /pending-approval");
+    return <Redirect href="/pending-approval" />;
+  }
+
+  console.log("✅ TabLayout - Showing tabs");
+
+  const bgColor = Platform.OS === "android" ? colors.card : null;
+  const indicatorBgColor =
+    Platform.OS === "android" ? colors.border : undefined;
+  const foregroundColor = Platform.OS === "android" ? colors.text : undefined;
 
   return (
-    <Tabs
-      screenOptions={{
-        tabBarActiveTintColor: Colors[colorScheme ?? 'light'].tint,
-        headerShown: false,
-        tabBarButton: HapticTab,
-      }}>
-      <Tabs.Screen
-        name="index"
-        options={{
-          title: 'Home',
-          tabBarIcon: ({ color }) => <IconSymbol size={28} name="house.fill" color={color} />,
-        }}
-      />
-      <Tabs.Screen
-        name="explore"
-        options={{
-          title: 'Explore',
-          tabBarIcon: ({ color }) => <IconSymbol size={28} name="paperplane.fill" color={color} />,
-        }}
-      />
-    </Tabs>
+    <NativeTabs
+      backgroundColor={bgColor}
+      indicatorColor={indicatorBgColor}
+      disableTransparentOnScrollEdge={false}
+      iconColor={foregroundColor}
+      labelStyle={{
+        color: foregroundColor,
+      }}
+    >
+      <NativeTabs.Trigger name="products">
+        <Label>สินค้า</Label>
+        {Platform.OS === "ios" ? (
+          <Icon sf="cube" />
+        ) : (
+          <Ionicons name="cube-outline" size={24} color={foregroundColor} />
+        )}
+      </NativeTabs.Trigger>
+      <NativeTabs.Trigger name="history">
+        <Label>ประวัติ</Label>
+        {Platform.OS === "ios" ? (
+          <Icon sf="clock" />
+        ) : (
+          <Ionicons name="time-outline" size={24} color={foregroundColor} />
+        )}
+      </NativeTabs.Trigger>
+      <NativeTabs.Trigger name="settings">
+        <Label>โปรไฟล์</Label>
+        {Platform.OS === "ios" ? (
+          <Icon sf="person" />
+        ) : (
+          <Ionicons name="person-outline" size={24} color={foregroundColor} />
+        )}
+      </NativeTabs.Trigger>
+    </NativeTabs>
   );
 }

@@ -6,9 +6,13 @@ export interface User {
   uid: string;
   email: string;
   name: string;
-  companyId: string;
-  branchId: string;
-  role: UserRole;
+  companyId?: string; // Optional until admin assigns
+  companyCode?: string;
+  companyName?: string;
+  branchId?: string; // Optional until admin assigns
+  branchCode?: string;
+  branchName?: string;
+  role?: UserRole; // Optional until admin assigns
   photoURL?: string;
   createdAt: Timestamp;
   updatedAt: Timestamp;
@@ -17,6 +21,42 @@ export interface User {
 export type UserRole = "super_admin" | "admin" | "supervisor" | "employee";
 
 export type UserStatus = "active" | "inactive" | "suspended";
+
+// ==================== Notification ====================
+
+export interface Notification {
+  id: string;
+  userId: string;
+  type: NotificationType;
+  title: string;
+  message: string;
+  data?: NotificationData;
+  read: boolean;
+  createdAt: Timestamp;
+  readAt?: Timestamp;
+}
+
+export type NotificationType =
+  | "company_invite" // คำเชิญเข้าบริษัท
+  | "branch_transfer" // แจ้งย้ายสาขา
+  | "role_change" // เปลี่ยน role
+  | "access_approved" // อนุมัติการเข้าถึง
+  | "access_rejected" // ปฏิเสธการเข้าถึง
+  | "system"; // แจ้งเตือนจากระบบ
+
+export interface NotificationData {
+  companyId?: string;
+  companyName?: string;
+  branchId?: string;
+  branchName?: string;
+  fromBranchId?: string;
+  fromBranchName?: string;
+  toBranchId?: string;
+  toBranchName?: string;
+  newRole?: UserRole | string;
+  actionRequired?: boolean;
+  actionType?: "accept" | "reject" | "accept_reject";
+}
 
 // ==================== Company ====================
 
@@ -50,6 +90,7 @@ export interface Branch {
 export interface Product {
   id: string;
   companyId: string;
+  branchId?: string;
   sku: string;
   name: string;
   description?: string;
@@ -137,6 +178,7 @@ export interface CountingHistory {
 // ==================== UI Types ====================
 
 export interface ProductWithAssignment extends Product {
+  productId?: string; // SK-C-250 (field in Firestore document)
   assignment?: UserAssignment;
   status: AssignmentStatus;
   beforeCountQty?: number;
@@ -173,7 +215,7 @@ export interface CountingFormData {
 // ==================== Navigation Types ====================
 
 export type RootStackParamList = {
-  "(auth)": undefined;
+  "(login)": undefined;
   "(app)": undefined;
 };
 

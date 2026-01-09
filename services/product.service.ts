@@ -77,27 +77,73 @@ export const getProductsWithAssignments = async (
   userId: string
 ): Promise<ProductWithAssignment[]> => {
   try {
-    // Get user assignments
-    const assignments = await getUserAssignedProducts(userId);
+    console.log("🔍 Fetching assignments for user:", userId);
 
-    // Get product details
-    const productIds = assignments.map((a) => a.productId);
+    // Get assignments for this user
+    const assignmentsRef = collection(db, "assignments");
+    const q = query(assignmentsRef, where("userId", "==", userId));
+    const assignmentSnapshot = await getDocs(q);
+
+    console.log("📋 Found assignments:", assignmentSnapshot.size);
+
+    if (assignmentSnapshot.empty) {
+      console.log("⚠️ No assignments found for user");
+      return [];
+    }
+
     const products: ProductWithAssignment[] = [];
 
-    for (const assignment of assignments) {
-      const product = await getProductById(assignment.productId);
+    // For each assignment, get the assigned products
+    for (const assignmentDoc of assignmentSnapshot.docs) {
+      const assignment = assignmentDoc.data();
+      const productIds = assignment.productIds || [];
 
-      if (product) {
-        products.push({
-          ...product,
-          assignment,
-          status: assignment.status,
-          beforeCountQty: assignment.beforeCountQty,
-          lastCountedAt: assignment.countedAt,
-        });
+      console.log(
+        `📦 Processing ${productIds.length} products from assignment:`,
+        assignment.assignmentId
+      );
+
+      // Get all products
+      for (const productId of productIds) {
+        try {
+          // Query products by productId field
+          const productsRef = collection(db, "products");
+          const productQuery = query(
+            productsRef,
+            where("productId", "==", productId)
+          );
+          const productSnapshot = await getDocs(productQuery);
+
+          if (!productSnapshot.empty) {
+            const productDoc = productSnapshot.docs[0];
+            const productData = productDoc.data();
+
+            products.push({
+              id: productDoc.id, // Document ID
+              productId: productData.productId, // SK-C-250
+              name: productData.name,
+              sku: productData.productId,
+              barcode: productData.barcode,
+              description: productData.description,
+              category: productData.category,
+              companyId: productData.companyId,
+              branchId: productData.branchId,
+              imageUrl: productData.imageUrl,
+              createdAt: productData.createdAt?.toDate() || new Date(),
+              updatedAt: productData.updatedAt?.toDate() || new Date(),
+              status: "pending", // Default status
+              beforeCountQty: productData.beforeCount || 0,
+            });
+          } else {
+            console.log(`⚠️ Product not found: ${productId}`);
+          }
+        } catch (error) {
+          console.error(`❌ Error fetching product ${productId}:`, error);
+        }
       }
     }
 
+    console.log(`✅ Loaded ${products.length} products with assignments`);
     return products;
   } catch (error) {
     console.error("Error getting products with assignments:", error);
