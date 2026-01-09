@@ -53,20 +53,20 @@ export const getCurrentLocation = async (): Promise<{
 
     // Try to get address, but don't wait too long
     let addressText = `${latitude.toFixed(6)}, ${longitude.toFixed(6)}`;
-    
+
     try {
       // Wrap reverseGeocode in a timeout
       const geocodePromise = Location.reverseGeocodeAsync({
         latitude,
         longitude,
       });
-      
-      const timeoutPromise = new Promise<null>((resolve) => 
+
+      const timeoutPromise = new Promise<null>((resolve) =>
         setTimeout(() => resolve(null), 2000)
       );
-      
+
       const result = await Promise.race([geocodePromise, timeoutPromise]);
-      
+
       if (result && result[0]) {
         const address = result[0];
         const parts = [
