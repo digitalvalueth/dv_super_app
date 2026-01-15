@@ -204,6 +204,37 @@ export default function InboxScreen() {
             | "super_admin") || "employee",
       });
 
+      // Update access_requests status to approved
+      try {
+        const accessRequestRef = doc(db, "access_requests", user.uid);
+        await updateDoc(accessRequestRef, {
+          status: "approved",
+          approvedAt: new Date(),
+          updatedAt: new Date(),
+        });
+      } catch (accessError) {
+        // access_request may not exist, ignore error
+        console.log("No access_request to update:", accessError);
+      }
+
+      // Update invitation status to accepted (for admin tracking)
+      if (notification.data?.invitationId) {
+        try {
+          const invitationRef = doc(
+            db,
+            "invitations",
+            notification.data.invitationId
+          );
+          await updateDoc(invitationRef, {
+            status: "accepted",
+            acceptedAt: new Date(),
+            updatedAt: new Date(),
+          });
+        } catch (inviteError) {
+          console.log("No invitation to update:", inviteError);
+        }
+      }
+
       Alert.alert(
         "สำเร็จ",
         `คุณได้เข้าร่วมสาขา ${notification.data.branchName || ""} แล้ว`,
@@ -225,6 +256,24 @@ export default function InboxScreen() {
         "data.status": "rejected",
         "data.actionRequired": false,
       });
+
+      // Update invitation status to rejected (for admin tracking)
+      if (notification.data?.invitationId) {
+        try {
+          const invitationRef = doc(
+            db,
+            "invitations",
+            notification.data.invitationId
+          );
+          await updateDoc(invitationRef, {
+            status: "rejected",
+            rejectedAt: new Date(),
+            updatedAt: new Date(),
+          });
+        } catch (inviteError) {
+          console.log("No invitation to update:", inviteError);
+        }
+      }
 
       // Update local state
       setNotifications((prev) =>

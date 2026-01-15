@@ -29,6 +29,8 @@ export default function ProductDetailsScreen() {
   const productSKU = params.productSKU as string;
   const productImage = params.productImage as string;
   const beforeQty = params.beforeQty as string;
+  const assignmentId = params.assignmentId as string;
+  const productBarcode = params.productBarcode as string;
 
   useEffect(() => {
     checkPermissions();
@@ -76,6 +78,9 @@ export default function ProductDetailsScreen() {
         productId,
         productName,
         productSKU,
+        productBarcode,
+        assignmentId,
+        beforeQty,
         latitude: location?.coords.latitude,
         longitude: location?.coords.longitude,
       },

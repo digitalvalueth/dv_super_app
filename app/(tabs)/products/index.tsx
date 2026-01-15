@@ -81,14 +81,17 @@ export default function HomeScreen() {
     }
 
     // Navigate to product details
+    // Use productId (product code like SK-CD-136) not document ID
     router.push({
       pathname: "/(tabs)/products/details",
       params: {
-        productId: product.id,
+        productId: product.productId || product.sku || product.id, // Product code (SK-CD-136)
         productName: product.name,
         productSKU: product.sku,
         productImage: product.imageUrl || "",
         beforeQty: product.beforeCountQty?.toString() || "0",
+        assignmentId: product.assignment?.id || "",
+        productBarcode: product.barcode || "",
       },
     });
   };

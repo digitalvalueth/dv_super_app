@@ -98,11 +98,12 @@ export const getProductsWithAssignments = async (
     // For each assignment, get the assigned products
     for (const assignmentDoc of assignmentSnapshot.docs) {
       const assignment = assignmentDoc.data();
+      const assignmentId = assignmentDoc.id; // Get assignment document ID
       const productIds = assignment.productIds || [];
 
       console.log(
         `📦 Processing ${productIds.length} products from assignment:`,
-        assignment.assignmentId
+        assignmentId
       );
 
       // Get all products
@@ -136,6 +137,13 @@ export const getProductsWithAssignments = async (
               updatedAt: productData.updatedAt?.toDate() || new Date(),
               status: "pending", // Default status
               beforeCountQty: productData.beforeCount || 0,
+              // Include assignment info
+              assignment: {
+                id: assignmentId,
+                userId: assignment.userId,
+                productId: productData.productId,
+                status: assignment.status || "pending",
+              } as any,
             });
           } else {
             console.log(`⚠️ Product not found: ${productId}`);
@@ -217,7 +225,9 @@ export const subscribeToProductsWithAssignments = (
       // Process all assignments
       for (const assignmentDoc of snapshot.docs) {
         const assignment = assignmentDoc.data();
+        const assignmentId = assignmentDoc.id; // Get assignment document ID
         const productIds = assignment.productIds || [];
+        const completedProductIds = assignment.completedProductIds || [];
 
         // Get all products for this assignment
         for (const productId of productIds) {
@@ -233,6 +243,9 @@ export const subscribeToProductsWithAssignments = (
               const productDoc = productSnapshot.docs[0];
               const productData = productDoc.data();
 
+              // Check if this product is completed
+              const isCompleted = completedProductIds.includes(productId);
+
               products.push({
                 id: productDoc.id,
                 productId: productData.productId,
@@ -247,8 +260,15 @@ export const subscribeToProductsWithAssignments = (
                 imageUrl: productData.imageUrl,
                 createdAt: productData.createdAt?.toDate() || new Date(),
                 updatedAt: productData.updatedAt?.toDate() || new Date(),
-                status: "pending",
+                status: isCompleted ? "completed" : "pending",
                 beforeCountQty: productData.beforeCount || 0,
+                // Include assignment info
+                assignment: {
+                  id: assignmentId,
+                  userId: assignment.userId,
+                  productId: productData.productId,
+                  status: isCompleted ? "completed" : "pending",
+                } as any,
               });
             }
           } catch (error) {

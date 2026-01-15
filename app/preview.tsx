@@ -32,6 +32,8 @@ export default function PreviewScreen() {
     productId?: string;
     productName?: string;
     productBarcode?: string;
+    assignmentId?: string;
+    beforeQty?: string;
   }>();
 
   const [isProcessing, setIsProcessing] = useState(false);
@@ -98,6 +100,8 @@ export default function PreviewScreen() {
         productId: params.productId,
         productName: params.productName,
         productBarcode: params.productBarcode,
+        assignmentId: params.assignmentId,
+        beforeQty: params.beforeQty,
         watermarkData: params.watermarkData,
       },
     });

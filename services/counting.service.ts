@@ -63,11 +63,12 @@ export const createCountingSession = async (
 
     const docRef = await addDoc(sessionsRef, newSession);
 
-    // Update assignment status
+    // Update assignment - add productId to completedProductIds
     await updateAssignmentStatus(
       data.assignmentId,
       "completed",
-      Timestamp.now()
+      Timestamp.now(),
+      data.productId // Pass productId to track which product is completed
     );
 
     // Add to user's counting history
@@ -89,21 +90,42 @@ export const createCountingSession = async (
 };
 
 /**
- * Update assignment status
+ * Update assignment status - add productId to completedProductIds array
  */
 export const updateAssignmentStatus = async (
   assignmentId: string,
   status: "pending" | "in_progress" | "completed",
-  countedAt?: Timestamp
+  countedAt?: Timestamp,
+  productId?: string
 ): Promise<void> => {
   try {
-    const assignmentRef = doc(db, "userAssignments", assignmentId);
+    const assignmentRef = doc(db, "assignments", assignmentId);
 
-    await updateDoc(assignmentRef, {
-      status,
-      ...(countedAt && { countedAt }),
-      updatedAt: Timestamp.now(),
-    });
+    // If completed and productId provided, add to completedProductIds array
+    if (status === "completed" && productId) {
+      const assignmentDoc = await getDoc(assignmentRef);
+      if (assignmentDoc.exists()) {
+        const currentData = assignmentDoc.data();
+        const completedProductIds = currentData.completedProductIds || [];
+
+        // Add productId if not already in array
+        if (!completedProductIds.includes(productId)) {
+          completedProductIds.push(productId);
+        }
+
+        await updateDoc(assignmentRef, {
+          completedProductIds,
+          ...(countedAt && { countedAt }),
+          updatedAt: Timestamp.now(),
+        });
+      }
+    } else {
+      await updateDoc(assignmentRef, {
+        status,
+        ...(countedAt && { countedAt }),
+        updatedAt: Timestamp.now(),
+      });
+    }
   } catch (error) {
     console.error("Error updating assignment status:", error);
     throw error;

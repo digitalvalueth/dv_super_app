@@ -26,6 +26,8 @@ export default function CameraScreen() {
     productId?: string;
     productName?: string;
     productBarcode?: string;
+    assignmentId?: string;
+    beforeQty?: string;
   }>();
 
   const [permission, requestPermission] = useCameraPermissions();
@@ -73,6 +75,8 @@ export default function CameraScreen() {
           productId: params.productId,
           productName: params.productName,
           productBarcode: params.productBarcode,
+          assignmentId: params.assignmentId,
+          beforeQty: params.beforeQty,
         },
       });
     } catch (error) {
@@ -119,6 +123,8 @@ export default function CameraScreen() {
           productId: params.productId,
           productName: params.productName,
           productBarcode: params.productBarcode,
+          assignmentId: params.assignmentId,
+          beforeQty: params.beforeQty,
         },
       });
     } catch (error) {

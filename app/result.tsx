@@ -1,9 +1,15 @@
+import {
+  createCountingSession,
+  uploadCountingImage,
+} from "@/services/counting.service";
+import { useAuthStore } from "@/stores/auth.store";
 import { useTheme } from "@/stores/theme.store";
 import { formatTimestamp, WatermarkData } from "@/utils/watermark";
 import { Ionicons } from "@expo/vector-icons";
 import { router, useLocalSearchParams } from "expo-router";
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import {
+  ActivityIndicator,
   Alert,
   Dimensions,
   Image,
@@ -19,6 +25,8 @@ const { width: SCREEN_WIDTH } = Dimensions.get("window");
 
 export default function ResultScreen() {
   const { colors } = useTheme();
+  const user = useAuthStore((state) => state.user);
+  const [isSaving, setIsSaving] = useState(false);
   const params = useLocalSearchParams<{
     imageUri: string;
     barcodeCount: string;
@@ -27,10 +35,14 @@ export default function ResultScreen() {
     productName?: string;
     productBarcode?: string;
     watermarkData?: string;
+    assignmentId?: string;
+    beforeQty?: string;
   }>();
 
   const barcodeCount = parseInt(params.barcodeCount || "0", 10);
   const processingTime = parseInt(params.processingTime || "0", 10);
+  const beforeQty = parseInt(params.beforeQty || "0", 10);
+  const variance = beforeQty - barcodeCount;
 
   const watermarkData: WatermarkData | null = useMemo(() => {
     try {
@@ -40,18 +52,99 @@ export default function ResultScreen() {
     }
   }, [params.watermarkData]);
 
-  const handleSave = () => {
-    // TODO: Save result to Firestore
-    Alert.alert(
-      "บันทึกสำเร็จ",
-      `บันทึกผลการนับ ${barcodeCount} รายการเรียบร้อยแล้ว`,
-      [
-        {
-          text: "ตกลง",
-          onPress: () => router.replace("/(tabs)/products"),
-        },
-      ]
-    );
+  const handleSave = async () => {
+    if (!user?.uid) {
+      Alert.alert("เกิดข้อผิดพลาด", "กรุณาเข้าสู่ระบบก่อน");
+      return;
+    }
+
+    if (!params.productId || !params.assignmentId) {
+      Alert.alert("เกิดข้อผิดพลาด", "ไม่พบข้อมูลสินค้าหรือ assignment");
+      return;
+    }
+
+    try {
+      setIsSaving(true);
+
+      // 1. Generate session ID first
+      const sessionId = `session_${Date.now()}`;
+
+      // 2. Upload image to Firebase Storage
+      let imageUrl = "";
+      if (params.imageUri) {
+        imageUrl = await uploadCountingImage(
+          user.uid,
+          sessionId,
+          params.imageUri
+        );
+      }
+
+      // 3. Create counting session in Firestore
+      await createCountingSession({
+        assignmentId: params.assignmentId,
+        userId: user.uid,
+        productId: params.productId,
+        companyId: user.companyId || "",
+        branchId: user.branchId || "",
+        beforeCountQty: beforeQty,
+        currentCountQty: barcodeCount,
+        variance: variance,
+        imageUrl: imageUrl,
+        aiConfidence: 0.95, // TODO: Get actual confidence from AI
+        aiModel: "gemini-2.5-flash",
+        processingTime: processingTime,
+        deviceInfo: watermarkData?.deviceModel || "",
+        appVersion: "1.0.0",
+        // Additional fields for admin-web
+        userName: user.name || "",
+        userEmail: user.email || "",
+        branchName: user.branchName || "",
+        productName: params.productName || "",
+        productSKU: params.productBarcode || params.productId || "",
+        imageURL: imageUrl, // Alias for admin-web
+        aiCount: barcodeCount,
+        manualCount: barcodeCount,
+        finalCount: barcodeCount,
+        standardCount: beforeQty,
+        discrepancy: Math.abs(variance),
+        status: "pending", // Pending admin approval
+        // Metadata for anti-fraud
+        ...(watermarkData && {
+          remarks: JSON.stringify({
+            location: watermarkData.location,
+            coordinates: watermarkData.coordinates,
+            timestamp: watermarkData.timestamp,
+            employeeName: watermarkData.employeeName,
+            employeeId: watermarkData.employeeId,
+          }),
+        }),
+      });
+
+      Alert.alert(
+        "บันทึกสำเร็จ",
+        `บันทึกผลการนับ ${barcodeCount} รายการเรียบร้อยแล้ว\n\n${
+          variance !== 0
+            ? `ผลต่าง: ${variance > 0 ? "+" : ""}${variance} (${
+                variance > 0 ? "ขาด" : "เกิน"
+              })`
+            : "จำนวนตรงกัน ✓"
+        }`,
+        [
+          {
+            text: "ตกลง",
+            onPress: () => router.replace("/(tabs)/products"),
+          },
+        ]
+      );
+    } catch (error) {
+      console.error("Error saving counting result:", error);
+      Alert.alert(
+        "เกิดข้อผิดพลาด",
+        "ไม่สามารถบันทึกข้อมูลได้ กรุณาลองใหม่อีกครั้ง"
+      );
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   const handleRetake = () => {
@@ -251,13 +344,18 @@ export default function ResultScreen() {
           style={[
             styles.actionButton,
             styles.saveButton,
-            { backgroundColor: "#10b981" },
+            { backgroundColor: isSaving ? "#9ca3af" : "#10b981" },
           ]}
           onPress={handleSave}
+          disabled={isSaving}
         >
-          <Ionicons name="save-outline" size={20} color="#fff" />
+          {isSaving ? (
+            <ActivityIndicator size="small" color="#fff" />
+          ) : (
+            <Ionicons name="save-outline" size={20} color="#fff" />
+          )}
           <Text style={[styles.actionButtonText, { color: "#fff" }]}>
-            บันทึกผล
+            {isSaving ? "กำลังบันทึก..." : "บันทึกผล"}
           </Text>
         </TouchableOpacity>
       </View>
