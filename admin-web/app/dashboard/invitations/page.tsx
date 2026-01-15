@@ -127,7 +127,7 @@ export default function InvitationsPage() {
         role: formData.role,
         branchId: formData.branchId || null,
         invitedBy: userData.id,
-        invitedByName: userData.displayName,
+        invitedByName: userData.name,
         status: "pending",
         createdAt: serverTimestamp(),
         expiresAt,

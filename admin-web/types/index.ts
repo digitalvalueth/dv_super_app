@@ -1,15 +1,31 @@
 // User Types
 export interface User {
   id: string;
+  uid: string;
   email: string;
-  displayName: string;
+  name: string; // เปลี่ยนจาก displayName
   role: "admin" | "manager" | "staff";
   companyId: string;
+  companyCode: string;
+  companyName: string;
   branchId?: string;
+  branchCode?: string;
+  branchName?: string;
   photoURL?: string;
   status: "pending" | "active" | "inactive";
   createdAt: Date;
-  lastLoginAt?: Date;
+  updatedAt: Date;
+}
+
+// Login Log
+export interface LoginLog {
+  id: string;
+  userId: string;
+  email: string;
+  name: string;
+  loginAt: Date;
+  deviceInfo?: string;
+  ipAddress?: string;
 }
 
 // Company & Branch

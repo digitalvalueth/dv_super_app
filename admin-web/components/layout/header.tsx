@@ -29,7 +29,7 @@ export function Header() {
     <header className="bg-white border-b border-gray-200 h-16 flex items-center justify-between px-6">
       <div>
         <h2 className="text-lg font-semibold text-gray-900">
-          ยินดีต้อนรับ, {userData?.displayName || "Admin"}
+          ยินดีต้อนรับ, {userData?.name || "Admin"}
         </h2>
         <p className="text-sm text-gray-600">{userData?.email}</p>
       </div>
@@ -46,7 +46,7 @@ export function Header() {
             className="flex items-center gap-2 p-2 hover:bg-gray-100 rounded-lg"
           >
             <div className="w-8 h-8 bg-blue-600 rounded-full flex items-center justify-center text-white font-semibold">
-              {userData?.displayName?.[0] || "A"}
+              {userData?.name?.[0] || "A"}
             </div>
           </button>
 
@@ -54,7 +54,7 @@ export function Header() {
             <div className="absolute right-0 mt-2 w-48 bg-white rounded-lg shadow-lg border border-gray-200 py-2 z-50">
               <div className="px-4 py-2 border-b border-gray-200">
                 <p className="text-sm font-semibold text-gray-900">
-                  {userData?.displayName}
+                  {userData?.name}
                 </p>
                 <p className="text-xs text-gray-600">{userData?.role}</p>
               </div>

@@ -1,8 +1,6 @@
 import type { NextConfig } from "next";
-import { join } from "path";
 
 const nextConfig: NextConfig = {
-  /* config options here */
   reactCompiler: true,
   images: {
     remotePatterns: [
@@ -11,11 +9,6 @@ const nextConfig: NextConfig = {
         hostname: "firebasestorage.googleapis.com",
       },
     ],
-  },
-  experimental: {
-    turbo: {
-      root: join(__dirname),
-    },
   },
 };
 
