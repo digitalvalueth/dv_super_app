@@ -35,7 +35,7 @@ export default function PendingApprovalPage() {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-50 to-indigo-100">
+    <div className="min-h-screen flex items-center justify-center bg-linear-to-br from-blue-50 to-indigo-100">
       <div className="bg-white p-8 rounded-2xl shadow-xl max-w-md w-full text-center">
         <div className="mb-6">
           <div className="w-20 h-20 bg-yellow-100 rounded-full flex items-center justify-center mx-auto mb-4">

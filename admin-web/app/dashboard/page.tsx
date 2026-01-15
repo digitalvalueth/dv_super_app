@@ -123,74 +123,82 @@ export default function DashboardPage() {
     return (
       <div className="flex items-center justify-center h-full">
         <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto"></div>
-          <p className="mt-4 text-gray-600">กำลังโหลดข้อมูล...</p>
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 dark:border-blue-400 mx-auto"></div>
+          <p className="mt-4 text-gray-600 dark:text-gray-400">
+            กำลังโหลดข้อมูล...
+          </p>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4 lg:space-y-6">
       <div>
-        <h1 className="text-3xl font-bold text-gray-900">แดชบอร์ด</h1>
-        <p className="text-gray-600 mt-1">ภาพรวมระบบนับสินค้า Super Fitt</p>
+        <h1 className="text-2xl lg:text-3xl font-bold text-gray-900 dark:text-white">
+          แดชบอร์ด
+        </h1>
+        <p className="text-gray-600 dark:text-gray-400 mt-1">
+          ภาพรวมระบบนับสินค้า Super Fitt
+        </p>
       </div>
 
       {/* Stats Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 lg:gap-6">
         <StatCard
           title="ผู้ใช้งานทั้งหมด"
           value={stats?.totalUsers || 0}
-          icon={<Users className="w-6 h-6" />}
+          icon={<Users className="w-5 h-5 lg:w-6 lg:h-6" />}
           color="bg-blue-500"
         />
         <StatCard
           title="สาขาทั้งหมด"
           value={stats?.totalBranches || 0}
-          icon={<Building2 className="w-6 h-6" />}
+          icon={<Building2 className="w-5 h-5 lg:w-6 lg:h-6" />}
           color="bg-green-500"
         />
         <StatCard
           title="สินค้าทั้งหมด"
           value={stats?.totalProducts || 0}
-          icon={<Package className="w-6 h-6" />}
+          icon={<Package className="w-5 h-5 lg:w-6 lg:h-6" />}
           color="bg-purple-500"
         />
         <StatCard
           title="การนับทั้งหมด"
           value={stats?.totalSessions || 0}
-          icon={<BarChart3 className="w-6 h-6" />}
+          icon={<BarChart3 className="w-5 h-5 lg:w-6 lg:h-6" />}
           color="bg-orange-500"
         />
       </div>
 
       {/* Alert Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        <div className="bg-red-50 border border-red-200 rounded-xl p-6">
-          <div className="flex items-center gap-4">
-            <div className="p-3 bg-red-500 rounded-lg text-white">
-              <AlertTriangle className="w-6 h-6" />
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 lg:gap-6">
+        <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-xl p-4 lg:p-6">
+          <div className="flex items-center gap-3 lg:gap-4">
+            <div className="p-2 lg:p-3 bg-red-500 rounded-lg text-white shrink-0">
+              <AlertTriangle className="w-5 h-5 lg:w-6 lg:h-6" />
             </div>
             <div>
-              <h3 className="text-lg font-semibold text-red-900">ของหายรวม</h3>
-              <p className="text-3xl font-bold text-red-600 mt-1">
+              <h3 className="text-base lg:text-lg font-semibold text-red-900 dark:text-red-100">
+                ของหายรวม
+              </h3>
+              <p className="text-2xl lg:text-3xl font-bold text-red-600 dark:text-red-400 mt-1">
                 {stats?.totalDiscrepancy || 0} ชิ้น
               </p>
             </div>
           </div>
         </div>
 
-        <div className="bg-yellow-50 border border-yellow-200 rounded-xl p-6">
-          <div className="flex items-center gap-4">
-            <div className="p-3 bg-yellow-500 rounded-lg text-white">
-              <TrendingUp className="w-6 h-6" />
+        <div className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-xl p-4 lg:p-6">
+          <div className="flex items-center gap-3 lg:gap-4">
+            <div className="p-2 lg:p-3 bg-yellow-500 rounded-lg text-white shrink-0">
+              <TrendingUp className="w-5 h-5 lg:w-6 lg:h-6" />
             </div>
             <div>
-              <h3 className="text-lg font-semibold text-yellow-900">
+              <h3 className="text-base lg:text-lg font-semibold text-yellow-900 dark:text-yellow-100">
                 รอตรวจสอบ
               </h3>
-              <p className="text-3xl font-bold text-yellow-600 mt-1">
+              <p className="text-2xl lg:text-3xl font-bold text-yellow-600 dark:text-yellow-400 mt-1">
                 {stats?.pendingSessions || 0} รายการ
               </p>
             </div>
@@ -199,68 +207,75 @@ export default function DashboardPage() {
       </div>
 
       {/* Recent Sessions */}
-      <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
-        <div className="p-6 border-b border-gray-200">
-          <h2 className="text-xl font-semibold text-gray-900">การนับล่าสุด</h2>
+      <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden">
+        <div className="p-4 lg:p-6 border-b border-gray-200 dark:border-gray-700">
+          <h2 className="text-lg lg:text-xl font-semibold text-gray-900 dark:text-white">
+            การนับล่าสุด
+          </h2>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full">
-            <thead className="bg-gray-50">
+            <thead className="bg-gray-50 dark:bg-gray-700">
               <tr>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <th className="px-3 lg:px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
                   วันที่
                 </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <th className="px-3 lg:px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
                   ผู้นับ
                 </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <th className="hidden lg:table-cell px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
                   สาขา
                 </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <th className="px-3 lg:px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
                   สินค้า
                 </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <th className="hidden sm:table-cell px-3 lg:px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
                   จำนวนนับ
                 </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <th className="px-3 lg:px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
                   ส่วนต่าง
                 </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <th className="hidden md:table-cell px-3 lg:px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
                   สถานะ
                 </th>
               </tr>
             </thead>
-            <tbody className="bg-white divide-y divide-gray-200">
+            <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
               {stats?.recentSessions.map((session) => (
-                <tr key={session.id} className="hover:bg-gray-50">
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                <tr
+                  key={session.id}
+                  className="hover:bg-gray-50 dark:hover:bg-gray-700"
+                >
+                  <td className="px-3 lg:px-6 py-4 whitespace-nowrap text-xs lg:text-sm text-gray-900 dark:text-gray-100">
                     {session.createdAt
                       ? format(session.createdAt, "dd MMM yyyy HH:mm", {
                           locale: th,
                         })
                       : "-"}
                   </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                  <td className="px-3 lg:px-6 py-4 whitespace-nowrap text-xs lg:text-sm text-gray-900 dark:text-gray-100">
                     {session.userName}
                   </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                  <td className="hidden lg:table-cell px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-gray-100">
                     {session.branchName}
                   </td>
-                  <td className="px-6 py-4 text-sm text-gray-900">
-                    <div>{session.productName}</div>
-                    <div className="text-xs text-gray-500">
+                  <td className="px-3 lg:px-6 py-4 text-xs lg:text-sm text-gray-900 dark:text-gray-100">
+                    <div className="max-w-37.5 lg:max-w-none truncate">
+                      {session.productName}
+                    </div>
+                    <div className="text-xs text-gray-500 dark:text-gray-400">
                       {session.productSKU}
                     </div>
                   </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                  <td className="hidden sm:table-cell px-3 lg:px-6 py-4 whitespace-nowrap text-xs lg:text-sm text-gray-900 dark:text-gray-100">
                     {session.finalCount}
                   </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm">
+                  <td className="px-3 lg:px-6 py-4 whitespace-nowrap text-xs lg:text-sm">
                     <span
                       className={`font-semibold ${
                         session.discrepancy > 0
-                          ? "text-red-600"
-                          : "text-green-600"
+                          ? "text-red-600 dark:text-red-400"
+                          : "text-green-600 dark:text-green-400"
                       }`}
                     >
                       {session.discrepancy > 0
@@ -268,7 +283,7 @@ export default function DashboardPage() {
                         : "0"}
                     </span>
                   </td>
-                  <td className="px-6 py-4 whitespace-nowrap">
+                  <td className="hidden md:table-cell px-3 lg:px-6 py-4 whitespace-nowrap">
                     <StatusBadge status={session.status} />
                   </td>
                 </tr>
@@ -293,13 +308,21 @@ function StatCard({
   color: string;
 }) {
   return (
-    <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+    <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-4 lg:p-6">
       <div className="flex items-center justify-between">
-        <div>
-          <p className="text-sm text-gray-600">{title}</p>
-          <p className="text-3xl font-bold text-gray-900 mt-2">{value}</p>
+        <div className="flex-1 min-w-0">
+          <p className="text-xs lg:text-sm text-gray-600 dark:text-gray-400 truncate">
+            {title}
+          </p>
+          <p className="text-xl lg:text-3xl font-bold text-gray-900 dark:text-white mt-1 lg:mt-2">
+            {value}
+          </p>
         </div>
-        <div className={`${color} p-3 rounded-lg text-white`}>{icon}</div>
+        <div
+          className={`${color} p-2 lg:p-3 rounded-lg text-white shrink-0 ml-2`}
+        >
+          {icon}
+        </div>
       </div>
     </div>
   );
