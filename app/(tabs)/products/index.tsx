@@ -1,4 +1,4 @@
-import { getProductsWithAssignments } from "@/services/product.service";
+import { subscribeToProductsWithAssignments } from "@/services/product.service";
 import { useAuthStore } from "@/stores/auth.store";
 import { useProductStore } from "@/stores/product.store";
 import { useTheme } from "@/stores/theme.store";
@@ -27,31 +27,40 @@ export default function HomeScreen() {
     "all" | "pending" | "in_progress" | "completed"
   >("all");
 
+  // Setup realtime listener for products
   useEffect(() => {
-    loadProducts();
-  }, [user]);
+    if (!user?.uid) return;
 
-  const loadProducts = async () => {
-    if (!user) return;
+    console.log("🔔 Setting up realtime products listener...");
+    setLoading(true);
 
-    try {
-      setLoading(true);
-      const productsWithAssignments = await getProductsWithAssignments(
-        user.uid
-      );
-      setProducts(productsWithAssignments);
-    } catch (error) {
-      console.error("Error loading products:", error);
-      alert("ไม่สามารถโหลดรายการสินค้าได้");
-    } finally {
-      setLoading(false);
-      setRefreshing(false);
-    }
-  };
+    const unsubscribe = subscribeToProductsWithAssignments(
+      user.uid,
+      (productsData) => {
+        console.log(`✅ Products updated: ${productsData.length} items`);
+        setProducts(productsData);
+        setLoading(false);
+        setRefreshing(false);
+      },
+      (error) => {
+        console.error("❌ Products listener error:", error);
+        setLoading(false);
+        setRefreshing(false);
+      }
+    );
+
+    // Cleanup on unmount
+    return () => {
+      console.log("🚧 Cleaning up products listener");
+      unsubscribe();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user?.uid]);
 
   const handleRefresh = () => {
     setRefreshing(true);
-    loadProducts();
+    // Realtime listener will automatically update
+    setTimeout(() => setRefreshing(false), 500);
   };
 
   const handleProductPress = (product: ProductWithAssignment) => {

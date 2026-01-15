@@ -7,7 +7,7 @@ import { router } from "expo-router";
 import {
   collection,
   doc,
-  getDocs,
+  onSnapshot,
   orderBy,
   query,
   updateDoc,
@@ -35,40 +35,49 @@ export default function InboxScreen() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
-  const loadNotifications = useCallback(async () => {
+  // Setup realtime listener for notifications
+  useEffect(() => {
     if (!user) return;
 
-    try {
-      const notificationsRef = collection(db, "notifications");
-      const q = query(
-        notificationsRef,
-        where("userId", "==", user.uid),
-        orderBy("createdAt", "desc")
-      );
-      const snapshot = await getDocs(q);
+    console.log("🔔 Setting up realtime notifications listener...");
 
-      const data = snapshot.docs.map((doc) => ({
-        id: doc.id,
-        ...doc.data(),
-      })) as Notification[];
+    const notificationsRef = collection(db, "notifications");
+    const q = query(
+      notificationsRef,
+      where("userId", "==", user.uid),
+      orderBy("createdAt", "desc")
+    );
 
-      setNotifications(data);
-    } catch (error) {
-      console.error("Error loading notifications:", error);
-    } finally {
-      setLoading(false);
-      setRefreshing(false);
-    }
+    const unsubscribe = onSnapshot(
+      q,
+      (snapshot) => {
+        const data = snapshot.docs.map((doc) => ({
+          id: doc.id,
+          ...doc.data(),
+        })) as Notification[];
+
+        console.log(`✅ Notifications updated: ${data.length} items`);
+        setNotifications(data);
+        setLoading(false);
+      },
+      (error) => {
+        console.error("❌ Error in notifications listener:", error);
+        setLoading(false);
+      }
+    );
+
+    // Cleanup listener on unmount
+    return () => {
+      console.log("🚧 Cleaning up notifications listener");
+      unsubscribe();
+    };
   }, [user]);
-
-  useEffect(() => {
-    loadNotifications();
-  }, [loadNotifications]);
 
   const onRefresh = useCallback(() => {
     setRefreshing(true);
-    loadNotifications();
-  }, [loadNotifications]);
+    // Notifications are realtime, just stop loading indicator
+    setTimeout(() => setRefreshing(false), 500);
+  }, []);
 
   const markAsRead = async (notificationId: string) => {
     try {

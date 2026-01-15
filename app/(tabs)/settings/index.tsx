@@ -4,7 +4,14 @@ import { useAuthStore } from "@/stores/auth.store";
 import { ThemeMode, useTheme, useThemeStore } from "@/stores/theme.store";
 import { Ionicons } from "@expo/vector-icons";
 import { router, useFocusEffect } from "expo-router";
-import { collection, getDocs, query, where } from "firebase/firestore";
+import {
+  collection,
+  doc,
+  getDoc,
+  getDocs,
+  query,
+  where,
+} from "firebase/firestore";
 import React, { useCallback, useState } from "react";
 import {
   Alert,
@@ -40,6 +47,49 @@ export default function ProfileScreen() {
   const { colors, isDark, mode } = useTheme();
   const setMode = useThemeStore((state) => state.setMode);
   const [unreadCount, setUnreadCount] = useState(0);
+  const [companyName, setCompanyName] = useState<string>("");
+  const [branchName, setBranchName] = useState<string>("");
+
+  // Load company and branch names
+  useFocusEffect(
+    useCallback(() => {
+      const loadNames = async () => {
+        if (!user) return;
+
+        // Load company name if not in user object
+        if (user.companyId && !user.companyName) {
+          try {
+            const companyDoc = await getDoc(
+              doc(db, "companies", user.companyId)
+            );
+            if (companyDoc.exists()) {
+              setCompanyName(companyDoc.data().name || "");
+            }
+          } catch (error) {
+            console.error("Error loading company name:", error);
+          }
+        } else {
+          setCompanyName(user.companyName || "");
+        }
+
+        // Load branch name if not in user object
+        if (user.branchId && !user.branchName) {
+          try {
+            const branchDoc = await getDoc(doc(db, "branches", user.branchId));
+            if (branchDoc.exists()) {
+              setBranchName(branchDoc.data().name || "");
+            }
+          } catch (error) {
+            console.error("Error loading branch name:", error);
+          }
+        } else {
+          setBranchName(user.branchName || "");
+        }
+      };
+
+      loadNames();
+    }, [user])
+  );
 
   // Load unread notifications count
   useFocusEffect(
@@ -287,7 +337,7 @@ export default function ProfileScreen() {
               >
                 <Ionicons name="business" size={14} color="#10b981" />
                 <Text style={[styles.infoBadgeText, { color: "#10b981" }]}>
-                  {user?.companyName || user?.companyCode || user?.companyId}
+                  {companyName || user?.companyCode || user?.companyId}
                 </Text>
               </View>
 
@@ -300,7 +350,7 @@ export default function ProfileScreen() {
                 >
                   <Ionicons name="location" size={14} color="#f59e0b" />
                   <Text style={[styles.infoBadgeText, { color: "#f59e0b" }]}>
-                    {user?.branchName || user?.branchCode || user?.branchId}
+                    {branchName || user?.branchCode || user?.branchId}
                   </Text>
                 </View>
               )}

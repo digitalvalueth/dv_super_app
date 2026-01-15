@@ -5,8 +5,10 @@ import {
   doc,
   getDoc,
   getDocs,
+  onSnapshot,
   orderBy,
   query,
+  Unsubscribe,
   where,
 } from "firebase/firestore";
 
@@ -124,6 +126,7 @@ export const getProductsWithAssignments = async (
               name: productData.name,
               sku: productData.productId,
               barcode: productData.barcode,
+              sellerCode: productData.sellerCode || "",
               description: productData.description,
               category: productData.category,
               companyId: productData.companyId,
@@ -182,4 +185,86 @@ export const searchProducts = async (
     console.error("Error searching products:", error);
     throw error;
   }
+};
+
+/**
+ * Setup realtime listener for products with assignments
+ * Returns unsubscribe function
+ */
+export const subscribeToProductsWithAssignments = (
+  userId: string,
+  onUpdate: (products: ProductWithAssignment[]) => void,
+  onError?: (error: Error) => void
+): Unsubscribe => {
+  console.log("🔔 Setting up realtime products listener for user:", userId);
+
+  const assignmentsRef = collection(db, "assignments");
+  const q = query(assignmentsRef, where("userId", "==", userId));
+
+  const unsubscribe = onSnapshot(
+    q,
+    async (snapshot) => {
+      console.log(`📋 Assignments updated: ${snapshot.size} items`);
+
+      if (snapshot.empty) {
+        console.log("⚠️ No assignments found");
+        onUpdate([]);
+        return;
+      }
+
+      const products: ProductWithAssignment[] = [];
+
+      // Process all assignments
+      for (const assignmentDoc of snapshot.docs) {
+        const assignment = assignmentDoc.data();
+        const productIds = assignment.productIds || [];
+
+        // Get all products for this assignment
+        for (const productId of productIds) {
+          try {
+            const productsRef = collection(db, "products");
+            const productQuery = query(
+              productsRef,
+              where("productId", "==", productId)
+            );
+            const productSnapshot = await getDocs(productQuery);
+
+            if (!productSnapshot.empty) {
+              const productDoc = productSnapshot.docs[0];
+              const productData = productDoc.data();
+
+              products.push({
+                id: productDoc.id,
+                productId: productData.productId,
+                name: productData.name,
+                sku: productData.productId,
+                barcode: productData.barcode,
+                sellerCode: productData.sellerCode || "",
+                description: productData.description,
+                category: productData.category,
+                companyId: productData.companyId,
+                branchId: productData.branchId,
+                imageUrl: productData.imageUrl,
+                createdAt: productData.createdAt?.toDate() || new Date(),
+                updatedAt: productData.updatedAt?.toDate() || new Date(),
+                status: "pending",
+                beforeCountQty: productData.beforeCount || 0,
+              });
+            }
+          } catch (error) {
+            console.error(`❌ Error fetching product ${productId}:`, error);
+          }
+        }
+      }
+
+      console.log(`✅ Loaded ${products.length} products with assignments`);
+      onUpdate(products);
+    },
+    (error) => {
+      console.error("❌ Error in products listener:", error);
+      if (onError) onError(error);
+    }
+  );
+
+  return unsubscribe;
 };
