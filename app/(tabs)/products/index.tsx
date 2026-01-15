@@ -229,6 +229,86 @@ export default function HomeScreen() {
     </TouchableOpacity>
   );
 
+  // Show message for users without company/branch
+  if (!user?.companyId || !user?.branchId) {
+    return (
+      <SafeAreaView
+        style={[styles.safeArea, { backgroundColor: colors.card }]}
+        edges={["top"]}
+      >
+        <StatusBar
+          barStyle={isDark ? "light-content" : "dark-content"}
+          backgroundColor={colors.card}
+        />
+        <View
+          style={[
+            styles.header,
+            { backgroundColor: colors.card, borderBottomColor: colors.border },
+          ]}
+        >
+          <Text style={[styles.headerTitle, { color: colors.text }]}>
+            รายการสินค้า
+          </Text>
+        </View>
+        <View style={[styles.centered, { backgroundColor: colors.background }]}>
+          <View
+            style={[
+              styles.noBranchIcon,
+              { backgroundColor: colors.primary + "15" },
+            ]}
+          >
+            <Ionicons
+              name="business-outline"
+              size={60}
+              color={colors.primary}
+            />
+          </View>
+          <Text style={[styles.noBranchTitle, { color: colors.text }]}>
+            ยังไม่มีสาขา
+          </Text>
+          <Text
+            style={[
+              styles.noBranchDescription,
+              { color: colors.textSecondary },
+            ]}
+          >
+            คุณยังไม่ได้เป็นสมาชิกของสาขาใดๆ{"\n"}
+            กรุณารอคำเชิญจากผู้ดูแลระบบ
+          </Text>
+
+          {/* Check Inbox Button */}
+          <TouchableOpacity
+            style={[
+              styles.checkInboxButton,
+              { backgroundColor: colors.primary },
+            ]}
+            onPress={() => router.push("/(tabs)/settings/inbox")}
+          >
+            <Ionicons name="mail-outline" size={20} color="#fff" />
+            <Text style={styles.checkInboxText}>ตรวจสอบข้อความ</Text>
+          </TouchableOpacity>
+
+          <View
+            style={[
+              styles.infoCard,
+              { backgroundColor: colors.card, borderColor: colors.border },
+            ]}
+          >
+            <Ionicons
+              name="information-circle"
+              size={20}
+              color={colors.primary}
+            />
+            <Text style={[styles.infoText, { color: colors.textSecondary }]}>
+              เมื่อได้รับคำเชิญ คุณจะเห็นในหน้า &quot;ข้อความ&quot;{"\n"}
+              สามารถยอมรับหรือปฏิเสธได้ที่นั่น
+            </Text>
+          </View>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
   if (loading && products.length === 0) {
     return (
       <SafeAreaView
@@ -509,5 +589,55 @@ const styles = StyleSheet.create({
     fontWeight: "600",
     textAlign: "center",
     paddingVertical: 4,
+  },
+
+  // No Branch State
+  noBranchIcon: {
+    width: 120,
+    height: 120,
+    borderRadius: 60,
+    justifyContent: "center",
+    alignItems: "center",
+    marginBottom: 24,
+  },
+  noBranchTitle: {
+    fontSize: 22,
+    fontWeight: "700",
+    marginBottom: 12,
+  },
+  noBranchDescription: {
+    fontSize: 15,
+    textAlign: "center",
+    lineHeight: 22,
+    marginBottom: 24,
+    paddingHorizontal: 20,
+  },
+  checkInboxButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    paddingHorizontal: 24,
+    paddingVertical: 14,
+    borderRadius: 12,
+    marginBottom: 24,
+  },
+  checkInboxText: {
+    color: "#fff",
+    fontSize: 16,
+    fontWeight: "600",
+  },
+  infoCard: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 12,
+    padding: 16,
+    borderRadius: 12,
+    borderWidth: 1,
+    marginHorizontal: 20,
+  },
+  infoText: {
+    flex: 1,
+    fontSize: 13,
+    lineHeight: 20,
   },
 });

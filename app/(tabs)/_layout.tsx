@@ -18,10 +18,10 @@ export default function TabLayout() {
     return <Redirect href="/(login)" />;
   }
 
-  // If user doesn't have company/branch assigned, redirect to pending approval
+  // Allow users without company/branch to enter tabs
+  // They will see a message to check notifications for invitations
   if (!loading && user && (!user.companyId || !user.branchId)) {
-    console.log("🚀 TabLayout - Redirecting to /pending-approval");
-    return <Redirect href="/pending-approval" />;
+    console.log("📍 TabLayout - User without company/branch, allowing access");
   }
 
   console.log("✅ TabLayout - Showing tabs");

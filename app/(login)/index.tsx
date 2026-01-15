@@ -73,15 +73,6 @@ export default function LoginScreen() {
         console.log("✅ Firebase Auth Success:", user.email);
         setUser(user);
 
-        // Check if user has company/branch assigned
-        if (!user.companyId || !user.branchId) {
-          console.log(
-            "⚠️ User needs approval, redirecting to pending-approval"
-          );
-          router.replace("/pending-approval");
-          return;
-        }
-
         // Check if onboarding is completed
         const onboardingCompleted = await AsyncStorage.getItem(
           "onboarding_completed"

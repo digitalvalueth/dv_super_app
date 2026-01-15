@@ -54,8 +54,11 @@ export interface NotificationData {
   toBranchId?: string;
   toBranchName?: string;
   newRole?: UserRole | string;
+  role?: string;
   actionRequired?: boolean;
   actionType?: "accept" | "reject" | "accept_reject";
+  status?: "accepted" | "rejected" | "pending";
+  invitationId?: string;
 }
 
 // ==================== Company ====================

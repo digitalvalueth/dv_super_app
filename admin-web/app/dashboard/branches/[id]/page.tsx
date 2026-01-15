@@ -26,17 +26,21 @@ import {
   ClipboardList,
   Edit,
   Loader2,
+  Mail,
   MapPin,
   Minus,
   Package,
   Phone,
   Plus,
   Search,
+  Send,
   Trash2,
   User as UserIcon,
+  UserPlus,
   Users,
   X,
 } from "lucide-react";
+import Image from "next/image";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
@@ -78,6 +82,12 @@ export default function BranchDetailPage() {
     string | null
   >(null);
 
+  // Invite modal state
+  const [showInviteModal, setShowInviteModal] = useState(false);
+  const [inviteEmail, setInviteEmail] = useState("");
+  const [inviteRole, setInviteRole] = useState<string>("employee");
+  const [sendingInvite, setSendingInvite] = useState(false);
+
   useEffect(() => {
     if (!branchId || !userData) return;
     fetchData();
@@ -97,9 +107,22 @@ export default function BranchDetailPage() {
       }
 
       const branchData = branchDoc.data();
+
+      // Fetch company name
+      let companyName = "";
+      if (branchData.companyId) {
+        const companyDoc = await getDoc(
+          doc(db, "companies", branchData.companyId)
+        );
+        if (companyDoc.exists()) {
+          companyName = companyDoc.data().name || "";
+        }
+      }
+
       setBranch({
         id: branchDoc.id,
         companyId: branchData.companyId,
+        companyName: companyName,
         name: branchData.name,
         code: branchData.code,
         address: branchData.address,
@@ -405,6 +428,126 @@ export default function BranchDetailPage() {
     }
   };
 
+  // ==================== Invite Employee ====================
+  const handleSendInvite = async () => {
+    if (!inviteEmail.trim()) {
+      toast.error("กรุณากรอกอีเมล");
+      return;
+    }
+
+    if (!branch) return;
+
+    // Validate email format
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(inviteEmail)) {
+      toast.error("รูปแบบอีเมลไม่ถูกต้อง");
+      return;
+    }
+
+    setSendingInvite(true);
+
+    try {
+      // Check if user already exists
+      const usersQuery = query(
+        collection(db, "users"),
+        where("email", "==", inviteEmail.toLowerCase().trim())
+      );
+      const usersSnapshot = await getDocs(usersQuery);
+
+      let targetUserId: string | null = null;
+
+      if (!usersSnapshot.empty) {
+        // User exists - check if already in this branch
+        const existingUser = usersSnapshot.docs[0];
+        const existingUserData = existingUser.data();
+
+        if (existingUserData.branchId === branchId) {
+          toast.error("ผู้ใช้นี้อยู่ในสาขานี้แล้ว");
+          setSendingInvite(false);
+          return;
+        }
+
+        // Use uid field (Firebase Auth UID) for notifications
+        targetUserId = existingUserData.uid || existingUser.id;
+      }
+
+      // Create invitation record
+      const invitationData = {
+        email: inviteEmail.toLowerCase().trim(),
+        companyId: branch.companyId,
+        branchId: branch.id,
+        branchName: branch.name,
+        role: inviteRole,
+        status: "pending",
+        invitedBy: userData?.id || "",
+        invitedByName: userData?.displayName || userData?.email || "",
+        targetUserId: targetUserId, // null if user doesn't exist yet
+        createdAt: serverTimestamp(),
+        expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), // 7 days
+      };
+
+      const inviteRef = await addDoc(
+        collection(db, "invitations"),
+        invitationData
+      );
+
+      // If user exists, send in-app notification
+      if (targetUserId) {
+        await addDoc(collection(db, "notifications"), {
+          userId: targetUserId,
+          type: "company_invite",
+          title: "คำเชิญเข้าร่วมสาขา",
+          message: `คุณได้รับคำเชิญให้เข้าร่วมสาขา ${branch.name}`,
+          data: {
+            invitationId: inviteRef.id,
+            companyId: branch.companyId,
+            companyName: branch.companyName || "",
+            branchId: branch.id,
+            branchName: branch.name,
+            role: inviteRole,
+            actionRequired: true,
+            actionType: "accept_reject",
+          },
+          read: false,
+          createdAt: serverTimestamp(),
+        });
+      }
+
+      // Send email invitation
+      try {
+        await fetch("/api/invitations/send-email", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            to: inviteEmail.toLowerCase().trim(),
+            inviterName: userData?.displayName || userData?.email || "Admin",
+            branchName: branch.name,
+            role: inviteRole,
+            invitationId: inviteRef.id,
+          }),
+        });
+      } catch (emailError) {
+        console.error("Failed to send email:", emailError);
+        // Don't fail the whole operation if email fails
+      }
+
+      toast.success(
+        targetUserId
+          ? "ส่งคำเชิญสำเร็จ! ผู้ใช้จะได้รับการแจ้งเตือนในแอป"
+          : "ส่งคำเชิญสำเร็จ! ระบบจะส่ง email เชิญให้ผู้ใช้"
+      );
+
+      setShowInviteModal(false);
+      setInviteEmail("");
+      setInviteRole("employee");
+    } catch (error) {
+      console.error("Error sending invite:", error);
+      toast.error("เกิดข้อผิดพลาดในการส่งคำเชิญ");
+    } finally {
+      setSendingInvite(false);
+    }
+  };
+
   const filteredUsers = users.filter(
     (user) =>
       user.displayName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -648,15 +791,24 @@ export default function BranchDetailPage() {
                 พนักงานในสาขา ({users.length} คน)
               </h2>
             </div>
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-              <input
-                type="text"
-                placeholder="ค้นหาพนักงาน..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="pl-9 pr-4 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500"
-              />
+            <div className="flex items-center gap-3">
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                <input
+                  type="text"
+                  placeholder="ค้นหาพนักงาน..."
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  className="pl-9 pr-4 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+              <button
+                onClick={() => setShowInviteModal(true)}
+                className="inline-flex items-center gap-2 px-4 py-2 bg-green-600 text-white text-sm rounded-lg hover:bg-green-700 transition-colors font-medium"
+              >
+                <UserPlus className="w-4 h-4" />
+                <span className="hidden sm:inline">เชิญพนักงาน</span>
+              </button>
             </div>
           </div>
         </div>
@@ -667,12 +819,14 @@ export default function BranchDetailPage() {
             <div key={user.id} className="p-4">
               <div className="flex items-center gap-4">
                 {/* Avatar */}
-                <div className="w-12 h-12 bg-linear-to-br from-blue-500 to-purple-600 rounded-full flex items-center justify-center text-white font-semibold shrink-0">
+                <div className="w-12 h-12 bg-linear-to-br from-blue-500 to-purple-600 rounded-full flex items-center justify-center text-white font-semibold shrink-0 relative overflow-hidden">
                   {user.photoURL ? (
-                    <img
+                    <Image
                       src={user.photoURL}
                       alt={user.displayName || ""}
-                      className="w-12 h-12 rounded-full object-cover"
+                      fill
+                      className="rounded-full object-cover"
+                      unoptimized
                     />
                   ) : (
                     <span className="text-lg">
@@ -826,12 +980,14 @@ export default function BranchDetailPage() {
             <div className="p-5 border-b border-gray-200 dark:border-gray-700 bg-linear-to-r from-blue-600 to-purple-600">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-4">
-                  <div className="w-12 h-12 bg-white/20 rounded-full flex items-center justify-center">
+                  <div className="w-12 h-12 bg-white/20 rounded-full flex items-center justify-center relative overflow-hidden">
                     {selectedUser.photoURL ? (
-                      <img
+                      <Image
                         src={selectedUser.photoURL}
                         alt=""
-                        className="w-12 h-12 rounded-full object-cover"
+                        fill
+                        className="rounded-full object-cover"
+                        unoptimized
                       />
                     ) : (
                       <UserIcon className="w-6 h-6 text-white" />
@@ -955,12 +1111,14 @@ export default function BranchDetailPage() {
                           className="flex items-center gap-3 p-3 hover:bg-gray-50 dark:hover:bg-gray-700/50 rounded-lg group cursor-pointer"
                           onClick={() => handleAddProduct(product.productId)}
                         >
-                          <div className="w-10 h-10 bg-gray-100 dark:bg-gray-700 rounded-lg flex items-center justify-center shrink-0">
+                          <div className="w-10 h-10 bg-gray-100 dark:bg-gray-700 rounded-lg flex items-center justify-center shrink-0 relative overflow-hidden">
                             {product.imageURL ? (
-                              <img
+                              <Image
                                 src={product.imageURL}
                                 alt=""
-                                className="w-10 h-10 rounded-lg object-cover"
+                                fill
+                                className="rounded-lg object-cover"
+                                unoptimized
                               />
                             ) : (
                               <Package className="w-5 h-5 text-gray-400" />
@@ -1029,12 +1187,14 @@ export default function BranchDetailPage() {
                           key={product.id}
                           className="flex items-center gap-3 p-3 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700/50 rounded-lg group border border-blue-200 dark:border-blue-800"
                         >
-                          <div className="w-10 h-10 bg-blue-100 dark:bg-blue-900/30 rounded-lg flex items-center justify-center shrink-0">
+                          <div className="w-10 h-10 bg-blue-100 dark:bg-blue-900/30 rounded-lg flex items-center justify-center shrink-0 relative overflow-hidden">
                             {product.imageURL ? (
-                              <img
+                              <Image
                                 src={product.imageURL}
                                 alt=""
-                                className="w-10 h-10 rounded-lg object-cover"
+                                fill
+                                className="rounded-lg object-cover"
+                                unoptimized
                               />
                             ) : (
                               <Package className="w-5 h-5 text-blue-500" />
@@ -1107,6 +1267,151 @@ export default function BranchDetailPage() {
                     {existingAssignment ? "บันทึกการแก้ไข" : "มอบหมายงาน"}
                   </button>
                 </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Invite Employee Modal */}
+      {showInviteModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white dark:bg-gray-800 rounded-2xl w-full max-w-md overflow-hidden shadow-2xl">
+            {/* Modal Header */}
+            <div className="p-5 border-b border-gray-200 dark:border-gray-700 bg-linear-to-r from-green-600 to-emerald-600">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 bg-white/20 rounded-full flex items-center justify-center">
+                    <UserPlus className="w-5 h-5 text-white" />
+                  </div>
+                  <div>
+                    <h2 className="text-lg font-bold text-white">
+                      เชิญพนักงานใหม่
+                    </h2>
+                    <p className="text-white/80 text-sm">{branch?.name}</p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => {
+                    setShowInviteModal(false);
+                    setInviteEmail("");
+                    setInviteRole("employee");
+                  }}
+                  className="p-2 hover:bg-white/20 rounded-lg transition-colors"
+                >
+                  <X className="w-5 h-5 text-white" />
+                </button>
+              </div>
+            </div>
+
+            {/* Modal Body */}
+            <div className="p-5 space-y-4">
+              {/* Info Alert */}
+              <div className="p-3 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg">
+                <p className="text-sm text-blue-700 dark:text-blue-300">
+                  ระบบจะส่งคำเชิญไปยังอีเมลที่ระบุ
+                  หากผู้ใช้มีบัญชีอยู่แล้วจะได้รับการแจ้งเตือนในแอป
+                </p>
+              </div>
+
+              {/* Email Input */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                  อีเมลพนักงาน <span className="text-red-500">*</span>
+                </label>
+                <div className="relative">
+                  <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
+                  <input
+                    type="email"
+                    value={inviteEmail}
+                    onChange={(e) => setInviteEmail(e.target.value)}
+                    placeholder="employee@example.com"
+                    className="w-full pl-11 pr-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                  />
+                </div>
+              </div>
+
+              {/* Role Selection */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                  ตำแหน่ง
+                </label>
+                <select
+                  value={inviteRole}
+                  onChange={(e) => setInviteRole(e.target.value)}
+                  className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-green-500"
+                >
+                  <option value="employee">พนักงาน (Employee)</option>
+                  <option value="supervisor">หัวหน้างาน (Supervisor)</option>
+                  <option value="admin">ผู้ดูแลสาขา (Admin)</option>
+                </select>
+              </div>
+
+              {/* Notification Options */}
+              <div className="pt-2">
+                <p className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">
+                  วิธีการแจ้งเตือน
+                </p>
+                <div className="space-y-2">
+                  <label className="flex items-center gap-3 p-3 border border-green-200 dark:border-green-700 bg-green-50 dark:bg-green-900/20 rounded-lg">
+                    <input
+                      type="checkbox"
+                      defaultChecked
+                      disabled
+                      className="w-4 h-4 text-green-600 rounded"
+                    />
+                    <Mail className="w-4 h-4 text-green-600" />
+                    <span className="text-sm text-gray-700 dark:text-gray-300">
+                      ส่ง Email เชิญ
+                    </span>
+                    <span className="ml-auto text-xs text-green-600 dark:text-green-400 font-medium">
+                      ✓ พร้อมใช้งาน
+                    </span>
+                  </label>
+                  <label className="flex items-center gap-3 p-3 border border-green-200 dark:border-green-700 bg-green-50 dark:bg-green-900/20 rounded-lg">
+                    <input
+                      type="checkbox"
+                      defaultChecked
+                      disabled
+                      className="w-4 h-4 text-green-600 rounded"
+                    />
+                    <Send className="w-4 h-4 text-green-600" />
+                    <span className="text-sm text-gray-700 dark:text-gray-300">
+                      In-App Notification (ถ้ามีบัญชี)
+                    </span>
+                    <span className="ml-auto text-xs text-green-600 dark:text-green-400 font-medium">
+                      ✓ พร้อมใช้งาน
+                    </span>
+                  </label>
+                </div>
+              </div>
+            </div>
+
+            {/* Modal Footer */}
+            <div className="p-5 border-t border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-700/50">
+              <div className="flex gap-3">
+                <button
+                  onClick={() => {
+                    setShowInviteModal(false);
+                    setInviteEmail("");
+                    setInviteRole("employee");
+                  }}
+                  className="flex-1 px-4 py-2.5 border border-gray-300 dark:border-gray-600 rounded-lg text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 font-medium transition-colors"
+                >
+                  ยกเลิก
+                </button>
+                <button
+                  onClick={handleSendInvite}
+                  disabled={sendingInvite || !inviteEmail.trim()}
+                  className="flex-1 px-4 py-2.5 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed font-medium flex items-center justify-center gap-2 transition-colors"
+                >
+                  {sendingInvite ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <Send className="w-4 h-4" />
+                  )}
+                  ส่งคำเชิญ
+                </button>
               </div>
             </div>
           </div>

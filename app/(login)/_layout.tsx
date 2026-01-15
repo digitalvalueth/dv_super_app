@@ -19,13 +19,8 @@ export default function AuthLayout() {
     return null;
   }
 
-  // If user is authenticated, redirect to tabs
+  // If user is authenticated, redirect to tabs (regardless of company/branch)
   if (user) {
-    // Check if user has company/branch
-    if (!user.companyId || !user.branchId) {
-      console.log("🚀 Redirecting to /pending-approval");
-      return <Redirect href="/pending-approval" />;
-    }
     console.log("🚀 Redirecting to /(tabs)/products");
     return <Redirect href="/(tabs)/products" />;
   }

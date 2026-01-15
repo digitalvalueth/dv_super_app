@@ -15,6 +15,7 @@ import {
   where,
 } from "firebase/firestore";
 import { Barcode, Edit2, Package, Plus, Search, Trash2 } from "lucide-react";
+import Image from "next/image";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 
@@ -418,12 +419,14 @@ export default function ProductsPage() {
                 >
                   <td className="px-4 lg:px-6 py-4">
                     <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 bg-gray-200 dark:bg-gray-600 rounded-lg flex items-center justify-center shrink-0">
+                      <div className="w-10 h-10 bg-gray-200 dark:bg-gray-600 rounded-lg flex items-center justify-center shrink-0 relative overflow-hidden">
                         {product.imageURL ? (
-                          <img
+                          <Image
                             src={product.imageURL}
                             alt={product.name}
-                            className="w-10 h-10 rounded-lg object-cover"
+                            fill
+                            className="rounded-lg object-cover"
+                            unoptimized
                           />
                         ) : (
                           <Package className="w-5 h-5 text-gray-400" />

@@ -30,6 +30,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 export default function InboxScreen() {
   const { colors, isDark } = useTheme();
   const user = useAuthStore((state) => state.user);
+  const setUser = useAuthStore((state) => state.setUser);
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -98,11 +99,23 @@ export default function InboxScreen() {
   };
 
   const handleAction = (notification: Notification) => {
+    // Check if already actioned
+    if (notification.data?.status === "accepted") {
+      Alert.alert("ดำเนินการแล้ว", "คุณได้ยอมรับคำเชิญนี้แล้ว");
+      return;
+    }
+    if (notification.data?.status === "rejected") {
+      Alert.alert("ดำเนินการแล้ว", "คุณได้ปฏิเสธคำเชิญนี้แล้ว");
+      return;
+    }
+
     switch (notification.type) {
       case "company_invite":
         Alert.alert(
-          "คำเชิญเข้าบริษัท",
-          `คุณได้รับคำเชิญเข้าร่วม ${notification.data?.companyName}`,
+          "คำเชิญเข้าสาขา",
+          `คุณได้รับคำเชิญเข้าร่วมสาขา ${
+            notification.data?.branchName || "ไม่ระบุ"
+          }`,
           [
             {
               text: "ปฏิเสธ",
@@ -139,16 +152,54 @@ export default function InboxScreen() {
       await updateDoc(userRef, {
         companyId: notification.data.companyId,
         branchId: notification.data.branchId,
-        role: "employee",
+        branchName: notification.data.branchName || "",
+        companyName: notification.data.companyName || "",
+        role: notification.data.role || "employee",
         updatedAt: new Date(),
       });
 
-      // Mark notification as read
-      await markAsRead(notification.id);
+      // Update notification status
+      const notificationRef = doc(db, "notifications", notification.id);
+      await updateDoc(notificationRef, {
+        read: true,
+        readAt: new Date(),
+        "data.status": "accepted",
+        "data.actionRequired": false,
+      });
 
-      Alert.alert("สำเร็จ", "คุณได้เข้าร่วมบริษัทแล้ว", [
-        { text: "ตกลง", onPress: () => router.replace("/(tabs)/products") },
-      ]);
+      // Update local state
+      setNotifications((prev) =>
+        prev?.map((n) =>
+          n.id === notification.id
+            ? {
+                ...n,
+                read: true,
+                data: { ...n.data, status: "accepted", actionRequired: false },
+              }
+            : n
+        )
+      );
+
+      // Update auth store with new user data
+      setUser({
+        ...user,
+        companyId: notification.data.companyId,
+        branchId: notification.data.branchId,
+        branchName: notification.data.branchName || "",
+        companyName: notification.data.companyName || "",
+        role:
+          (notification.data.role as
+            | "employee"
+            | "admin"
+            | "supervisor"
+            | "super_admin") || "employee",
+      });
+
+      Alert.alert(
+        "สำเร็จ",
+        `คุณได้เข้าร่วมสาขา ${notification.data.branchName || ""} แล้ว`,
+        [{ text: "ตกลง", onPress: () => router.replace("/(tabs)/products") }]
+      );
     } catch (error) {
       console.error("Error accepting invite:", error);
       Alert.alert("เกิดข้อผิดพลาด", "ไม่สามารถยอมรับคำเชิญได้");
@@ -157,7 +208,28 @@ export default function InboxScreen() {
 
   const rejectInvite = async (notification: Notification) => {
     try {
-      await markAsRead(notification.id);
+      // Update notification status
+      const notificationRef = doc(db, "notifications", notification.id);
+      await updateDoc(notificationRef, {
+        read: true,
+        readAt: new Date(),
+        "data.status": "rejected",
+        "data.actionRequired": false,
+      });
+
+      // Update local state
+      setNotifications((prev) =>
+        prev?.map((n) =>
+          n.id === notification.id
+            ? {
+                ...n,
+                read: true,
+                data: { ...n.data, status: "rejected", actionRequired: false },
+              }
+            : n
+        )
+      );
+
       Alert.alert("ปฏิเสธแล้ว", "คุณได้ปฏิเสธคำเชิญแล้ว");
     } catch (error) {
       console.error("Error rejecting invite:", error);
@@ -284,10 +356,51 @@ export default function InboxScreen() {
             >
               {formatDate(item.createdAt as any)}
             </Text>
+
+            {/* Status badge for actioned notifications */}
+            {item.data?.status && (
+              <View
+                style={[
+                  styles.statusBadge,
+                  {
+                    backgroundColor:
+                      item.data.status === "accepted"
+                        ? "#4caf50" + "20"
+                        : "#f44336" + "20",
+                  },
+                ]}
+              >
+                <Ionicons
+                  name={
+                    item.data.status === "accepted"
+                      ? "checkmark-circle"
+                      : "close-circle"
+                  }
+                  size={14}
+                  color={
+                    item.data.status === "accepted" ? "#4caf50" : "#f44336"
+                  }
+                />
+                <Text
+                  style={[
+                    styles.statusBadgeText,
+                    {
+                      color:
+                        item.data.status === "accepted" ? "#4caf50" : "#f44336",
+                    },
+                  ]}
+                >
+                  {item.data.status === "accepted"
+                    ? "ยอมรับแล้ว"
+                    : "ปฏิเสธแล้ว"}
+                </Text>
+              </View>
+            )}
           </View>
         </View>
 
-        {item.data?.actionRequired && !item.read && (
+        {/* Show action buttons only if not yet actioned */}
+        {item.data?.actionRequired && !item.data?.status && (
           <View style={styles.actionButtons}>
             <TouchableOpacity
               style={[
@@ -495,6 +608,20 @@ const styles = StyleSheet.create({
   acceptButton: {},
   acceptButtonText: {
     color: "#fff",
+    fontWeight: "600",
+  },
+  statusBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 12,
+    alignSelf: "flex-start",
+    marginTop: 8,
+  },
+  statusBadgeText: {
+    fontSize: 12,
     fontWeight: "600",
   },
 });
