@@ -24,9 +24,11 @@ export default function LoginPage() {
       await signInWithEmailAndPassword(auth, email, password);
       toast.success("เข้าสู่ระบบสำเร็จ");
       router.push("/dashboard");
-    } catch (error: any) {
+    } catch (error) {
       console.error("Login error:", error);
-      toast.error("เข้าสู่ระบบไม่สำเร็จ: " + error.message);
+      const errorMessage =
+        error instanceof Error ? error.message : "Unknown error";
+      toast.error("เข้าสู่ระบบไม่สำเร็จ: " + errorMessage);
     } finally {
       setLoading(false);
     }
@@ -39,7 +41,7 @@ export default function LoginPage() {
       await signInWithPopup(auth, provider);
       toast.success("เข้าสู่ระบบสำเร็จ");
       router.push("/dashboard");
-    } catch (error: any) {
+    } catch (error) {
       console.error("Google login error:", error);
       toast.error("เข้าสู่ระบบด้วย Google ไม่สำเร็จ");
     } finally {

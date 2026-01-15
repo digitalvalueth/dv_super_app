@@ -34,6 +34,7 @@ export default function InvitationsPage() {
   useEffect(() => {
     if (!userData) return;
     fetchData();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [userData]);
 
   const fetchData = async () => {

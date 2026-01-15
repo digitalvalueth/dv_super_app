@@ -33,10 +33,12 @@ export default function CountingPage() {
   useEffect(() => {
     if (!userData) return;
     fetchSessions();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [userData]);
 
   useEffect(() => {
     applyFilters();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessions, filterStatus, searchTerm]);
 
   const fetchSessions = async () => {

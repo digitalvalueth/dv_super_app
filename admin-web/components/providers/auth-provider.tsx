@@ -207,7 +207,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
               branchId: newUserData.branchId,
               branchCode: newUserData.branchCode,
               branchName: newUserData.branchName,
-              photoURL: newUserData.photoURL,
+              photoURL: newUserData.photoURL || undefined,
               status: newUserData.status as "pending" | "active" | "inactive",
               createdAt: new Date(),
               updatedAt: new Date(),

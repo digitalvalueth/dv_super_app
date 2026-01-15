@@ -16,8 +16,6 @@ import {
   YAxis,
 } from "recharts";
 
-const COLORS = ["#ef4444", "#f97316", "#f59e0b", "#84cc16", "#22c55e"];
-
 export default function ReportsPage() {
   const { userData } = useAuthStore();
   const [report, setReport] = useState<DiscrepancyReport | null>(null);
