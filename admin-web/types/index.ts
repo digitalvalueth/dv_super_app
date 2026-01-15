@@ -3,82 +3,157 @@ export interface User {
   id: string;
   uid: string;
   email: string;
-  name: string; // เปลี่ยนจาก displayName
-  role: "admin" | "manager" | "staff";
-  companyId: string;
-  companyCode: string;
-  companyName: string;
+  name?: string;
+  displayName?: string;
+  role:
+    | "super_admin"
+    | "admin"
+    | "supervisor"
+    | "employee"
+    | "manager"
+    | "staff";
+  companyId?: string;
+  companyCode?: string;
+  companyName?: string;
   branchId?: string;
   branchCode?: string;
   branchName?: string;
   photoURL?: string;
-  status: "pending" | "active" | "inactive";
-  createdAt: Date;
-  updatedAt: Date;
+  status?: "pending" | "active" | "inactive" | "suspended";
+  createdAt?: Date;
+  updatedAt?: Date;
 }
 
 // Login Log
 export interface LoginLog {
   id: string;
   userId: string;
-  email: string;
-  name: string;
+  email?: string;
+  name?: string;
   loginAt: Date;
-  deviceInfo?: string;
+  deviceInfo?: {
+    brand: string;
+    deviceName: string;
+    deviceType: number;
+    isDevice: boolean;
+    manufacturer: string;
+    modelName: string;
+    osName: string;
+    osVersion: string;
+  };
   ipAddress?: string;
 }
 
-// Company & Branch
+// Company
 export interface Company {
   id: string;
   name: string;
+  code: string;
+  address?: string;
+  email?: string;
+  phone?: string;
   logoURL?: string;
-  createdAt: Date;
+  status: "active" | "inactive" | "suspended";
+  createdAt?: Date;
+  updatedAt?: Date;
 }
 
+// Branch
 export interface Branch {
   id: string;
   companyId: string;
   name: string;
+  code?: string;
   address?: string;
-  createdAt: Date;
+  phone?: string;
+  createdAt?: Date;
+  updatedAt?: Date;
 }
 
 // Product
 export interface Product {
   id: string;
+  productId: string; // เช่น SK-C-250 (ไม่ใช่ sku)
   companyId: string;
-  sku: string;
+  branchId?: string;
   name: string;
+  description?: string;
+  barcode: string;
+  sellerCode: string;
+  category?: string;
+  beforeCount?: number;
   imageURL?: string;
-  standardCount?: number;
-  createdAt: Date;
+  createdAt?: Date;
+  updatedAt?: Date;
+}
+
+// Assignment (งานที่มอบหมายให้พนักงานนับ)
+export interface Assignment {
+  id: string;
+  assignmentId: string;
+  userId: string;
+  companyId: string;
+  branchId: string;
+  productIds: string[]; // Array ของ productId (เช่น SK-C-250)
+  month: number;
+  year: number;
+  status: "pending" | "in_progress" | "completed";
+  createdAt?: Date;
+  updatedAt?: Date;
 }
 
 // Counting Session
 export interface CountingSession {
   id: string;
+  assignmentId?: string;
   userId: string;
-  userName: string;
-  userEmail: string;
+  userName?: string;
+  userEmail?: string;
   companyId: string;
   branchId: string;
-  branchName: string;
+  branchName?: string;
   productId: string;
-  productName: string;
-  productSKU: string;
-  imageURL: string;
-  aiCount: number;
+  productName?: string;
+  productSKU?: string;
+  imageURL?: string;
+
+  // Count data
+  beforeCountQty?: number;
+  currentCountQty?: number;
+  manualAdjustedQty?: number;
+  variance?: number;
+
+  // Legacy fields (for backward compatibility)
+  aiCount?: number;
   manualCount?: number;
-  finalCount: number;
+  finalCount?: number;
   standardCount?: number;
-  discrepancy: number;
-  status: "completed" | "pending-review" | "approved" | "rejected";
+  discrepancy?: number;
+
+  // AI
+  aiConfidence?: number;
+  aiModel?: string;
+  processingTime?: number;
+
+  status:
+    | "completed"
+    | "pending-review"
+    | "approved"
+    | "rejected"
+    | "pending"
+    | "in_progress";
   remarks?: string;
   adminRemarks?: string;
-  createdAt: Date;
+
+  // Metadata
+  deviceInfo?: string;
+  appVersion?: string;
+  hasBarcodeScan?: boolean;
+
+  createdAt?: Date;
   reviewedAt?: Date;
   reviewedBy?: string;
+  updatedAt?: Date;
 }
 
 // Invitation
@@ -86,14 +161,15 @@ export interface Invitation {
   id: string;
   email: string;
   companyId: string;
-  companyName: string;
-  role: "manager" | "staff";
+  companyName?: string;
+  role: "manager" | "staff" | "supervisor" | "employee";
   branchId?: string;
+  branchName?: string;
   invitedBy: string;
-  invitedByName: string;
+  invitedByName?: string;
   status: "pending" | "accepted" | "expired";
-  createdAt: Date;
-  expiresAt: Date;
+  createdAt?: Date;
+  expiresAt?: Date;
 }
 
 // Report Types

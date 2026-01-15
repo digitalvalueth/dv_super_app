@@ -47,12 +47,18 @@ export default function CountingPage() {
     try {
       const companyId = userData.companyId;
 
-      const sessionsSnapshot = await getDocs(
-        query(
+      // ถ้าเป็น superadmin (ไม่มี companyId) ดึงทั้งหมด
+      let sessionsQuery;
+      if (companyId) {
+        sessionsQuery = query(
           collection(db, "countingSessions"),
           where("companyId", "==", companyId)
-        )
-      );
+        );
+      } else {
+        sessionsQuery = query(collection(db, "countingSessions"));
+      }
+
+      const sessionsSnapshot = await getDocs(sessionsQuery);
 
       const sessionsData: CountingSession[] = [];
       sessionsSnapshot.forEach((doc) => {
@@ -108,10 +114,10 @@ export default function CountingPage() {
       const term = searchTerm.toLowerCase();
       filtered = filtered.filter(
         (s) =>
-          s.userName.toLowerCase().includes(term) ||
-          s.productName.toLowerCase().includes(term) ||
-          s.productSKU.toLowerCase().includes(term) ||
-          s.branchName.toLowerCase().includes(term)
+          s.userName?.toLowerCase().includes(term) ||
+          s.productName?.toLowerCase().includes(term) ||
+          s.productSKU?.toLowerCase().includes(term) ||
+          s.branchName?.toLowerCase().includes(term)
       );
     }
 
@@ -301,12 +307,12 @@ export default function CountingPage() {
                   <td className="px-6 py-4 whitespace-nowrap text-sm">
                     <span
                       className={`font-semibold ${
-                        session.discrepancy > 0
+                        (session.discrepancy ?? 0) > 0
                           ? "text-red-600"
                           : "text-green-600"
                       }`}
                     >
-                      {session.discrepancy > 0
+                      {(session.discrepancy ?? 0) > 0
                         ? `-${session.discrepancy}`
                         : "0"}
                     </span>
@@ -428,12 +434,14 @@ function SessionDetailModal({
                   <span className="text-gray-600">ส่วนต่าง:</span>{" "}
                   <span
                     className={`font-semibold ${
-                      session.discrepancy > 0
+                      (session.discrepancy ?? 0) > 0
                         ? "text-red-600"
                         : "text-green-600"
                     }`}
                   >
-                    {session.discrepancy > 0 ? `-${session.discrepancy}` : "0"}
+                    {(session.discrepancy ?? 0) > 0
+                      ? `-${session.discrepancy}`
+                      : "0"}
                   </span>
                 </div>
                 <div>

@@ -76,7 +76,11 @@ export function Sidebar() {
 
           <nav className="flex-1 p-4 space-y-1 overflow-y-auto">
             {navigation.map((item) => {
-              const isActive = pathname === item.href;
+              // Check if the current path matches the navigation item
+              // For nested routes like /dashboard/branches/[id], highlight the parent menu
+              const isActive =
+                pathname === item.href ||
+                (item.href !== "/dashboard" && pathname.startsWith(item.href));
               const Icon = item.icon;
 
               return (

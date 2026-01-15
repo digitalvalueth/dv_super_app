@@ -28,31 +28,48 @@ export default function DashboardPage() {
       try {
         const companyId = userData.companyId;
 
+        // ถ้าเป็น superadmin (ไม่มี companyId) ดึงทั้งหมด
+        let usersQuery, branchesQuery, productsQuery, sessionsQuery;
+
+        if (companyId) {
+          usersQuery = query(
+            collection(db, "users"),
+            where("companyId", "==", companyId)
+          );
+          branchesQuery = query(
+            collection(db, "branches"),
+            where("companyId", "==", companyId)
+          );
+          productsQuery = query(
+            collection(db, "products"),
+            where("companyId", "==", companyId)
+          );
+          sessionsQuery = query(
+            collection(db, "countingSessions"),
+            where("companyId", "==", companyId)
+          );
+        } else {
+          // Superadmin - ดึงทั้งหมด
+          usersQuery = query(collection(db, "users"));
+          branchesQuery = query(collection(db, "branches"));
+          productsQuery = query(collection(db, "products"));
+          sessionsQuery = query(collection(db, "countingSessions"));
+        }
+
         // Fetch users count
-        const usersSnapshot = await getDocs(
-          query(collection(db, "users"), where("companyId", "==", companyId))
-        );
+        const usersSnapshot = await getDocs(usersQuery);
         const totalUsers = usersSnapshot.size;
 
         // Fetch branches count
-        const branchesSnapshot = await getDocs(
-          query(collection(db, "branches"), where("companyId", "==", companyId))
-        );
+        const branchesSnapshot = await getDocs(branchesQuery);
         const totalBranches = branchesSnapshot.size;
 
         // Fetch products count
-        const productsSnapshot = await getDocs(
-          query(collection(db, "products"), where("companyId", "==", companyId))
-        );
+        const productsSnapshot = await getDocs(productsQuery);
         const totalProducts = productsSnapshot.size;
 
         // Fetch counting sessions
-        const sessionsSnapshot = await getDocs(
-          query(
-            collection(db, "countingSessions"),
-            where("companyId", "==", companyId)
-          )
-        );
+        const sessionsSnapshot = await getDocs(sessionsQuery);
 
         let totalDiscrepancy = 0;
         let pendingSessions = 0;
@@ -86,7 +103,7 @@ export default function DashboardPage() {
           };
 
           sessions.push(session);
-          totalDiscrepancy += session.discrepancy;
+          totalDiscrepancy += session.discrepancy ?? 0;
 
           if (session.status === "pending-review") {
             pendingSessions++;
@@ -273,12 +290,12 @@ export default function DashboardPage() {
                   <td className="px-3 lg:px-6 py-4 whitespace-nowrap text-xs lg:text-sm">
                     <span
                       className={`font-semibold ${
-                        session.discrepancy > 0
+                        (session.discrepancy ?? 0) > 0
                           ? "text-red-600 dark:text-red-400"
                           : "text-green-600 dark:text-green-400"
                       }`}
                     >
-                      {session.discrepancy > 0
+                      {(session.discrepancy ?? 0) > 0
                         ? `-${session.discrepancy}`
                         : "0"}
                     </span>

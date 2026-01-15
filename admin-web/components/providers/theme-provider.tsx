@@ -1,14 +1,10 @@
 "use client";
 
 import { useThemeStore } from "@/stores/theme.store";
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
-  const [mounted, setMounted] = useState(false);
-
   useEffect(() => {
-    setMounted(true);
-
     // Get theme from localStorage or use system preference
     const storedTheme = localStorage.getItem("super-fitt-theme");
     let initialTheme: "light" | "dark" = "light";
@@ -43,8 +39,6 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
 
   // Listen to theme changes from store
   useEffect(() => {
-    if (!mounted) return;
-
     const unsubscribe = useThemeStore.subscribe((state) => {
       console.log("Theme changed to:", state.theme);
       document.documentElement.classList.remove("light", "dark");
@@ -52,7 +46,7 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     });
 
     return () => unsubscribe();
-  }, [mounted]);
+  }, []);
 
   return <>{children}</>;
 }

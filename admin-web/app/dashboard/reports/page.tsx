@@ -28,13 +28,19 @@ export default function ReportsPage() {
       try {
         const companyId = userData.companyId;
 
-        // Fetch all counting sessions
-        const sessionsSnapshot = await getDocs(
-          query(
+        // ถ้าเป็น superadmin (ไม่มี companyId) ดึงทั้งหมด
+        let sessionsQuery;
+        if (companyId) {
+          sessionsQuery = query(
             collection(db, "countingSessions"),
             where("companyId", "==", companyId)
-          )
-        );
+          );
+        } else {
+          sessionsQuery = query(collection(db, "countingSessions"));
+        }
+
+        // Fetch all counting sessions
+        const sessionsSnapshot = await getDocs(sessionsQuery);
 
         const sessions: CountingSession[] = [];
         sessionsSnapshot.forEach((doc) => {
@@ -68,7 +74,7 @@ export default function ReportsPage() {
         // Calculate statistics
         const totalSessions = sessions.length;
         const totalDiscrepancy = sessions.reduce(
-          (sum, s) => sum + s.discrepancy,
+          (sum, s) => sum + (s.discrepancy ?? 0),
           0
         );
         const averageDiscrepancy =
@@ -82,12 +88,12 @@ export default function ReportsPage() {
         sessions.forEach((session) => {
           const existing = userMap.get(session.userId);
           if (existing) {
-            existing.totalDiscrepancy += session.discrepancy;
+            existing.totalDiscrepancy += session.discrepancy ?? 0;
             existing.sessionCount += 1;
           } else {
             userMap.set(session.userId, {
-              userName: session.userName,
-              totalDiscrepancy: session.discrepancy,
+              userName: session.userName ?? "ไม่ระบุ",
+              totalDiscrepancy: session.discrepancy ?? 0,
               sessionCount: 1,
             });
           }
@@ -106,12 +112,12 @@ export default function ReportsPage() {
         sessions.forEach((session) => {
           const existing = branchMap.get(session.branchId);
           if (existing) {
-            existing.totalDiscrepancy += session.discrepancy;
+            existing.totalDiscrepancy += session.discrepancy ?? 0;
             existing.sessionCount += 1;
           } else {
             branchMap.set(session.branchId, {
-              branchName: session.branchName,
-              totalDiscrepancy: session.discrepancy,
+              branchName: session.branchName ?? "ไม่ระบุ",
+              totalDiscrepancy: session.discrepancy ?? 0,
               sessionCount: 1,
             });
           }
@@ -135,13 +141,13 @@ export default function ReportsPage() {
         sessions.forEach((session) => {
           const existing = productMap.get(session.productId);
           if (existing) {
-            existing.totalDiscrepancy += session.discrepancy;
+            existing.totalDiscrepancy += session.discrepancy ?? 0;
             existing.sessionCount += 1;
           } else {
             productMap.set(session.productId, {
-              productName: session.productName,
-              productSKU: session.productSKU,
-              totalDiscrepancy: session.discrepancy,
+              productName: session.productName ?? "ไม่ระบุ",
+              productSKU: session.productSKU ?? "-",
+              totalDiscrepancy: session.discrepancy ?? 0,
               sessionCount: 1,
             });
           }
