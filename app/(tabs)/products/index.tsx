@@ -75,8 +75,17 @@ export default function HomeScreen() {
 
   const handleProductPress = (product: ProductWithAssignment) => {
     if (product.status === "completed") {
-      // Show completed status
-      alert("คุณนับสินค้านี้เรียบร้อยแล้ว");
+      // Navigate to completed product view with history
+      router.push({
+        pathname: "/(tabs)/products/completed",
+        params: {
+          productId: product.productId || product.sku || product.id,
+          productName: product.name,
+          productSKU: product.sku,
+          productImage: product.imageUrl || "",
+          beforeQty: product.beforeCountQty?.toString() || "0",
+        },
+      });
       return;
     }
 
@@ -163,7 +172,6 @@ export default function HomeScreen() {
     <TouchableOpacity
       style={[styles.productListCard, { backgroundColor: colors.card }]}
       onPress={() => handleProductPress(item)}
-      disabled={item.status === "completed"}
       activeOpacity={0.7}
     >
       {/* Product Image */}
@@ -264,7 +272,6 @@ export default function HomeScreen() {
     <TouchableOpacity
       style={[styles.productCard, { backgroundColor: colors.card }]}
       onPress={() => handleProductPress(item)}
-      disabled={item.status === "completed"}
       activeOpacity={0.7}
     >
       {/* Product Image */}

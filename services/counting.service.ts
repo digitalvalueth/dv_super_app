@@ -90,7 +90,7 @@ export const createCountingSession = async (
 };
 
 /**
- * Update assignment status - add productId to completedProductIds array
+ * Update assignment status - add productId to completedProductIds or inProgressProductIds array
  */
 export const updateAssignmentStatus = async (
   assignmentId: string,
@@ -107,17 +107,45 @@ export const updateAssignmentStatus = async (
       if (assignmentDoc.exists()) {
         const currentData = assignmentDoc.data();
         const completedProductIds = currentData.completedProductIds || [];
+        const inProgressProductIds = currentData.inProgressProductIds || [];
 
         // Add productId if not already in array
         if (!completedProductIds.includes(productId)) {
           completedProductIds.push(productId);
         }
 
+        // Remove from inProgressProductIds since it's now completed
+        const updatedInProgressIds = inProgressProductIds.filter(
+          (id: string) => id !== productId
+        );
+
         await updateDoc(assignmentRef, {
           completedProductIds,
+          inProgressProductIds: updatedInProgressIds,
           ...(countedAt && { countedAt }),
           updatedAt: Timestamp.now(),
         });
+      }
+    } else if (status === "in_progress" && productId) {
+      // Add to inProgressProductIds array
+      const assignmentDoc = await getDoc(assignmentRef);
+      if (assignmentDoc.exists()) {
+        const currentData = assignmentDoc.data();
+        const inProgressProductIds = currentData.inProgressProductIds || [];
+        const completedProductIds = currentData.completedProductIds || [];
+
+        // Only add if not already completed and not already in progress
+        if (
+          !completedProductIds.includes(productId) &&
+          !inProgressProductIds.includes(productId)
+        ) {
+          inProgressProductIds.push(productId);
+
+          await updateDoc(assignmentRef, {
+            inProgressProductIds,
+            updatedAt: Timestamp.now(),
+          });
+        }
       }
     } else {
       await updateDoc(assignmentRef, {

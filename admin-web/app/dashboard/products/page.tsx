@@ -1,6 +1,6 @@
 "use client";
 
-import { db } from "@/lib/firebase";
+import { db, storage } from "@/lib/firebase";
 import { useAuthStore } from "@/stores/auth.store";
 import { Branch, Product } from "@/types";
 import {
@@ -14,7 +14,22 @@ import {
   updateDoc,
   where,
 } from "firebase/firestore";
-import { Barcode, Edit2, Package, Plus, Search, Trash2 } from "lucide-react";
+import {
+  deleteObject,
+  getDownloadURL,
+  ref,
+  uploadBytes,
+} from "firebase/storage";
+import {
+  Barcode,
+  Edit2,
+  Image as ImageIcon,
+  Package,
+  Plus,
+  Search,
+  Trash2,
+  X,
+} from "lucide-react";
 import Image from "next/image";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
@@ -49,6 +64,9 @@ export default function ProductsPage() {
     companyId: "",
     branchId: "",
   });
+  const [imageFile, setImageFile] = useState<File | null>(null);
+  const [imagePreview, setImagePreview] = useState<string | null>(null);
+  const [uploadingImage, setUploadingImage] = useState(false);
 
   const isSuperAdmin = !userData?.companyId;
 
@@ -84,20 +102,10 @@ export default function ProductsPage() {
       const productsSnapshot = await getDocs(productsQuery);
       const productsData: Product[] = [];
       const categoriesSet = new Set<string>();
-      const companiesMap = new Map<string, Company>();
 
       productsSnapshot.forEach((doc) => {
         const data = doc.data();
         if (data.category) categoriesSet.add(data.category);
-
-        // Collect companies
-        if (data.companyId) {
-          companiesMap.set(data.companyId, {
-            id: data.companyId,
-            name: data.companyName || "",
-            code: data.companyCode || "",
-          });
-        }
 
         productsData.push({
           id: doc.id,
@@ -117,7 +125,21 @@ export default function ProductsPage() {
       });
 
       setProducts(productsData);
-      setCompanies(Array.from(companiesMap.values()));
+
+      // Fetch companies (for super admin dropdown)
+      if (!companyId) {
+        const companiesSnapshot = await getDocs(collection(db, "companies"));
+        const companiesData: Company[] = [];
+        companiesSnapshot.forEach((doc) => {
+          const data = doc.data();
+          companiesData.push({
+            id: doc.id,
+            name: data.name || "",
+            code: data.code || "",
+          });
+        });
+        setCompanies(companiesData);
+      }
 
       // Fetch branches
       const branchesSnapshot = await getDocs(branchesQuery);
@@ -175,6 +197,19 @@ export default function ProductsPage() {
     }
 
     try {
+      setUploadingImage(true);
+      let imageUrl: string | null = null;
+
+      // Upload image if selected
+      if (imageFile) {
+        const timestamp = Date.now();
+        const fileName = `products/${targetCompanyId}/${formData.productId}_${timestamp}.jpg`;
+        const storageRef = ref(storage, fileName);
+
+        await uploadBytes(storageRef, imageFile);
+        imageUrl = await getDownloadURL(storageRef);
+      }
+
       await addDoc(collection(db, "products"), {
         productId: formData.productId.trim(),
         name: formData.name.trim(),
@@ -185,6 +220,7 @@ export default function ProductsPage() {
         beforeCount: formData.beforeCount || 0,
         companyId: targetCompanyId,
         branchId: formData.branchId || null,
+        imageURL: imageUrl,
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
       });
@@ -196,6 +232,8 @@ export default function ProductsPage() {
     } catch (error) {
       console.error("Error adding product:", error);
       toast.error("ไม่สามารถเพิ่มสินค้าได้");
+    } finally {
+      setUploadingImage(false);
     }
   };
 
@@ -212,6 +250,8 @@ export default function ProductsPage() {
       companyId: product.companyId || "",
       branchId: product.branchId || "",
     });
+    setImagePreview(product.imageURL || null);
+    setImageFile(null);
     setShowEditModal(true);
   };
 
@@ -222,6 +262,30 @@ export default function ProductsPage() {
     }
 
     try {
+      setUploadingImage(true);
+      let imageUrl = selectedProduct.imageURL;
+
+      // Upload new image if selected
+      if (imageFile) {
+        const targetCompanyId = selectedProduct.companyId;
+        const timestamp = Date.now();
+        const fileName = `products/${targetCompanyId}/${formData.productId}_${timestamp}.jpg`;
+        const storageRef = ref(storage, fileName);
+
+        await uploadBytes(storageRef, imageFile);
+        imageUrl = await getDownloadURL(storageRef);
+
+        // Delete old image if exists
+        if (selectedProduct.imageURL) {
+          try {
+            const oldImageRef = ref(storage, selectedProduct.imageURL);
+            await deleteObject(oldImageRef);
+          } catch {
+            console.log("Old image not found or already deleted");
+          }
+        }
+      }
+
       await updateDoc(doc(db, "products", selectedProduct.id), {
         productId: formData.productId.trim(),
         name: formData.name.trim(),
@@ -231,6 +295,7 @@ export default function ProductsPage() {
         category: formData.category.trim() || null,
         beforeCount: formData.beforeCount || 0,
         branchId: formData.branchId || null,
+        imageURL: imageUrl,
         updatedAt: serverTimestamp(),
       });
 
@@ -242,6 +307,8 @@ export default function ProductsPage() {
     } catch (error) {
       console.error("Error updating product:", error);
       toast.error("ไม่สามารถอัปเดตสินค้าได้");
+    } finally {
+      setUploadingImage(false);
     }
   };
 
@@ -272,6 +339,33 @@ export default function ProductsPage() {
       companyId: companies[0]?.id || "",
       branchId: "",
     });
+    setImageFile(null);
+    setImagePreview(null);
+  };
+
+  const handleImageSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      if (!file.type.startsWith("image/")) {
+        toast.error("กรุณาเลือกไฟล์รูปภาพ");
+        return;
+      }
+      if (file.size > 5 * 1024 * 1024) {
+        toast.error("ขนาดไฟล์ต้องไม่เกิน 5MB");
+        return;
+      }
+      setImageFile(file);
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setImagePreview(reader.result as string);
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
+  const handleRemoveImage = () => {
+    setImageFile(null);
+    setImagePreview(null);
   };
 
   if (loading) {
@@ -520,6 +614,10 @@ export default function ProductsPage() {
           isSuperAdmin={isSuperAdmin}
           companies={companies}
           branches={branches}
+          imagePreview={imagePreview}
+          onImageSelect={handleImageSelect}
+          onRemoveImage={handleRemoveImage}
+          uploadingImage={uploadingImage}
         />
       )}
 
@@ -539,7 +637,11 @@ export default function ProductsPage() {
           isSuperAdmin={isSuperAdmin}
           companies={companies}
           branches={branches}
-          isEdit
+          isEdit={true}
+          imagePreview={imagePreview}
+          onImageSelect={handleImageSelect}
+          onRemoveImage={handleRemoveImage}
+          uploadingImage={uploadingImage}
         />
       )}
 
@@ -602,6 +704,10 @@ interface ProductModalProps {
   companies: Company[];
   branches: Branch[];
   isEdit?: boolean;
+  imagePreview: string | null;
+  onImageSelect: (e: React.ChangeEvent<HTMLInputElement>) => void;
+  onRemoveImage: () => void;
+  uploadingImage: boolean;
 }
 
 function ProductModal({
@@ -615,6 +721,10 @@ function ProductModal({
   companies,
   branches,
   isEdit,
+  imagePreview,
+  onImageSelect,
+  onRemoveImage,
+  uploadingImage,
 }: ProductModalProps) {
   const filteredBranches = branches.filter(
     (b) => !formData.companyId || b.companyId === formData.companyId
@@ -628,6 +738,48 @@ function ProductModal({
         </h2>
 
         <div className="space-y-4">
+          {/* Image Upload */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+              รูปภาพสินค้า
+            </label>
+            <div className="flex items-start gap-4">
+              {imagePreview ? (
+                <div className="relative w-32 h-32 rounded-lg overflow-hidden border-2 border-gray-200 dark:border-gray-600">
+                  <Image
+                    src={imagePreview}
+                    alt="Product preview"
+                    fill
+                    className="object-cover"
+                  />
+                  <button
+                    onClick={onRemoveImage}
+                    className="absolute top-1 right-1 p-1 bg-red-500 text-white rounded-full hover:bg-red-600"
+                    type="button"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+              ) : (
+                <label className="w-32 h-32 flex flex-col items-center justify-center border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-lg cursor-pointer hover:border-blue-500 dark:hover:border-blue-400 transition-colors">
+                  <ImageIcon className="w-8 h-8 text-gray-400 mb-2" />
+                  <span className="text-xs text-gray-500">เลือกรูปภาพ</span>
+                  <input
+                    type="file"
+                    accept="image/*"
+                    onChange={onImageSelect}
+                    className="hidden"
+                  />
+                </label>
+              )}
+              <div className="flex-1 text-sm text-gray-500 dark:text-gray-400">
+                <p>• รองรับไฟล์: JPG, PNG</p>
+                <p>• ขนาดไม่เกิน 5MB</p>
+                <p>• แนะนำ: 500x500px</p>
+              </div>
+            </div>
+          </div>
+
           {/* Company selector for superadmin */}
           {isSuperAdmin && !isEdit && companies.length > 0 && (
             <div>
@@ -790,14 +942,23 @@ function ProductModal({
           <button
             onClick={onClose}
             className="flex-1 px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700"
+            disabled={uploadingImage}
           >
             ยกเลิก
           </button>
           <button
             onClick={onSubmit}
-            className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+            disabled={uploadingImage}
+            className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-blue-400 disabled:cursor-not-allowed flex items-center justify-center gap-2"
           >
-            {submitLabel}
+            {uploadingImage ? (
+              <>
+                <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                กำลังอัปโหลด...
+              </>
+            ) : (
+              submitLabel
+            )}
           </button>
         </div>
       </div>

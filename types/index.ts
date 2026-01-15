@@ -153,6 +153,20 @@ export interface CountingSession {
   aiModel?: string;
   processingTime?: number; // milliseconds
 
+  // Location
+  location?: {
+    address?: string;
+    latitude?: number;
+    longitude?: number;
+  };
+
+  // Counted by
+  countedBy?: {
+    id: string;
+    name: string;
+    email?: string;
+  };
+
   // Optional fields
   remarks?: string;
   hasBarcodeScan?: boolean;

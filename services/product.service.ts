@@ -228,6 +228,7 @@ export const subscribeToProductsWithAssignments = (
         const assignmentId = assignmentDoc.id; // Get assignment document ID
         const productIds = assignment.productIds || [];
         const completedProductIds = assignment.completedProductIds || [];
+        const inProgressProductIds = assignment.inProgressProductIds || [];
 
         // Get all products for this assignment
         for (const productId of productIds) {
@@ -243,8 +244,17 @@ export const subscribeToProductsWithAssignments = (
               const productDoc = productSnapshot.docs[0];
               const productData = productDoc.data();
 
-              // Check if this product is completed
+              // Check if this product is completed or in_progress
               const isCompleted = completedProductIds.includes(productId);
+              const isInProgress = inProgressProductIds.includes(productId);
+
+              // Determine status
+              let status: "pending" | "in_progress" | "completed" = "pending";
+              if (isCompleted) {
+                status = "completed";
+              } else if (isInProgress) {
+                status = "in_progress";
+              }
 
               products.push({
                 id: productDoc.id,
@@ -260,14 +270,14 @@ export const subscribeToProductsWithAssignments = (
                 imageUrl: productData.imageUrl,
                 createdAt: productData.createdAt?.toDate() || new Date(),
                 updatedAt: productData.updatedAt?.toDate() || new Date(),
-                status: isCompleted ? "completed" : "pending",
+                status: status,
                 beforeCountQty: productData.beforeCount || 0,
                 // Include assignment info
                 assignment: {
                   id: assignmentId,
                   userId: assignment.userId,
                   productId: productData.productId,
-                  status: isCompleted ? "completed" : "pending",
+                  status: status,
                 } as any,
               });
             }

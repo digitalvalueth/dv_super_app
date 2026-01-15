@@ -1,10 +1,14 @@
+import { useAuthStore } from "@/stores/auth.store";
 import { useTheme } from "@/stores/theme.store";
+import { createWatermarkMetadata } from "@/utils/watermark";
 import { Ionicons } from "@expo/vector-icons";
+import * as FileSystem from "expo-file-system";
 import * as ImagePicker from "expo-image-picker";
 import * as Location from "expo-location";
 import { router, useLocalSearchParams } from "expo-router";
 import { useEffect, useState } from "react";
 import {
+  ActivityIndicator,
   Alert,
   Image,
   ScrollView,
@@ -16,10 +20,15 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
+// Base64 encoding type
+const BASE64_ENCODING = "base64" as const;
+
 export default function ProductDetailsScreen() {
   const params = useLocalSearchParams();
   const { colors, isDark } = useTheme();
+  const { user } = useAuthStore();
   const [hasPermissions, setHasPermissions] = useState(false);
+  const [isPickingImage, setIsPickingImage] = useState(false);
   const [location, setLocation] = useState<Location.LocationObject | null>(
     null
   );
@@ -96,25 +105,61 @@ export default function ProductDetailsScreen() {
       return;
     }
 
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: "images",
-      allowsEditing: true,
-      aspect: [4, 3],
-      quality: 0.8,
-    });
+    try {
+      setIsPickingImage(true);
 
-    if (!result.canceled && result.assets[0]) {
-      router.push({
-        pathname: "/preview",
-        params: {
-          imageUri: result.assets[0].uri,
-          productId,
-          productName,
-          productSKU,
-          latitude: location?.coords.latitude,
-          longitude: location?.coords.longitude,
-        },
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: "images",
+        allowsEditing: true,
+        aspect: [4, 3],
+        quality: 0.8,
+        base64: true, // Important: Request base64 encoding
       });
+
+      if (!result.canceled && result.assets[0]) {
+        const asset = result.assets[0];
+        let base64Data = asset.base64;
+
+        // If base64 is not included, read it manually
+        if (!base64Data && asset.uri) {
+          const fileInfo = await FileSystem.readAsStringAsync(asset.uri, {
+            encoding: BASE64_ENCODING,
+          });
+          base64Data = fileInfo;
+        }
+
+        if (!base64Data) {
+          Alert.alert("เกิดข้อผิดพลาด", "ไม่สามารถอ่านรูปภาพได้");
+          return;
+        }
+
+        // Get watermark metadata
+        const watermarkData = await createWatermarkMetadata(
+          user?.name || "Unknown",
+          user?.uid || "",
+          productName,
+          productBarcode
+        );
+
+        router.push({
+          pathname: "/preview",
+          params: {
+            imageUri: asset.uri,
+            imageBase64: base64Data,
+            watermarkData: JSON.stringify(watermarkData),
+            productId,
+            productName,
+            productBarcode,
+            assignmentId,
+            beforeQty,
+          },
+        });
+      }
+    } catch (error) {
+      console.error("Error picking image:", error);
+      Alert.alert("เกิดข้อผิดพลาด", "ไม่สามารถเลือกรูปภาพได้");
+    } finally {
+      setIsPickingImage(false);
     }
   };
 
@@ -241,12 +286,18 @@ export default function ProductDetailsScreen() {
               styles.actionButton,
               styles.secondaryButton,
               { backgroundColor: colors.card, borderColor: colors.border },
+              isPickingImage && { opacity: 0.6 },
             ]}
             onPress={handlePickImage}
+            disabled={isPickingImage}
           >
-            <Ionicons name="images" size={24} color={colors.primary} />
+            {isPickingImage ? (
+              <ActivityIndicator size="small" color={colors.primary} />
+            ) : (
+              <Ionicons name="images" size={24} color={colors.primary} />
+            )}
             <Text style={[styles.secondaryButtonText, { color: colors.text }]}>
-              เลือกจากคลังรูป
+              {isPickingImage ? "กำลังโหลด..." : "เลือกจากคลังรูป"}
             </Text>
           </TouchableOpacity>
         </View>
@@ -260,6 +311,25 @@ export default function ProductDetailsScreen() {
           </View>
         )}
       </ScrollView>
+
+      {/* Loading Overlay */}
+      {isPickingImage && (
+        <View style={styles.loadingOverlay}>
+          <View
+            style={[styles.loadingContainer, { backgroundColor: colors.card }]}
+          >
+            <ActivityIndicator size="large" color={colors.primary} />
+            <Text style={[styles.loadingText, { color: colors.text }]}>
+              กำลังโหลดรูปภาพ...
+            </Text>
+            <Text
+              style={[styles.loadingSubtext, { color: colors.textSecondary }]}
+            >
+              กรุณารอสักครู่
+            </Text>
+          </View>
+        </View>
+      )}
     </SafeAreaView>
   );
 }
@@ -405,5 +475,34 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: "#856404",
     lineHeight: 20,
+  },
+  loadingOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: "rgba(0, 0, 0, 0.7)",
+    justifyContent: "center",
+    alignItems: "center",
+    zIndex: 999,
+  },
+  loadingContainer: {
+    padding: 32,
+    borderRadius: 20,
+    alignItems: "center",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 8,
+    minWidth: 200,
+  },
+  loadingText: {
+    fontSize: 18,
+    fontWeight: "600",
+    marginTop: 16,
+    textAlign: "center",
+  },
+  loadingSubtext: {
+    fontSize: 14,
+    marginTop: 8,
+    textAlign: "center",
   },
 });

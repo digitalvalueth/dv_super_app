@@ -1,3 +1,4 @@
+import { updateAssignmentStatus } from "@/services/counting.service";
 import { countBarcodesInImage } from "@/services/gemini.service";
 import { useTheme } from "@/stores/theme.store";
 import {
@@ -7,7 +8,7 @@ import {
 } from "@/utils/watermark";
 import { Ionicons } from "@expo/vector-icons";
 import { router, useLocalSearchParams } from "expo-router";
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -39,6 +40,26 @@ export default function PreviewScreen() {
   const [isProcessing, setIsProcessing] = useState(false);
   const [barcodeCount, setBarcodeCount] = useState<number | null>(null);
   const [processingTime, setProcessingTime] = useState<number | null>(null);
+
+  // Mark product as in_progress when entering preview screen
+  useEffect(() => {
+    const markInProgress = async () => {
+      if (params.assignmentId && params.productId) {
+        try {
+          await updateAssignmentStatus(
+            params.assignmentId,
+            "in_progress",
+            undefined,
+            params.productId
+          );
+          console.log("📸 Product marked as in_progress:", params.productId);
+        } catch (error) {
+          console.error("Error marking product as in_progress:", error);
+        }
+      }
+    };
+    markInProgress();
+  }, [params.assignmentId, params.productId]);
 
   // Parse watermark data
   const watermarkData: WatermarkData | null = useMemo(() => {
