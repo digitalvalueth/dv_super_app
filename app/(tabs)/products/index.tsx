@@ -10,6 +10,7 @@ import {
   ActivityIndicator,
   FlatList,
   Image,
+  ScrollView,
   StatusBar,
   StyleSheet,
   Text,
@@ -26,6 +27,15 @@ export default function HomeScreen() {
   const [filter, setFilter] = useState<
     "all" | "pending" | "in_progress" | "completed"
   >("all");
+  const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
+
+  // Calculate counts for filter badges
+  const counts = {
+    all: products.length,
+    pending: products.filter((p) => !p.status || p.status === "pending").length,
+    in_progress: products.filter((p) => p.status === "in_progress").length,
+    completed: products.filter((p) => p.status === "completed").length,
+  };
 
   // Setup realtime listener for products
   useEffect(() => {
@@ -90,7 +100,7 @@ export default function HomeScreen() {
       case "in_progress":
         return "#ff9800";
       default:
-        return "#999";
+        return "#fbbf24"; // เปลี่ยนจากเทาเป็นเหลือง
     }
   };
 
@@ -99,9 +109,9 @@ export default function HomeScreen() {
       case "completed":
         return "checkmark-circle";
       case "in_progress":
-        return "time";
+        return "camera"; // เปลี่ยนจาก time เป็น camera
       default:
-        return "ellipse-outline";
+        return "time-outline"; // เปลี่ยนเป็นนาฬิกาให้ตรงกับ filter
     }
   };
 
@@ -110,7 +120,7 @@ export default function HomeScreen() {
       case "completed":
         return "นับแล้ว";
       case "in_progress":
-        return "กำลังนับ";
+        return "แนบรูปแล้ว"; // เปลี่ยนจาก กำลังนับ
       default:
         return "รอนับ";
     }
@@ -132,12 +142,12 @@ export default function HomeScreen() {
     {
       key: "pending" as const,
       label: "รอนับ",
-      icon: "ellipse-outline" as keyof typeof Ionicons.glyphMap,
+      icon: "time-outline" as keyof typeof Ionicons.glyphMap, // เปลี่ยนเป็นนาฬิกา
     },
     {
       key: "in_progress" as const,
-      label: "กำลังนับ",
-      icon: "time" as keyof typeof Ionicons.glyphMap,
+      label: "แนบรูปแล้ว", // เปลี่ยนจาก กำลังนับ
+      icon: "camera" as keyof typeof Ionicons.glyphMap, // เปลี่ยนจาก time
     },
     {
       key: "completed" as const,
@@ -145,6 +155,107 @@ export default function HomeScreen() {
       icon: "checkmark-circle" as keyof typeof Ionicons.glyphMap,
     },
   ];
+
+  const renderProductList = ({ item }: { item: ProductWithAssignment }) => (
+    <TouchableOpacity
+      style={[styles.productListCard, { backgroundColor: colors.card }]}
+      onPress={() => handleProductPress(item)}
+      disabled={item.status === "completed"}
+      activeOpacity={0.7}
+    >
+      {/* Product Image */}
+      <View style={styles.listImageContainer}>
+        {item.imageUrl ? (
+          <Image
+            source={{ uri: item.imageUrl }}
+            style={styles.listProductImage}
+          />
+        ) : (
+          <View
+            style={[
+              styles.listPlaceholderImage,
+              { backgroundColor: colors.border },
+            ]}
+          >
+            <Ionicons
+              name="cube-outline"
+              size={32}
+              color={colors.textSecondary}
+            />
+          </View>
+        )}
+
+        {/* Status Badge */}
+        <View
+          style={[
+            styles.listStatusBadge,
+            { backgroundColor: getStatusColor(item.status) },
+          ]}
+        >
+          <Ionicons name={getStatusIcon(item.status)} size={12} color="#fff" />
+        </View>
+      </View>
+
+      {/* Product Info */}
+      <View style={styles.listProductInfo}>
+        <View style={styles.listProductHeader}>
+          <Text style={styles.productSKU} numberOfLines={1}>
+            {item.sku}
+          </Text>
+          <Text
+            style={[
+              styles.listStatusText,
+              { color: getStatusColor(item.status) },
+            ]}
+          >
+            {getStatusText(item.status)}
+          </Text>
+        </View>
+
+        <Text
+          style={[styles.listProductName, { color: colors.text }]}
+          numberOfLines={1}
+        >
+          {item.name}
+        </Text>
+
+        {/* Metrics */}
+        <View style={styles.listMetricsRow}>
+          <View style={styles.metricItem}>
+            <Ionicons
+              name="cube-outline"
+              size={14}
+              color={colors.textSecondary}
+            />
+            <Text style={[styles.metricText, { color: colors.textSecondary }]}>
+              {item.beforeCountQty || 0}
+            </Text>
+          </View>
+
+          {item.variance !== undefined && (
+            <View style={styles.metricItem}>
+              <Ionicons
+                name={item.variance >= 0 ? "trending-up" : "trending-down"}
+                size={14}
+                color={item.variance >= 0 ? "#4caf50" : "#f44336"}
+              />
+              <Text
+                style={[
+                  styles.metricText,
+                  { color: item.variance >= 0 ? "#4caf50" : "#f44336" },
+                ]}
+              >
+                {item.variance > 0 ? "+" : ""}
+                {item.variance}
+              </Text>
+            </View>
+          )}
+        </View>
+      </View>
+
+      <Ionicons name="chevron-forward" size={20} color={colors.textSecondary} />
+    </TouchableOpacity>
+  );
 
   const renderProduct = ({ item }: { item: ProductWithAssignment }) => (
     <TouchableOpacity
@@ -363,12 +474,36 @@ export default function HomeScreen() {
           { backgroundColor: colors.card, borderBottomColor: colors.border },
         ]}
       >
-        <Text style={[styles.headerTitle, { color: colors.text }]}>
-          รายการสินค้า
-        </Text>
+        <View style={styles.headerRow}>
+          <Text style={[styles.headerTitle, { color: colors.text }]}>
+            รายการสินค้า
+          </Text>
+
+          {/* View Mode Toggle */}
+          <TouchableOpacity
+            style={[
+              styles.viewToggle,
+              {
+                backgroundColor: colors.background,
+                borderColor: colors.border,
+              },
+            ]}
+            onPress={() => setViewMode(viewMode === "grid" ? "list" : "grid")}
+          >
+            <Ionicons
+              name={viewMode === "grid" ? "list" : "grid"}
+              size={20}
+              color={colors.text}
+            />
+          </TouchableOpacity>
+        </View>
 
         {/* Filter Buttons */}
-        <View style={styles.filterContainer}>
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.filterContainer}
+        >
           {filters.map((f) => (
             <TouchableOpacity
               key={f.key}
@@ -394,19 +529,20 @@ export default function HomeScreen() {
                   { color: filter === f.key ? "#fff" : colors.textSecondary },
                 ]}
               >
-                {f.label}
+                {f.label} ({counts[f.key]})
               </Text>
             </TouchableOpacity>
           ))}
-        </View>
+        </ScrollView>
       </View>
       <View style={[styles.container, { backgroundColor: colors.background }]}>
         <FlatList
           data={filteredProducts}
-          renderItem={renderProduct}
+          renderItem={viewMode === "grid" ? renderProduct : renderProductList}
           keyExtractor={(item) => item.id}
-          numColumns={2}
-          columnWrapperStyle={styles.row}
+          numColumns={viewMode === "grid" ? 2 : 1}
+          key={viewMode}
+          columnWrapperStyle={viewMode === "grid" ? styles.row : undefined}
           contentContainerStyle={
             filteredProducts.length === 0
               ? styles.emptyContainer
@@ -453,16 +589,30 @@ const styles = StyleSheet.create({
     paddingBottom: 8,
     borderBottomWidth: StyleSheet.hairlineWidth,
   },
+  headerRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 12,
+  },
   headerTitle: {
     fontSize: 34,
     fontWeight: "700",
     letterSpacing: 0.4,
-    marginBottom: 12,
+  },
+  viewToggle: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    justifyContent: "center",
+    alignItems: "center",
+    borderWidth: 1,
   },
   filterContainer: {
     flexDirection: "row",
     gap: 8,
     paddingBottom: 8,
+    paddingHorizontal: 16,
   },
   filterButton: {
     flexDirection: "row",
@@ -598,6 +748,71 @@ const styles = StyleSheet.create({
     fontWeight: "600",
     textAlign: "center",
     paddingVertical: 4,
+  },
+
+  // List View Styles
+  productListCard: {
+    flexDirection: "row",
+    alignItems: "center",
+    borderRadius: 12,
+    marginBottom: 8,
+    marginHorizontal: 8,
+    padding: 12,
+    gap: 12,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  listImageContainer: {
+    width: 70,
+    height: 70,
+    borderRadius: 8,
+    overflow: "hidden",
+    position: "relative",
+  },
+  listProductImage: {
+    width: "100%",
+    height: "100%",
+    resizeMode: "cover",
+  },
+  listPlaceholderImage: {
+    width: "100%",
+    height: "100%",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  listStatusBadge: {
+    position: "absolute",
+    top: 4,
+    right: 4,
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  listProductInfo: {
+    flex: 1,
+    gap: 4,
+  },
+  listProductHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+  },
+  listProductName: {
+    fontSize: 15,
+    fontWeight: "600",
+  },
+  listStatusText: {
+    fontSize: 11,
+    fontWeight: "600",
+  },
+  listMetricsRow: {
+    flexDirection: "row",
+    gap: 12,
   },
 
   // No Branch State
