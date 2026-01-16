@@ -121,6 +121,13 @@ export const getProductsWithAssignments = async (
             const productDoc = productSnapshot.docs[0];
             const productData = productDoc.data();
 
+            // Debug: Log image fields
+            console.log(`🖼️ Product ${productData.productId} image fields:`, {
+              imageUrl: productData.imageUrl,
+              imageURL: productData.imageURL,
+              combined: productData.imageUrl || productData.imageURL,
+            });
+
             products.push({
               id: productDoc.id, // Document ID
               productId: productData.productId, // SK-C-250
@@ -132,7 +139,8 @@ export const getProductsWithAssignments = async (
               category: productData.category,
               companyId: productData.companyId,
               branchId: productData.branchId,
-              imageUrl: productData.imageUrl,
+              // Support both imageUrl and imageURL for backward compatibility
+              imageUrl: productData.imageUrl || productData.imageURL,
               createdAt: productData.createdAt?.toDate() || new Date(),
               updatedAt: productData.updatedAt?.toDate() || new Date(),
               status: "pending", // Default status

@@ -4,12 +4,12 @@ import { useProductStore } from "@/stores/product.store";
 import { useTheme } from "@/stores/theme.store";
 import { ProductWithAssignment } from "@/types";
 import { Ionicons } from "@expo/vector-icons";
+import { Image } from "expo-image";
 import { router } from "expo-router";
 import { useEffect, useState } from "react";
 import {
   ActivityIndicator,
   FlatList,
-  Image,
   ScrollView,
   StatusBar,
   StyleSheet,
@@ -18,6 +18,24 @@ import {
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+
+// Fix Firebase Storage URL encoding
+const fixFirebaseStorageUrl = (url: string): string => {
+  if (!url) return url;
+
+  // Check if URL is already properly encoded
+  if (url.includes("%2F")) return url;
+
+  // Fix unencoded URLs by replacing / with %2F in the path segment
+  const match = url.match(/\/o\/([^?]+)/);
+  if (match) {
+    const path = match[1];
+    const encodedPath = path.split("/").map(encodeURIComponent).join("%2F");
+    return url.replace(/\/o\/[^?]+/, `/o/${encodedPath}`);
+  }
+
+  return url;
+};
 
 export default function HomeScreen() {
   const user = useAuthStore((state) => state.user);
@@ -178,8 +196,10 @@ export default function HomeScreen() {
       <View style={styles.listImageContainer}>
         {item.imageUrl ? (
           <Image
-            source={{ uri: item.imageUrl }}
+            source={{ uri: fixFirebaseStorageUrl(item.imageUrl) }}
             style={styles.listProductImage}
+            contentFit="cover"
+            transition={200}
           />
         ) : (
           <View
@@ -277,7 +297,12 @@ export default function HomeScreen() {
       {/* Product Image */}
       <View style={styles.imageContainer}>
         {item.imageUrl ? (
-          <Image source={{ uri: item.imageUrl }} style={styles.productImage} />
+          <Image
+            source={{ uri: fixFirebaseStorageUrl(item.imageUrl) }}
+            style={styles.productImage}
+            contentFit="cover"
+            transition={200}
+          />
         ) : (
           <View
             style={[

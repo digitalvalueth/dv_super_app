@@ -6,13 +6,13 @@ import { useAuthStore } from "@/stores/auth.store";
 import { useTheme } from "@/stores/theme.store";
 import { formatTimestamp, WatermarkData } from "@/utils/watermark";
 import { Ionicons } from "@expo/vector-icons";
+import { Image } from "expo-image";
 import { router, useLocalSearchParams } from "expo-router";
 import { useMemo, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
   Dimensions,
-  Image,
   ScrollView,
   StyleSheet,
   Text,
@@ -228,7 +228,8 @@ export default function ResultScreen() {
             <Image
               source={{ uri: params.imageUri }}
               style={styles.image}
-              resizeMode="cover"
+              contentFit="cover"
+              transition={200}
             />
           </View>
         </View>

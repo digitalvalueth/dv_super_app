@@ -3,11 +3,11 @@ import { useTheme } from "@/stores/theme.store";
 import { CountingSession } from "@/types";
 import { formatTimestamp } from "@/utils/watermark";
 import { Ionicons } from "@expo/vector-icons";
+import { Image } from "expo-image";
 import { router, useLocalSearchParams } from "expo-router";
 import { useEffect, useState } from "react";
 import {
   ActivityIndicator,
-  Image,
   ScrollView,
   StatusBar,
   StyleSheet,
@@ -102,6 +102,8 @@ export default function CompletedProductScreen() {
               <Image
                 source={{ uri: productImage }}
                 style={styles.productImage}
+                contentFit="cover"
+                transition={200}
               />
             ) : (
               <View

@@ -3,6 +3,7 @@ import { signOut } from "@/services/auth.service";
 import { useAuthStore } from "@/stores/auth.store";
 import { ThemeMode, useTheme, useThemeStore } from "@/stores/theme.store";
 import { Ionicons } from "@expo/vector-icons";
+import { Image } from "expo-image";
 import { router, useFocusEffect } from "expo-router";
 import {
   collection,
@@ -15,7 +16,6 @@ import {
 import React, { useCallback, useState } from "react";
 import {
   Alert,
-  Image,
   ScrollView,
   StatusBar,
   StyleSheet,
@@ -282,7 +282,12 @@ export default function ProfileScreen() {
         <View style={[styles.profileHeader, { backgroundColor: colors.card }]}>
           <View style={styles.avatarContainer}>
             {user?.photoURL ? (
-              <Image source={{ uri: user.photoURL }} style={styles.avatar} />
+              <Image
+                source={{ uri: user.photoURL }}
+                style={styles.avatar}
+                contentFit="cover"
+                transition={200}
+              />
             ) : (
               <View
                 style={[

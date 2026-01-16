@@ -7,13 +7,13 @@ import {
   WatermarkData,
 } from "@/utils/watermark";
 import { Ionicons } from "@expo/vector-icons";
+import { Image } from "expo-image";
 import { router, useLocalSearchParams } from "expo-router";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
   Dimensions,
-  Image,
   ScrollView,
   StyleSheet,
   Text,
@@ -159,7 +159,8 @@ export default function PreviewScreen() {
           <Image
             source={{ uri: params.imageUri }}
             style={styles.image}
-            resizeMode="contain"
+            contentFit="contain"
+            transition={200}
           />
 
           {/* Watermark Overlay */}

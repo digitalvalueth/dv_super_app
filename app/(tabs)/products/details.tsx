@@ -3,6 +3,7 @@ import { useTheme } from "@/stores/theme.store";
 import { createWatermarkMetadata } from "@/utils/watermark";
 import { Ionicons } from "@expo/vector-icons";
 import * as FileSystem from "expo-file-system";
+import { Image } from "expo-image";
 import * as ImagePicker from "expo-image-picker";
 import * as Location from "expo-location";
 import { router, useLocalSearchParams } from "expo-router";
@@ -10,7 +11,6 @@ import { useEffect, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
-  Image,
   ScrollView,
   StatusBar,
   StyleSheet,
@@ -23,6 +23,25 @@ import { SafeAreaView } from "react-native-safe-area-context";
 // Base64 encoding type
 const BASE64_ENCODING = "base64" as const;
 
+// Fix Firebase Storage URL encoding
+const fixFirebaseStorageUrl = (url: string): string => {
+  if (!url) return url;
+
+  // Check if URL is already properly encoded
+  if (url.includes("%2F")) return url;
+
+  // Fix unencoded URLs by replacing / with %2F in the path segment
+  // Example: /o/products/abc/file.jpg -> /o/products%2Fabc%2Ffile.jpg
+  const match = url.match(/\/o\/([^?]+)/);
+  if (match) {
+    const path = match[1];
+    const encodedPath = path.split("/").map(encodeURIComponent).join("%2F");
+    return url.replace(/\/o\/[^?]+/, `/o/${encodedPath}`);
+  }
+
+  return url;
+};
+
 export default function ProductDetailsScreen() {
   const params = useLocalSearchParams();
   const { colors, isDark } = useTheme();
@@ -32,6 +51,8 @@ export default function ProductDetailsScreen() {
   const [location, setLocation] = useState<Location.LocationObject | null>(
     null
   );
+  const [imageLoading, setImageLoading] = useState(false);
+  const [imageError, setImageError] = useState(false);
 
   const productId = params.productId as string;
   const productName = params.productName as string;
@@ -40,6 +61,27 @@ export default function ProductDetailsScreen() {
   const beforeQty = params.beforeQty as string;
   const assignmentId = params.assignmentId as string;
   const productBarcode = params.productBarcode as string;
+
+  // Debug: Log params to check if imageUrl is being passed
+  useEffect(() => {
+    console.log("📱 Product Details - Params received:", {
+      productId,
+      productName,
+      productSKU,
+      productImage,
+      beforeQty,
+      assignmentId,
+      productBarcode,
+    });
+  }, [
+    productId,
+    productName,
+    productSKU,
+    productImage,
+    beforeQty,
+    assignmentId,
+    productBarcode,
+  ]);
 
   useEffect(() => {
     checkPermissions();
@@ -198,8 +240,38 @@ export default function ProductDetailsScreen() {
       >
         {/* Product Image */}
         <View style={[styles.imageCard, { backgroundColor: colors.card }]}>
-          {productImage ? (
-            <Image source={{ uri: productImage }} style={styles.productImage} />
+          {productImage && !imageError ? (
+            <>
+              <Image
+                source={{ uri: fixFirebaseStorageUrl(productImage) }}
+                style={styles.productImage}
+                contentFit="cover"
+                transition={200}
+                onLoadStart={() => {
+                  console.log("🖼️ Image loading started:", productImage);
+                  console.log(
+                    "🔧 Fixed URL:",
+                    fixFirebaseStorageUrl(productImage)
+                  );
+                  setImageLoading(true);
+                }}
+                onLoad={() => {
+                  console.log("✅ Image loaded successfully");
+                  setImageLoading(false);
+                  setImageError(false);
+                }}
+                onError={(error) => {
+                  console.error("❌ Image load error:", error);
+                  setImageLoading(false);
+                  setImageError(true);
+                }}
+              />
+              {imageLoading && (
+                <View style={styles.imageLoadingOverlay}>
+                  <ActivityIndicator size="large" color={colors.primary} />
+                </View>
+              )}
+            </>
           ) : (
             <View
               style={[
@@ -212,6 +284,13 @@ export default function ProductDetailsScreen() {
                 size={80}
                 color={colors.textSecondary}
               />
+              {imageError && (
+                <Text
+                  style={[styles.errorText, { color: colors.textSecondary }]}
+                >
+                  ไม่สามารถโหลดรูปภาพ
+                </Text>
+              )}
             </View>
           )}
         </View>
@@ -503,6 +582,21 @@ const styles = StyleSheet.create({
   loadingSubtext: {
     fontSize: 14,
     marginTop: 8,
+    textAlign: "center",
+  },
+  imageLoadingOverlay: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    justifyContent: "center",
+    alignItems: "center",
+    backgroundColor: "rgba(255, 255, 255, 0.8)",
+  },
+  errorText: {
+    marginTop: 8,
+    fontSize: 14,
     textAlign: "center",
   },
 });

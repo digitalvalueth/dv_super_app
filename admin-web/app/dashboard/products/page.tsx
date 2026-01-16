@@ -118,7 +118,8 @@ export default function ProductsPage() {
           sellerCode: data.sellerCode,
           category: data.category,
           beforeCount: data.beforeCount,
-          imageURL: data.imageURL,
+          // Support both imageUrl and imageURL for backward compatibility
+          imageUrl: data.imageUrl || data.imageURL,
           createdAt: data.createdAt?.toDate(),
           updatedAt: data.updatedAt?.toDate(),
         });
@@ -208,6 +209,8 @@ export default function ProductsPage() {
 
         await uploadBytes(storageRef, imageFile);
         imageUrl = await getDownloadURL(storageRef);
+
+        console.log("📸 Uploaded image URL:", imageUrl);
       }
 
       await addDoc(collection(db, "products"), {
@@ -220,7 +223,7 @@ export default function ProductsPage() {
         beforeCount: formData.beforeCount || 0,
         companyId: targetCompanyId,
         branchId: formData.branchId || null,
-        imageURL: imageUrl,
+        imageUrl: imageUrl,
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
       });
@@ -250,7 +253,7 @@ export default function ProductsPage() {
       companyId: product.companyId || "",
       branchId: product.branchId || "",
     });
-    setImagePreview(product.imageURL || null);
+    setImagePreview(product.imageUrl || null);
     setImageFile(null);
     setShowEditModal(true);
   };
@@ -263,7 +266,7 @@ export default function ProductsPage() {
 
     try {
       setUploadingImage(true);
-      let imageUrl = selectedProduct.imageURL;
+      let imageUrl = selectedProduct.imageUrl;
 
       // Upload new image if selected
       if (imageFile) {
@@ -275,10 +278,12 @@ export default function ProductsPage() {
         await uploadBytes(storageRef, imageFile);
         imageUrl = await getDownloadURL(storageRef);
 
+        console.log("📸 Updated image URL:", imageUrl);
+
         // Delete old image if exists
-        if (selectedProduct.imageURL) {
+        if (selectedProduct.imageUrl) {
           try {
-            const oldImageRef = ref(storage, selectedProduct.imageURL);
+            const oldImageRef = ref(storage, selectedProduct.imageUrl);
             await deleteObject(oldImageRef);
           } catch {
             console.log("Old image not found or already deleted");
@@ -295,7 +300,7 @@ export default function ProductsPage() {
         category: formData.category.trim() || null,
         beforeCount: formData.beforeCount || 0,
         branchId: formData.branchId || null,
-        imageURL: imageUrl,
+        imageUrl: imageUrl,
         updatedAt: serverTimestamp(),
       });
 
@@ -392,16 +397,18 @@ export default function ProductsPage() {
             จัดการสินค้าและรหัสสินค้าของบริษัท
           </p>
         </div>
-        <button
-          onClick={() => {
-            resetForm();
-            setShowAddModal(true);
-          }}
-          className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-        >
-          <Plus className="w-5 h-5" />
-          เพิ่มสินค้า
-        </button>
+        <div className="flex gap-2">
+          <button
+            onClick={() => {
+              resetForm();
+              setShowAddModal(true);
+            }}
+            className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+          >
+            <Plus className="w-5 h-5" />
+            เพิ่มสินค้า
+          </button>
+        </div>
       </div>
 
       {/* Filters */}
@@ -514,9 +521,9 @@ export default function ProductsPage() {
                   <td className="px-4 lg:px-6 py-4">
                     <div className="flex items-center gap-3">
                       <div className="w-10 h-10 bg-gray-200 dark:bg-gray-600 rounded-lg flex items-center justify-center shrink-0 relative overflow-hidden">
-                        {product.imageURL ? (
+                        {product.imageUrl ? (
                           <Image
-                            src={product.imageURL}
+                            src={product.imageUrl}
                             alt={product.name}
                             fill
                             className="rounded-lg object-cover"

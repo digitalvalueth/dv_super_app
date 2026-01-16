@@ -74,7 +74,8 @@ export default function CountingPage() {
           productId: data.productId,
           productName: data.productName,
           productSKU: data.productSKU,
-          imageURL: data.imageURL,
+          // Support both imageUrl and imageURL for backward compatibility
+          imageUrl: data.imageUrl || data.imageURL,
           aiCount: data.aiCount,
           manualCount: data.manualCount,
           finalCount: data.finalCount,
@@ -452,12 +453,12 @@ function SessionDetailModal({
             </div>
           </div>
 
-          {session.imageURL && (
+          {session.imageUrl && (
             <div>
               <h3 className="font-semibold text-gray-900 mb-4">ภาพถ่าย</h3>
               <div className="relative w-full h-96 bg-gray-100 rounded-lg overflow-hidden">
                 <Image
-                  src={session.imageURL}
+                  src={session.imageUrl}
                   alt="Counting image"
                   fill
                   className="object-contain"

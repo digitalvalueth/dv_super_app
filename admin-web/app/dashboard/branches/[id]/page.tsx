@@ -220,7 +220,8 @@ export default function BranchDetailPage() {
           sellerCode: data.sellerCode,
           category: data.category,
           beforeCount: data.beforeCount,
-          imageURL: data.imageURL,
+          // Support both imageUrl and imageURL for backward compatibility
+          imageUrl: data.imageUrl || data.imageURL,
           createdAt: data.createdAt?.toDate(),
         });
       });
@@ -1112,9 +1113,9 @@ export default function BranchDetailPage() {
                           onClick={() => handleAddProduct(product.productId)}
                         >
                           <div className="w-10 h-10 bg-gray-100 dark:bg-gray-700 rounded-lg flex items-center justify-center shrink-0 relative overflow-hidden">
-                            {product.imageURL ? (
+                            {product.imageUrl ? (
                               <Image
-                                src={product.imageURL}
+                                src={product.imageUrl}
                                 alt=""
                                 fill
                                 className="rounded-lg object-cover"
@@ -1188,9 +1189,9 @@ export default function BranchDetailPage() {
                           className="flex items-center gap-3 p-3 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700/50 rounded-lg group border border-blue-200 dark:border-blue-800"
                         >
                           <div className="w-10 h-10 bg-blue-100 dark:bg-blue-900/30 rounded-lg flex items-center justify-center shrink-0 relative overflow-hidden">
-                            {product.imageURL ? (
+                            {product.imageUrl ? (
                               <Image
-                                src={product.imageURL}
+                                src={product.imageUrl}
                                 alt=""
                                 fill
                                 className="rounded-lg object-cover"

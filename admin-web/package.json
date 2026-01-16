@@ -6,9 +6,11 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "migrate:fix-image-urls": "npx tsx scripts/fix-image-url-encoding.ts"
   },
   "dependencies": {
+    "dotenv": "^17.2.3",
     "lucide-react": "^0.562.0",
     "next": "16.1.2",
     "react": "19.2.3",

@@ -83,7 +83,7 @@ export interface Product {
   sellerCode: string;
   category?: string;
   beforeCount?: number;
-  imageURL?: string;
+  imageUrl?: string;
   createdAt?: Date;
   updatedAt?: Date;
 }
@@ -116,7 +116,7 @@ export interface CountingSession {
   productId: string;
   productName?: string;
   productSKU?: string;
-  imageURL?: string;
+  imageUrl?: string;
 
   // Count data
   beforeCountQty?: number;

@@ -88,7 +88,8 @@ export default function DashboardPage() {
             productId: data.productId,
             productName: data.productName,
             productSKU: data.productSKU,
-            imageURL: data.imageURL,
+            // Support both imageUrl and imageURL for backward compatibility
+            imageUrl: data.imageUrl || data.imageURL,
             aiCount: data.aiCount,
             manualCount: data.manualCount,
             finalCount: data.finalCount,
