@@ -67,27 +67,6 @@ export default function ProductDetailsScreen() {
   const assignmentId = params.assignmentId as string;
   const productBarcode = params.productBarcode as string;
 
-  // Debug: Log params to check if imageUrl is being passed
-  useEffect(() => {
-    console.log("📱 Product Details - Params received:", {
-      productId,
-      productName,
-      productSKU,
-      productImage,
-      beforeQty,
-      assignmentId,
-      productBarcode,
-    });
-  }, [
-    productId,
-    productName,
-    productSKU,
-    productImage,
-    beforeQty,
-    assignmentId,
-    productBarcode,
-  ]);
-
   useEffect(() => {
     checkPermissions();
     getLocation();
@@ -96,20 +75,12 @@ export default function ProductDetailsScreen() {
   }, [productId]);
 
   const fetchCountingSessions = async () => {
-    if (!productId) {
-      console.log("❌ No productId to fetch sessions");
-      return;
-    }
+    if (!productId) return;
 
     try {
-      console.log("🔎 Fetching sessions for productId:", productId);
       const sessions = await getProductCountingSessions(productId);
       // แสดงทั้ง pending (draft) และ completed
       setCountingSessions(sessions);
-      console.log(
-        `📸 Found ${sessions.length} counting sessions for ${productId}`,
-        sessions
-      );
     } catch (error) {
       console.error("Error fetching counting sessions:", error);
     }
@@ -286,21 +257,12 @@ export default function ProductDetailsScreen() {
                 style={styles.productImage}
                 contentFit="cover"
                 transition={200}
-                onLoadStart={() => {
-                  console.log("🖼️ Image loading started:", productImage);
-                  console.log(
-                    "🔧 Fixed URL:",
-                    fixFirebaseStorageUrl(productImage)
-                  );
-                  setImageLoading(true);
-                }}
+                onLoadStart={() => setImageLoading(true)}
                 onLoad={() => {
-                  console.log("✅ Image loaded successfully");
                   setImageLoading(false);
                   setImageError(false);
                 }}
-                onError={(error) => {
-                  console.error("❌ Image load error:", error);
+                onError={() => {
                   setImageLoading(false);
                   setImageError(true);
                 }}
@@ -427,8 +389,8 @@ export default function ProductDetailsScreen() {
                           watermarkDataStr = JSON.stringify(parsedRemarks);
                         }
                       }
-                    } catch (e) {
-                      console.log("Could not parse remarks:", e);
+                    } catch {
+                      // Parse error - use original remarks
                     }
 
                     if (session.status === "pending") {

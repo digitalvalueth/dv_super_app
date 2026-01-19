@@ -18,22 +18,10 @@ export const countBarcodesInImage = async (
 
     // Validate base64
     if (!imageBase64 || imageBase64.length < 100) {
-      console.error(
-        "❌ Invalid base64 data - too short or empty:",
-        imageBase64?.length || 0
-      );
       throw new Error(
         "Invalid image data - please try capturing the image again"
       );
     }
-
-    // Log base64 info for debugging
-    console.log(
-      "📊 Base64 info - length:",
-      imageBase64.length,
-      "preview:",
-      imageBase64.substring(0, 50)
-    );
 
     const model = genAI.getGenerativeModel({
       model: "gemini-2.5-flash",
@@ -78,8 +66,6 @@ If unclear or no products visible, return 0.`;
     // Parse count from response
     const count = parseInt(text, 10) || 0;
     const processingTime = Date.now() - startTime;
-
-    console.log(`🔍 Gemini product count: ${count} (${processingTime}ms)`);
 
     return { count, processingTime };
   } catch (error) {

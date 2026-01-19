@@ -6,11 +6,7 @@ import {
 import { countBarcodesInImage } from "@/services/gemini.service";
 import { useAuthStore } from "@/stores/auth.store";
 import { useTheme } from "@/stores/theme.store";
-import {
-  formatTimestamp,
-  generateWatermarkLines,
-  WatermarkData,
-} from "@/utils/watermark";
+import { formatTimestamp, WatermarkData } from "@/utils/watermark";
 import { Ionicons } from "@expo/vector-icons";
 import { router, useLocalSearchParams } from "expo-router";
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -70,6 +66,15 @@ export default function PreviewScreen() {
     params.imageUri || ""
   );
 
+  // Parse watermark data
+  const watermarkData: WatermarkData | null = useMemo(() => {
+    try {
+      return params.watermarkData ? JSON.parse(params.watermarkData) : null;
+    } catch {
+      return null;
+    }
+  }, [params.watermarkData]);
+
   // เมื่อเข้าหน้า preview: อัพโหลดรูปและสร้าง/อัพเดท draft session
   useEffect(() => {
     const createOrUpdateDraftSession = async () => {
@@ -79,19 +84,14 @@ export default function PreviewScreen() {
         !params.productId ||
         !params.imageUri
       ) {
-        console.log("❌ Missing required params for draft session");
         return;
       }
 
       // ถ้ามี existingSessionId และไม่มี imageBase64 แสดงว่ามาจากหน้า details กดดูรูปที่มีอยู่แล้ว
       // ต้องโหลด base64 จาก URL เพื่อวิเคราะห์ AI
       if (params.existingSessionId && !params.imageBase64) {
-        console.log("📍 Using existing session:", params.existingSessionId);
-
         // Fix URL encoding สำหรับ Firebase Storage
         const fixedImageUrl = fixFirebaseStorageUrl(params.imageUri);
-        console.log("📍 Original imageUri:", params.imageUri);
-        console.log("📍 Fixed imageUri:", fixedImageUrl);
 
         setSessionId(params.existingSessionId);
         setDisplayImageUri(fixedImageUrl);
@@ -99,18 +99,12 @@ export default function PreviewScreen() {
         // โหลด base64 จาก Firebase URL ด้วย fetch
         try {
           setIsLoadingImage(true);
-          console.log("📥 Loading image from URL:", fixedImageUrl);
 
           // ดาวน์โหลดรูปจาก URL และแปลงเป็น base64
           const response = await fetch(fixedImageUrl);
 
           // Check if response is OK
           if (!response.ok) {
-            console.error(
-              "❌ Failed to fetch image:",
-              response.status,
-              response.statusText
-            );
             Alert.alert(
               "เกิดข้อผิดพลาด",
               `ไม่สามารถโหลดรูปภาพได้ (${response.status})`
@@ -119,7 +113,6 @@ export default function PreviewScreen() {
           }
 
           const blob = await response.blob();
-          console.log("📦 Blob size:", blob.size, "type:", blob.type);
 
           // Convert blob to base64
           const reader = new FileReader();
@@ -128,22 +121,14 @@ export default function PreviewScreen() {
               const base64data = reader.result as string;
               // Remove data:image/jpeg;base64, prefix
               const base64 = base64data.split(",")[1] || base64data;
-              console.log("📄 Base64 length:", base64.length);
               resolve(base64);
             };
-            reader.onerror = (err) => {
-              console.error("❌ FileReader error:", err);
-              reject(err);
-            };
+            reader.onerror = reject;
           });
           reader.readAsDataURL(blob);
 
           const base64 = await base64Promise;
           setImageBase64(base64);
-          console.log(
-            "✅ Image loaded and converted to base64, length:",
-            base64.length
-          );
         } catch (error) {
           console.error("Error loading image from URL:", error);
           Alert.alert("เกิดข้อผิดพลาด", "ไม่สามารถโหลดรูปภาพได้");
@@ -166,24 +151,18 @@ export default function PreviewScreen() {
           undefined,
           params.productId
         );
-        console.log("📸 Product marked as in_progress:", params.productId);
 
-        // 2. อัพโหลดรูปไป Firebase Storage
+        // 2. อัพโหลดรูปปกติ (ไม่มี watermark) ไป Firebase Storage
+        // Watermark จะถูกฝังตอนกดยืนยันใน result.tsx
         const sessionIdTemp = `session_${Date.now()}`;
         const imageUrl = await uploadCountingImage(
           user.uid,
           sessionIdTemp,
           params.imageUri
         );
-        console.log("✅ Image uploaded:", imageUrl);
 
         // 3. ถ้ามี existingSessionId ให้อัพเดทรูปแทนสร้างใหม่
         if (params.existingSessionId) {
-          console.log(
-            "📝 Updating existing session with new image:",
-            params.existingSessionId
-          );
-
           const { updateDoc, doc } = await import("firebase/firestore");
           const { db } = await import("@/config/firebase");
 
@@ -202,7 +181,6 @@ export default function PreviewScreen() {
           );
 
           setSessionId(params.existingSessionId);
-          console.log("✅ Session updated with new image");
         } else {
           // 4. สร้าง draft session ใหม่
           const watermarkData = params.watermarkData
@@ -254,7 +232,6 @@ export default function PreviewScreen() {
           });
 
           setSessionId(newSessionId);
-          console.log("✅ New draft session created:", newSessionId);
         }
       } catch (error) {
         console.error("Error creating/updating draft session:", error);
@@ -274,22 +251,8 @@ export default function PreviewScreen() {
     params.existingSessionId,
   ]);
 
-  // Parse watermark data
-  const watermarkData: WatermarkData | null = useMemo(() => {
-    try {
-      return params.watermarkData ? JSON.parse(params.watermarkData) : null;
-    } catch {
-      return null;
-    }
-  }, [params.watermarkData]);
-
-  // Generate watermark lines for display
-  const watermarkLines = useMemo(() => {
-    if (!watermarkData) return [];
-    return generateWatermarkLines(watermarkData);
-  }, [watermarkData]);
-
   const handleAnalyze = useCallback(async () => {
+    // ใช้รูปปกติ (ไม่มี watermark) สำหรับ AI วิเคราะห์
     if (!imageBase64) {
       Alert.alert("เกิดข้อผิดพลาด", "ไม่พบข้อมูลรูปภาพ กรุณารอโหลดรูปสักครู่");
       return;
@@ -304,7 +267,7 @@ export default function PreviewScreen() {
       setIsProcessing(true);
       setBarcodeCount(null);
 
-      // 1. วิเคราะห์รูปด้วย AI
+      // 1. วิเคราะห์รูปด้วย AI (ใช้รูปปกติ ไม่มี watermark)
       const result = await countBarcodesInImage(imageBase64);
 
       setBarcodeCount(result.count);
@@ -329,8 +292,6 @@ export default function PreviewScreen() {
         status: "analyzed", // เปลี่ยนจาก pending เป็น analyzed (วิเคราะห์แล้ว แต่ยังไม่ยืนยัน)
         updatedAt: new Date(),
       });
-
-      console.log("✅ Session updated with AI results:", sessionId);
     } catch (error) {
       console.error("Error analyzing image:", error);
       Alert.alert("เกิดข้อผิดพลาด", "ไม่สามารถวิเคราะห์รูปภาพได้");
@@ -396,13 +357,17 @@ export default function PreviewScreen() {
         contentContainerStyle={styles.contentContainer}
         showsVerticalScrollIndicator={false}
       >
-        {/* Image Preview with Watermark Overlay */}
+        {/* Visible Image for Employee - รูปปกติไม่มี watermark */}
         <View style={styles.imageContainer}>
           {isLoadingImage ? (
             <View
               style={[
                 styles.image,
-                { justifyContent: "center", alignItems: "center" },
+                {
+                  justifyContent: "center",
+                  alignItems: "center",
+                  backgroundColor: colors.card,
+                },
               ]}
             >
               <ActivityIndicator size="large" color={colors.primary} />
@@ -419,28 +384,8 @@ export default function PreviewScreen() {
             <Image
               source={{ uri: displayImageUri || params.imageUri }}
               style={styles.image}
-              resizeMode="contain"
-              onError={(error) =>
-                console.log("❌ Image load error:", error.nativeEvent)
-              }
-              onLoad={() =>
-                console.log(
-                  "✅ Image loaded successfully, URI:",
-                  displayImageUri || params.imageUri
-                )
-              }
+              resizeMode="cover"
             />
-          )}
-
-          {/* Watermark Overlay */}
-          {watermarkData && (
-            <View style={styles.watermarkOverlay}>
-              {watermarkLines.map((line, index) => (
-                <Text key={index} style={styles.watermarkText}>
-                  {line}
-                </Text>
-              ))}
-            </View>
           )}
         </View>
 
@@ -703,9 +648,14 @@ const styles = StyleSheet.create({
     padding: 16,
     gap: 16,
   },
+  viewShotContainer: {
+    width: "100%",
+    borderRadius: 16,
+    overflow: "hidden",
+  },
   imageContainer: {
     width: "100%",
-    aspectRatio: 1,
+    aspectRatio: 3 / 4, // Changed to 3:4 for better photo ratio
     borderRadius: 16,
     overflow: "hidden",
     backgroundColor: "#000",
@@ -714,20 +664,6 @@ const styles = StyleSheet.create({
   image: {
     width: "100%",
     height: "100%",
-  },
-  watermarkOverlay: {
-    position: "absolute",
-    bottom: 0,
-    left: 0,
-    right: 0,
-    backgroundColor: "rgba(0,0,0,0.6)",
-    padding: 12,
-    gap: 4,
-  },
-  watermarkText: {
-    color: "#fff",
-    fontSize: 11,
-    fontWeight: "500",
   },
   infoCard: {
     borderRadius: 12,

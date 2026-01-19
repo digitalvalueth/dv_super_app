@@ -232,22 +232,12 @@ export const getProductCountingSessions = async (
   limitCount: number = 10
 ): Promise<CountingSession[]> => {
   try {
-    console.log("🔍 Searching counting sessions for productId:", productId);
-
     const sessionsRef = collection(db, "countingSessions");
 
     // Query without orderBy to avoid needing composite index
     const q = query(sessionsRef, where("productId", "==", productId));
 
     const snapshot = await getDocs(q);
-
-    console.log(`📊 Found ${snapshot.size} sessions`);
-
-    // Debug: Log first session data if exists
-    if (snapshot.size > 0) {
-      const firstDoc = snapshot.docs[0];
-      console.log("📝 First session data:", firstDoc.data());
-    }
 
     // Sort in JavaScript instead of Firestore (no index needed)
     const sessions = snapshot.docs.map(

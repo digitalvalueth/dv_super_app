@@ -363,6 +363,39 @@ function SessionDetailModal({
 }) {
   const [remarks, setRemarks] = useState("");
 
+  // Parse watermark data from remarks
+  const watermarkData = (() => {
+    try {
+      if (session.remarks) {
+        const parsed = JSON.parse(session.remarks);
+        // Check if it's watermark metadata (has location or timestamp)
+        if (parsed.location || parsed.timestamp || parsed.employeeName) {
+          return parsed as {
+            location?: string;
+            coordinates?: { lat: number; lng: number };
+            timestamp?: string;
+            employeeName?: string;
+            employeeId?: string;
+          };
+        }
+      }
+    } catch {
+      // Not JSON or not watermark data
+    }
+    return null;
+  })();
+
+  // Format timestamp for display
+  const formatWatermarkTimestamp = (timestamp: string | undefined) => {
+    if (!timestamp) return "";
+    try {
+      const date = new Date(timestamp);
+      return format(date, "dd/MM/yyyy HH:mm:ss", { locale: th });
+    } catch {
+      return timestamp;
+    }
+  };
+
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
       <div className="bg-white rounded-xl max-w-4xl w-full max-h-[90vh] overflow-y-auto">
@@ -463,11 +496,40 @@ function SessionDetailModal({
                   fill
                   className="object-contain"
                 />
+                {/* Watermark Overlay for Admin */}
+                {watermarkData && (
+                  <div className="absolute bottom-0 left-0 right-0 bg-black/65 text-yellow-400 p-3 font-semibold text-sm">
+                    <div className="flex flex-col gap-0.5">
+                      {watermarkData.timestamp && (
+                        <span>
+                          📅 {formatWatermarkTimestamp(watermarkData.timestamp)}
+                        </span>
+                      )}
+                      {watermarkData.location && (
+                        <span>📍 {watermarkData.location}</span>
+                      )}
+                      {watermarkData.coordinates?.lat != null &&
+                        watermarkData.coordinates?.lng != null && (
+                          <span className="text-xs text-yellow-300">
+                            🌐 {watermarkData.coordinates.lat.toFixed(6)},{" "}
+                            {watermarkData.coordinates.lng.toFixed(6)}
+                          </span>
+                        )}
+                      {watermarkData.employeeName && (
+                        <span>
+                          👤 {watermarkData.employeeName} (
+                          {watermarkData.employeeId})
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
           )}
 
-          {session.remarks && (
+          {/* Only show remarks if it's not watermark data */}
+          {session.remarks && !watermarkData && (
             <div>
               <h3 className="font-semibold text-gray-900 mb-2">
                 หมายเหตุจากพนักงาน
