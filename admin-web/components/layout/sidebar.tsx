@@ -4,6 +4,7 @@ import {
   BarChart3,
   Building2,
   ClipboardList,
+  DollarSign,
   LayoutDashboard,
   Mail,
   Menu,
@@ -21,6 +22,7 @@ const navigation = [
   { name: "สาขา", href: "/dashboard/branches", icon: Building2 },
   { name: "สินค้า", href: "/dashboard/products", icon: Package },
   { name: "ข้อมูลการนับ", href: "/dashboard/counting", icon: ClipboardList },
+  { name: "ค่าคอมมิชชั่น", href: "/dashboard/commission", icon: DollarSign },
   { name: "รายงาน", href: "/dashboard/reports", icon: BarChart3 },
   { name: "เชิญผู้ใช้", href: "/dashboard/invitations", icon: Mail },
 ];

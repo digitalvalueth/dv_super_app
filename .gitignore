@@ -43,3 +43,7 @@ app-example
 # generated native folders
 /ios
 /android
+
+
+# temp folder
+/demo_1

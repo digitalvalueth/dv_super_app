@@ -208,3 +208,17 @@ export interface DashboardStats {
   totalDiscrepancy: number;
   recentSessions: CountingSession[];
 }
+
+// Commission Settings - สามารถกำหนดได้ตามบริษัท, สาขา หรือรายบุคคล
+export interface CommissionSettings {
+  id: string;
+  companyId: string;
+  branchId?: string; // ถ้าไม่ระบุ = ใช้กับทุกสาขา
+  userId?: string; // ถ้าไม่ระบุ = ใช้กับทุกคนในสาขา/บริษัท
+  commissionRate: number; // % commission (default: 5)
+  deductionRate: number; // % หักจากสินค้าหาย (default: 50)
+  estimatedPricePerItem: number; // ราคาเฉลี่ยต่อชิ้น (default: 500)
+  isActive: boolean;
+  createdAt?: Date;
+  updatedAt?: Date;
+}

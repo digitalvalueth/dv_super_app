@@ -3,7 +3,7 @@ import { Resend } from "resend";
 
 // Email configuration
 const RESEND_API_KEY = process.env.RESEND_API_KEY;
-const FROM_EMAIL = process.env.FROM_EMAIL || "onboarding@resend.dev"; // Use resend.dev for testing
+const FROM_EMAIL = "digitalvalue@resend.dev"; //process.env.FROM_EMAIL || "onboarding@resend.dev"; // Use resend.dev for testing
 const APP_NAME = "Super Fitt";
 const APP_URL = process.env.NEXT_PUBLIC_APP_URL || "https://app.superfitt.com";
 
@@ -106,8 +106,8 @@ function generateInviteEmailHTML(data: InviteEmailData): string {
                 <tr>
                   <td align="center" style="padding: 16px 0;">
                     <a href="${APP_URL}/invite/${
-    data.invitationId
-  }" style="display: inline-block; background: linear-gradient(135deg, #22c55e 0%, #16a34a 100%); color: white; text-decoration: none; padding: 16px 48px; border-radius: 12px; font-size: 16px; font-weight: bold; box-shadow: 0 4px 14px rgba(34, 197, 94, 0.4);">
+                      data.invitationId
+                    }" style="display: inline-block; background: linear-gradient(135deg, #22c55e 0%, #16a34a 100%); color: white; text-decoration: none; padding: 16px 48px; border-radius: 12px; font-size: 16px; font-weight: bold; box-shadow: 0 4px 14px rgba(34, 197, 94, 0.4);">
                       ยอมรับคำเชิญ
                     </a>
                   </td>
@@ -164,7 +164,7 @@ export async function POST(request: NextRequest) {
     ) {
       return NextResponse.json(
         { success: false, error: "Missing required fields" },
-        { status: 400 }
+        { status: 400 },
       );
     }
 
@@ -173,7 +173,7 @@ export async function POST(request: NextRequest) {
     if (!emailRegex.test(body.to)) {
       return NextResponse.json(
         { success: false, error: "Invalid email format" },
-        { status: 400 }
+        { status: 400 },
       );
     }
 
@@ -204,7 +204,7 @@ export async function POST(request: NextRequest) {
       console.error("Resend error:", error);
       return NextResponse.json(
         { success: false, error: "Failed to send email", details: error },
-        { status: 500 }
+        { status: 500 },
       );
     }
 
@@ -219,7 +219,7 @@ export async function POST(request: NextRequest) {
     console.error("Error in send-email API:", error);
     return NextResponse.json(
       { success: false, error: "Internal server error" },
-      { status: 500 }
+      { status: 500 },
     );
   }
 }
