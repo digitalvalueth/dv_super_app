@@ -1,5 +1,10 @@
-import { updateAssignmentStatus } from "@/services/counting.service";
+import {
+  createCountingSession,
+  updateAssignmentStatus,
+  uploadCountingImage,
+} from "@/services/counting.service";
 import { countBarcodesInImage } from "@/services/gemini.service";
+import { useAuthStore } from "@/stores/auth.store";
 import { useTheme } from "@/stores/theme.store";
 import {
   formatTimestamp,
@@ -7,13 +12,12 @@ import {
   WatermarkData,
 } from "@/utils/watermark";
 import { Ionicons } from "@expo/vector-icons";
-import { Image } from "expo-image";
 import { router, useLocalSearchParams } from "expo-router";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
-  Dimensions,
+  Image,
   ScrollView,
   StyleSheet,
   Text,
@@ -22,10 +26,23 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
-const { width: SCREEN_WIDTH } = Dimensions.get("window");
+// Fix Firebase Storage URL encoding
+const fixFirebaseStorageUrl = (url: string): string => {
+  if (!url) return url;
+  if (url.includes("%2F")) return url;
+
+  const match = url.match(/\/o\/([^?]+)/);
+  if (match) {
+    const path = match[1];
+    const encodedPath = path.split("/").map(encodeURIComponent).join("%2F");
+    return url.replace(/\/o\/[^?]+/, `/o/${encodedPath}`);
+  }
+  return url;
+};
 
 export default function PreviewScreen() {
-  const { colors, isDark } = useTheme();
+  const { colors } = useTheme();
+  const { user } = useAuthStore();
   const params = useLocalSearchParams<{
     imageUri: string;
     imageBase64: string;
@@ -35,31 +52,227 @@ export default function PreviewScreen() {
     productBarcode?: string;
     assignmentId?: string;
     beforeQty?: string;
+    existingSessionId?: string; // ถ้ามี แสดงว่ามี session อยู่แล้ว ให้อัพเดทแทนสร้างใหม่
   }>();
 
   const [isProcessing, setIsProcessing] = useState(false);
+  const [isUploading, setIsUploading] = useState(false);
+  const [isLoadingImage, setIsLoadingImage] = useState(false);
   const [barcodeCount, setBarcodeCount] = useState<number | null>(null);
   const [processingTime, setProcessingTime] = useState<number | null>(null);
+  const [sessionId, setSessionId] = useState<string | null>(
+    params.existingSessionId || null
+  );
+  const [imageBase64, setImageBase64] = useState<string | null>(
+    params.imageBase64 || null
+  );
+  const [displayImageUri, setDisplayImageUri] = useState<string>(
+    params.imageUri || ""
+  );
 
-  // Mark product as in_progress when entering preview screen
+  // เมื่อเข้าหน้า preview: อัพโหลดรูปและสร้าง/อัพเดท draft session
   useEffect(() => {
-    const markInProgress = async () => {
-      if (params.assignmentId && params.productId) {
+    const createOrUpdateDraftSession = async () => {
+      if (
+        !user ||
+        !params.assignmentId ||
+        !params.productId ||
+        !params.imageUri
+      ) {
+        console.log("❌ Missing required params for draft session");
+        return;
+      }
+
+      // ถ้ามี existingSessionId และไม่มี imageBase64 แสดงว่ามาจากหน้า details กดดูรูปที่มีอยู่แล้ว
+      // ต้องโหลด base64 จาก URL เพื่อวิเคราะห์ AI
+      if (params.existingSessionId && !params.imageBase64) {
+        console.log("📍 Using existing session:", params.existingSessionId);
+
+        // Fix URL encoding สำหรับ Firebase Storage
+        const fixedImageUrl = fixFirebaseStorageUrl(params.imageUri);
+        console.log("📍 Original imageUri:", params.imageUri);
+        console.log("📍 Fixed imageUri:", fixedImageUrl);
+
+        setSessionId(params.existingSessionId);
+        setDisplayImageUri(fixedImageUrl);
+
+        // โหลด base64 จาก Firebase URL ด้วย fetch
         try {
-          await updateAssignmentStatus(
-            params.assignmentId,
-            "in_progress",
-            undefined,
-            params.productId
+          setIsLoadingImage(true);
+          console.log("📥 Loading image from URL:", fixedImageUrl);
+
+          // ดาวน์โหลดรูปจาก URL และแปลงเป็น base64
+          const response = await fetch(fixedImageUrl);
+
+          // Check if response is OK
+          if (!response.ok) {
+            console.error(
+              "❌ Failed to fetch image:",
+              response.status,
+              response.statusText
+            );
+            Alert.alert(
+              "เกิดข้อผิดพลาด",
+              `ไม่สามารถโหลดรูปภาพได้ (${response.status})`
+            );
+            return;
+          }
+
+          const blob = await response.blob();
+          console.log("📦 Blob size:", blob.size, "type:", blob.type);
+
+          // Convert blob to base64
+          const reader = new FileReader();
+          const base64Promise = new Promise<string>((resolve, reject) => {
+            reader.onloadend = () => {
+              const base64data = reader.result as string;
+              // Remove data:image/jpeg;base64, prefix
+              const base64 = base64data.split(",")[1] || base64data;
+              console.log("📄 Base64 length:", base64.length);
+              resolve(base64);
+            };
+            reader.onerror = (err) => {
+              console.error("❌ FileReader error:", err);
+              reject(err);
+            };
+          });
+          reader.readAsDataURL(blob);
+
+          const base64 = await base64Promise;
+          setImageBase64(base64);
+          console.log(
+            "✅ Image loaded and converted to base64, length:",
+            base64.length
           );
-          console.log("📸 Product marked as in_progress:", params.productId);
         } catch (error) {
-          console.error("Error marking product as in_progress:", error);
+          console.error("Error loading image from URL:", error);
+          Alert.alert("เกิดข้อผิดพลาด", "ไม่สามารถโหลดรูปภาพได้");
+        } finally {
+          setIsLoadingImage(false);
         }
+        return;
+      }
+
+      // ถ้ามี sessionId อยู่แล้ว ไม่ต้องสร้างใหม่ (กรณี re-render)
+      if (sessionId && !params.existingSessionId) return;
+
+      try {
+        setIsUploading(true);
+
+        // 1. Mark product as in_progress
+        await updateAssignmentStatus(
+          params.assignmentId,
+          "in_progress",
+          undefined,
+          params.productId
+        );
+        console.log("📸 Product marked as in_progress:", params.productId);
+
+        // 2. อัพโหลดรูปไป Firebase Storage
+        const sessionIdTemp = `session_${Date.now()}`;
+        const imageUrl = await uploadCountingImage(
+          user.uid,
+          sessionIdTemp,
+          params.imageUri
+        );
+        console.log("✅ Image uploaded:", imageUrl);
+
+        // 3. ถ้ามี existingSessionId ให้อัพเดทรูปแทนสร้างใหม่
+        if (params.existingSessionId) {
+          console.log(
+            "📝 Updating existing session with new image:",
+            params.existingSessionId
+          );
+
+          const { updateDoc, doc } = await import("firebase/firestore");
+          const { db } = await import("@/config/firebase");
+
+          await updateDoc(
+            doc(db, "countingSessions", params.existingSessionId),
+            {
+              imageUrl: imageUrl,
+              imageURL: imageUrl,
+              status: "pending", // Reset to pending (need AI analysis again)
+              currentCountQty: 0,
+              variance: 0,
+              aiCount: 0,
+              aiConfidence: 0,
+              updatedAt: new Date(),
+            }
+          );
+
+          setSessionId(params.existingSessionId);
+          console.log("✅ Session updated with new image");
+        } else {
+          // 4. สร้าง draft session ใหม่
+          const watermarkData = params.watermarkData
+            ? JSON.parse(params.watermarkData)
+            : null;
+          const beforeQty = parseInt(params.beforeQty || "0");
+
+          const newSessionId = await createCountingSession({
+            assignmentId: params.assignmentId,
+            productId: params.productId,
+            productName: params.productName || "",
+            productSKU: params.productBarcode || "",
+            companyId: user.companyId || "",
+            branchId: user.branchId || "",
+            branchName: user.branchName || "",
+            beforeCountQty: beforeQty,
+            currentCountQty: 0,
+            variance: 0,
+            aiCount: 0,
+            aiConfidence: 0,
+            aiModel: "gemini-2.5-flash",
+            imageUrl: imageUrl,
+            imageURL: imageUrl,
+            status: "pending",
+            userId: user.uid,
+            userName: user.name || "",
+            userEmail: user.email || "",
+            manualCount: 0,
+            finalCount: 0,
+            standardCount: beforeQty,
+            discrepancy: 0,
+            remarks: watermarkData
+              ? JSON.stringify({
+                  location: watermarkData.location || "",
+                  coordinates: {
+                    latitude: watermarkData.latitude || 0,
+                    longitude: watermarkData.longitude || 0,
+                  },
+                  timestamp:
+                    watermarkData.timestamp || new Date().toISOString(),
+                  employeeName: watermarkData.employeeName || user.name || "",
+                  employeeId: user.uid,
+                  deviceModel: watermarkData.deviceModel || "Unknown",
+                })
+              : "",
+            processingTime: 0,
+            deviceInfo: watermarkData?.deviceModel || "Unknown",
+            appVersion: "1.0.0",
+          });
+
+          setSessionId(newSessionId);
+          console.log("✅ New draft session created:", newSessionId);
+        }
+      } catch (error) {
+        console.error("Error creating/updating draft session:", error);
+        Alert.alert("เกิดข้อผิดพลาด", "ไม่สามารถอัพโหลดรูปภาพได้");
+      } finally {
+        setIsUploading(false);
       }
     };
-    markInProgress();
-  }, [params.assignmentId, params.productId]);
+
+    createOrUpdateDraftSession();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    user,
+    params.assignmentId,
+    params.productId,
+    params.imageUri,
+    params.existingSessionId,
+  ]);
 
   // Parse watermark data
   const watermarkData: WatermarkData | null = useMemo(() => {
@@ -77,8 +290,13 @@ export default function PreviewScreen() {
   }, [watermarkData]);
 
   const handleAnalyze = useCallback(async () => {
-    if (!params.imageBase64) {
-      Alert.alert("เกิดข้อผิดพลาด", "ไม่พบข้อมูลรูปภาพ");
+    if (!imageBase64) {
+      Alert.alert("เกิดข้อผิดพลาด", "ไม่พบข้อมูลรูปภาพ กรุณารอโหลดรูปสักครู่");
+      return;
+    }
+
+    if (!sessionId) {
+      Alert.alert("กรุณารอสักครู่", "กำลังอัพโหลดรูปภาพ...");
       return;
     }
 
@@ -86,24 +304,47 @@ export default function PreviewScreen() {
       setIsProcessing(true);
       setBarcodeCount(null);
 
-      const result = await countBarcodesInImage(params.imageBase64);
+      // 1. วิเคราะห์รูปด้วย AI
+      const result = await countBarcodesInImage(imageBase64);
 
       setBarcodeCount(result.count);
       setProcessingTime(result.processingTime);
+
+      // 2. อัพเดท session ที่มีอยู่แล้วด้วยผลวิเคราะห์
+      const { updateDoc, doc } = await import("firebase/firestore");
+      const { db } = await import("@/config/firebase");
+
+      const beforeQty = parseInt(params.beforeQty || "0");
+      const variance = beforeQty - result.count;
+
+      await updateDoc(doc(db, "countingSessions", sessionId), {
+        currentCountQty: result.count,
+        variance: variance,
+        aiCount: result.count,
+        aiConfidence: 0.95,
+        manualCount: result.count,
+        finalCount: result.count,
+        discrepancy: Math.abs(variance),
+        processingTime: result.processingTime || 0,
+        status: "analyzed", // เปลี่ยนจาก pending เป็น analyzed (วิเคราะห์แล้ว แต่ยังไม่ยืนยัน)
+        updatedAt: new Date(),
+      });
+
+      console.log("✅ Session updated with AI results:", sessionId);
     } catch (error) {
       console.error("Error analyzing image:", error);
       Alert.alert("เกิดข้อผิดพลาด", "ไม่สามารถวิเคราะห์รูปภาพได้");
     } finally {
       setIsProcessing(false);
     }
-  }, [params.imageBase64]);
+  }, [imageBase64, sessionId, params.beforeQty]);
 
   const handleRetake = () => {
     router.back();
   };
 
   const handleConfirm = () => {
-    if (barcodeCount === null) {
+    if (barcodeCount === null || !sessionId) {
       Alert.alert(
         "กรุณาวิเคราะห์รูปก่อน",
         "กดปุ่ม 'วิเคราะห์ด้วย AI' เพื่อนับจำนวน Barcode"
@@ -111,10 +352,11 @@ export default function PreviewScreen() {
       return;
     }
 
-    // Navigate to result screen with all data
+    // Navigate to result screen with session ID
     router.push({
       pathname: "/result",
       params: {
+        sessionId: sessionId, // ส่ง session ID ไปเพื่ออัพเดท
         imageUri: params.imageUri,
         barcodeCount: barcodeCount.toString(),
         processingTime: processingTime?.toString() || "0",
@@ -156,12 +398,39 @@ export default function PreviewScreen() {
       >
         {/* Image Preview with Watermark Overlay */}
         <View style={styles.imageContainer}>
-          <Image
-            source={{ uri: params.imageUri }}
-            style={styles.image}
-            contentFit="contain"
-            transition={200}
-          />
+          {isLoadingImage ? (
+            <View
+              style={[
+                styles.image,
+                { justifyContent: "center", alignItems: "center" },
+              ]}
+            >
+              <ActivityIndicator size="large" color={colors.primary} />
+              <Text
+                style={[
+                  styles.processingText,
+                  { color: colors.textSecondary, marginTop: 10 },
+                ]}
+              >
+                กำลังโหลดรูปภาพ...
+              </Text>
+            </View>
+          ) : (
+            <Image
+              source={{ uri: displayImageUri || params.imageUri }}
+              style={styles.image}
+              resizeMode="contain"
+              onError={(error) =>
+                console.log("❌ Image load error:", error.nativeEvent)
+              }
+              onLoad={() =>
+                console.log(
+                  "✅ Image loaded successfully, URI:",
+                  displayImageUri || params.imageUri
+                )
+              }
+            />
+          )}
 
           {/* Watermark Overlay */}
           {watermarkData && (
@@ -235,7 +504,7 @@ export default function PreviewScreen() {
                 <Text
                   style={[styles.infoText, { color: colors.textSecondary }]}
                 >
-                  {watermarkData.deviceModel}
+                  {watermarkData.deviceModel || "-"}
                 </Text>
               </View>
               <View style={styles.infoRow}>
@@ -325,15 +594,41 @@ export default function PreviewScreen() {
             style={[
               styles.analyzeButton,
               { backgroundColor: colors.primary },
-              isProcessing && { opacity: 0.6 },
+              (isProcessing ||
+                isUploading ||
+                isLoadingImage ||
+                !sessionId ||
+                !imageBase64) && { opacity: 0.6 },
             ]}
             onPress={handleAnalyze}
-            disabled={isProcessing}
+            disabled={
+              isProcessing ||
+              isUploading ||
+              isLoadingImage ||
+              !sessionId ||
+              !imageBase64
+            }
           >
-            <Ionicons name="sparkles" size={20} color="#fff" />
-            <Text style={styles.analyzeButtonText}>
-              {barcodeCount !== null ? "วิเคราะห์อีกครั้ง" : "วิเคราะห์ด้วย AI"}
-            </Text>
+            {isUploading ? (
+              <>
+                <ActivityIndicator size="small" color="#fff" />
+                <Text style={styles.analyzeButtonText}>กำลังอัพโหลดรูป...</Text>
+              </>
+            ) : isLoadingImage ? (
+              <>
+                <ActivityIndicator size="small" color="#fff" />
+                <Text style={styles.analyzeButtonText}>กำลังโหลดรูป...</Text>
+              </>
+            ) : (
+              <>
+                <Ionicons name="sparkles" size={20} color="#fff" />
+                <Text style={styles.analyzeButtonText}>
+                  {barcodeCount !== null
+                    ? "วิเคราะห์อีกครั้ง"
+                    : "วิเคราะห์ด้วย AI"}
+                </Text>
+              </>
+            )}
           </TouchableOpacity>
         </View>
       </ScrollView>

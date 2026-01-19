@@ -133,6 +133,8 @@ export type AssignmentStatus = "pending" | "in_progress" | "completed";
 
 // ==================== Counting Session ====================
 
+export type CountingSessionStatus = "pending" | "analyzed" | "completed";
+
 export interface CountingSession {
   id: string;
   assignmentId: string;
@@ -141,17 +143,35 @@ export interface CountingSession {
   companyId: string;
   branchId: string;
 
+  // Product info
+  productName?: string;
+  productSKU?: string;
+  branchName?: string;
+
+  // User info
+  userName?: string;
+  userEmail?: string;
+
   // Count data
   beforeCountQty: number;
   currentCountQty: number;
   manualAdjustedQty?: number;
   variance: number; // beforeCountQty - currentCountQty
+  manualCount?: number;
+  finalCount?: number;
+  standardCount?: number;
+  discrepancy?: number;
 
   // Photo & AI
   imageUrl: string;
+  imageURL?: string; // Backward compatibility
+  aiCount?: number;
   aiConfidence?: number;
   aiModel?: string;
   processingTime?: number; // milliseconds
+
+  // Status
+  status: CountingSessionStatus;
 
   // Location
   location?: {

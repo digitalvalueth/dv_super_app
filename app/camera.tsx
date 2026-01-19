@@ -28,6 +28,7 @@ export default function CameraScreen() {
     productBarcode?: string;
     assignmentId?: string;
     beforeQty?: string;
+    existingSessionId?: string;
   }>();
 
   const [permission, requestPermission] = useCameraPermissions();
@@ -77,6 +78,7 @@ export default function CameraScreen() {
           productBarcode: params.productBarcode,
           assignmentId: params.assignmentId,
           beforeQty: params.beforeQty,
+          existingSessionId: params.existingSessionId || "",
         },
       });
     } catch (error) {
@@ -125,6 +127,7 @@ export default function CameraScreen() {
           productBarcode: params.productBarcode,
           assignmentId: params.assignmentId,
           beforeQty: params.beforeQty,
+          existingSessionId: params.existingSessionId || "",
         },
       });
     } catch (error) {

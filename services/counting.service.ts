@@ -63,13 +63,16 @@ export const createCountingSession = async (
 
     const docRef = await addDoc(sessionsRef, newSession);
 
-    // Update assignment - add productId to completedProductIds
-    await updateAssignmentStatus(
-      data.assignmentId,
-      "completed",
-      Timestamp.now(),
-      data.productId // Pass productId to track which product is completed
-    );
+    // Update assignment - only mark as completed if session status is completed
+    // If status is "pending" (draft), don't mark as completed yet
+    if (data.status === "completed") {
+      await updateAssignmentStatus(
+        data.assignmentId,
+        "completed",
+        Timestamp.now(),
+        data.productId // Pass productId to track which product is completed
+      );
+    }
 
     // Add to user's counting history
     await addToCountingHistory(data.userId, docRef.id, {
@@ -229,18 +232,36 @@ export const getProductCountingSessions = async (
   limitCount: number = 10
 ): Promise<CountingSession[]> => {
   try {
+    console.log("🔍 Searching counting sessions for productId:", productId);
+
     const sessionsRef = collection(db, "countingSessions");
-    const q = query(
-      sessionsRef,
-      where("productId", "==", productId),
-      orderBy("createdAt", "desc")
-    );
+
+    // Query without orderBy to avoid needing composite index
+    const q = query(sessionsRef, where("productId", "==", productId));
 
     const snapshot = await getDocs(q);
 
-    return snapshot.docs.map(
+    console.log(`📊 Found ${snapshot.size} sessions`);
+
+    // Debug: Log first session data if exists
+    if (snapshot.size > 0) {
+      const firstDoc = snapshot.docs[0];
+      console.log("📝 First session data:", firstDoc.data());
+    }
+
+    // Sort in JavaScript instead of Firestore (no index needed)
+    const sessions = snapshot.docs.map(
       (doc) => ({ id: doc.id, ...doc.data() } as CountingSession)
     );
+
+    // Sort by createdAt descending
+    sessions.sort((a, b) => {
+      const dateA = a.createdAt?.toDate?.() || new Date(0);
+      const dateB = b.createdAt?.toDate?.() || new Date(0);
+      return dateB.getTime() - dateA.getTime();
+    });
+
+    return sessions;
   } catch (error) {
     console.error("Error getting product sessions:", error);
     throw error;

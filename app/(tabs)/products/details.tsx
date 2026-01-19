@@ -1,5 +1,7 @@
+import { getProductCountingSessions } from "@/services/counting.service";
 import { useAuthStore } from "@/stores/auth.store";
 import { useTheme } from "@/stores/theme.store";
+import { CountingSession } from "@/types";
 import { createWatermarkMetadata } from "@/utils/watermark";
 import { Ionicons } from "@expo/vector-icons";
 import * as FileSystem from "expo-file-system";
@@ -53,6 +55,9 @@ export default function ProductDetailsScreen() {
   );
   const [imageLoading, setImageLoading] = useState(false);
   const [imageError, setImageError] = useState(false);
+  const [countingSessions, setCountingSessions] = useState<CountingSession[]>(
+    []
+  );
 
   const productId = params.productId as string;
   const productName = params.productName as string;
@@ -86,7 +91,29 @@ export default function ProductDetailsScreen() {
   useEffect(() => {
     checkPermissions();
     getLocation();
-  }, []);
+    fetchCountingSessions();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [productId]);
+
+  const fetchCountingSessions = async () => {
+    if (!productId) {
+      console.log("❌ No productId to fetch sessions");
+      return;
+    }
+
+    try {
+      console.log("🔎 Fetching sessions for productId:", productId);
+      const sessions = await getProductCountingSessions(productId);
+      // แสดงทั้ง pending (draft) และ completed
+      setCountingSessions(sessions);
+      console.log(
+        `📸 Found ${sessions.length} counting sessions for ${productId}`,
+        sessions
+      );
+    } catch (error) {
+      console.error("Error fetching counting sessions:", error);
+    }
+  };
 
   const checkPermissions = async () => {
     const cameraStatus = await ImagePicker.requestCameraPermissionsAsync();
@@ -123,6 +150,11 @@ export default function ProductDetailsScreen() {
       return;
     }
 
+    // ถ้ามี pending session อยู่แล้ว ให้ส่ง existingSessionId ไปเพื่ออัพเดทแทนสร้างใหม่
+    const pendingSession = countingSessions.find(
+      (s) => s.status === "pending" || s.status === "analyzed"
+    );
+
     router.push({
       pathname: "/camera",
       params: {
@@ -134,6 +166,7 @@ export default function ProductDetailsScreen() {
         beforeQty,
         latitude: location?.coords.latitude,
         longitude: location?.coords.longitude,
+        existingSessionId: pendingSession?.id || "",
       },
     });
   };
@@ -183,6 +216,11 @@ export default function ProductDetailsScreen() {
           productBarcode
         );
 
+        // ถ้ามี pending session อยู่แล้ว ให้ส่ง existingSessionId ไปเพื่ออัพเดทแทนสร้างใหม่
+        const pendingSession = countingSessions.find(
+          (s) => s.status === "pending" || s.status === "analyzed"
+        );
+
         router.push({
           pathname: "/preview",
           params: {
@@ -194,6 +232,7 @@ export default function ProductDetailsScreen() {
             productBarcode,
             assignmentId,
             beforeQty,
+            existingSessionId: pendingSession?.id || "",
           },
         });
       }
@@ -345,6 +384,168 @@ export default function ProductDetailsScreen() {
             </View>
           )}
         </View>
+
+        {/* Attached Images Section */}
+        {countingSessions.length > 0 && (
+          <View
+            style={[
+              styles.attachedImagesCard,
+              { backgroundColor: colors.card },
+            ]}
+          >
+            <View style={styles.cardHeader}>
+              <Ionicons name="images" size={20} color={colors.primary} />
+              <Text style={[styles.cardTitle, { color: colors.text }]}>
+                รูปที่แนบแล้ว ({countingSessions.length})
+              </Text>
+            </View>
+
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              style={styles.imagesScroll}
+            >
+              {countingSessions.map((session, index) => (
+                <TouchableOpacity
+                  key={session.id}
+                  style={styles.attachedImageContainer}
+                  onPress={() => {
+                    // pending = แนบรูปแล้วยังไม่วิเคราะห์ → ไป preview
+                    // analyzed = วิเคราะห์แล้วยังไม่ยืนยัน → ไป result
+                    // completed = เสร็จสมบูรณ์ → ไป completed
+                    const fixedImageUrl = fixFirebaseStorageUrl(
+                      session.imageUrl
+                    );
+
+                    // Parse remarks และเพิ่ม deviceModel ถ้าไม่มี
+                    let watermarkDataStr = session.remarks || "";
+                    try {
+                      if (watermarkDataStr) {
+                        const parsedRemarks = JSON.parse(watermarkDataStr);
+                        if (!parsedRemarks.deviceModel && session.deviceInfo) {
+                          parsedRemarks.deviceModel = session.deviceInfo;
+                          watermarkDataStr = JSON.stringify(parsedRemarks);
+                        }
+                      }
+                    } catch (e) {
+                      console.log("Could not parse remarks:", e);
+                    }
+
+                    if (session.status === "pending") {
+                      // ไปหน้า preview เพื่อวิเคราะห์
+                      router.push({
+                        pathname: "/preview",
+                        params: {
+                          existingSessionId: session.id,
+                          imageUri: fixedImageUrl,
+                          imageBase64: "", // ไม่มี base64 เพราะโหลดจาก URL
+                          productId,
+                          productName,
+                          productBarcode: session.productSKU,
+                          assignmentId: session.assignmentId,
+                          beforeQty,
+                          watermarkData: watermarkDataStr,
+                        },
+                      });
+                    } else if (session.status === "analyzed") {
+                      // ไปหน้า result เพื่อยืนยัน
+                      router.push({
+                        pathname: "/result",
+                        params: {
+                          sessionId: session.id,
+                          imageUri: fixedImageUrl,
+                          barcodeCount:
+                            session.currentCountQty?.toString() || "0",
+                          processingTime:
+                            session.processingTime?.toString() || "0",
+                          productId,
+                          productName,
+                          productBarcode: session.productSKU,
+                          assignmentId: session.assignmentId,
+                          beforeQty,
+                        },
+                      });
+                    } else {
+                      router.push({
+                        pathname: "/(tabs)/products/completed",
+                        params: {
+                          productId,
+                          productName,
+                          productSKU,
+                          productImage,
+                          beforeQty,
+                        },
+                      });
+                    }
+                  }}
+                >
+                  <Image
+                    source={{ uri: session.imageUrl }}
+                    style={styles.attachedImage}
+                    contentFit="cover"
+                    transition={200}
+                  />
+                  <View style={styles.imageOverlay}>
+                    <View style={styles.overlayTop}>
+                      <Text style={styles.imageNumber}>#{index + 1}</Text>
+                      {session.status === "pending" && (
+                        <View
+                          style={[
+                            styles.pendingBadge,
+                            { backgroundColor: "#f59e0b" },
+                          ]}
+                        >
+                          <Text style={styles.pendingText}>รอวิเคราะห์</Text>
+                        </View>
+                      )}
+                      {session.status === "analyzed" && (
+                        <View
+                          style={[
+                            styles.pendingBadge,
+                            { backgroundColor: "#3b82f6" },
+                          ]}
+                        >
+                          <Text style={styles.pendingText}>รอยืนยัน</Text>
+                        </View>
+                      )}
+                    </View>
+                    <View
+                      style={[
+                        styles.countBadge,
+                        { backgroundColor: colors.primary },
+                      ]}
+                    >
+                      <Text style={styles.countText}>
+                        {session.currentCountQty || "-"}
+                      </Text>
+                    </View>
+                  </View>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+
+            <TouchableOpacity
+              style={[styles.viewAllButton, { borderColor: colors.border }]}
+              onPress={() => {
+                router.push({
+                  pathname: "/(tabs)/products/completed",
+                  params: {
+                    productId,
+                    productName,
+                    productSKU,
+                    productImage,
+                    beforeQty,
+                  },
+                });
+              }}
+            >
+              <Text style={[styles.viewAllText, { color: colors.primary }]}>
+                ดูทั้งหมด
+              </Text>
+              <Ionicons name="arrow-forward" size={16} color={colors.primary} />
+            </TouchableOpacity>
+          </View>
+        )}
 
         {/* Action Buttons */}
         <View style={styles.actionsContainer}>
@@ -598,5 +799,95 @@ const styles = StyleSheet.create({
     marginTop: 8,
     fontSize: 14,
     textAlign: "center",
+  },
+  attachedImagesCard: {
+    borderRadius: 16,
+    padding: 16,
+    marginBottom: 16,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  cardHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    marginBottom: 12,
+  },
+  cardTitle: {
+    fontSize: 16,
+    fontWeight: "600",
+  },
+  imagesScroll: {
+    marginBottom: 12,
+  },
+  attachedImageContainer: {
+    width: 120,
+    height: 120,
+    borderRadius: 12,
+    marginRight: 12,
+    overflow: "hidden",
+    position: "relative",
+  },
+  attachedImage: {
+    width: "100%",
+    height: "100%",
+  },
+  imageOverlay: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: "rgba(0, 0, 0, 0.3)",
+    justifyContent: "space-between",
+    padding: 8,
+  },
+  overlayTop: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+  },
+  imageNumber: {
+    color: "#fff",
+    fontSize: 12,
+    fontWeight: "600",
+  },
+  pendingBadge: {
+    backgroundColor: "#ff9800",
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+  },
+  pendingText: {
+    color: "#fff",
+    fontSize: 10,
+    fontWeight: "600",
+  },
+  countBadge: {
+    alignSelf: "flex-end",
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 8,
+  },
+  countText: {
+    color: "#fff",
+    fontSize: 14,
+    fontWeight: "700",
+  },
+  viewAllButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 4,
+    paddingVertical: 12,
+    borderTopWidth: 1,
+    marginTop: 4,
+  },
+  viewAllText: {
+    fontSize: 14,
+    fontWeight: "600",
   },
 });

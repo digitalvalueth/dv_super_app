@@ -1,5 +1,6 @@
 import {
   createCountingSession,
+  updateAssignmentStatus,
   uploadCountingImage,
 } from "@/services/counting.service";
 import { useAuthStore } from "@/stores/auth.store";
@@ -12,7 +13,6 @@ import { useMemo, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
-  Dimensions,
   ScrollView,
   StyleSheet,
   Text,
@@ -21,13 +21,12 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
-const { width: SCREEN_WIDTH } = Dimensions.get("window");
-
 export default function ResultScreen() {
   const { colors } = useTheme();
   const user = useAuthStore((state) => state.user);
   const [isSaving, setIsSaving] = useState(false);
   const params = useLocalSearchParams<{
+    sessionId?: string; // เพิ่ม sessionId สำหรับกรณีที่มี session อยู่แล้ว
     imageUri: string;
     barcodeCount: string;
     processingTime: string;
@@ -66,10 +65,54 @@ export default function ResultScreen() {
     try {
       setIsSaving(true);
 
-      // 1. Generate session ID first
+      // ถ้ามี sessionId แสดงว่ามี session อยู่แล้ว (จาก preview) ให้อัพเดทแทนการสร้างใหม่
+      if (params.sessionId) {
+        console.log("📝 Updating existing session:", params.sessionId);
+
+        // อัพเดท session ที่มีอยู่ให้เป็น completed
+        const { updateDoc, doc, Timestamp } = await import(
+          "firebase/firestore"
+        );
+        const { db } = await import("@/config/firebase");
+
+        await updateDoc(doc(db, "countingSessions", params.sessionId), {
+          status: "completed", // เปลี่ยนจาก pending เป็น completed
+          finalCount: barcodeCount,
+          manualCount: barcodeCount,
+          updatedAt: new Date(),
+        });
+
+        // อัพเดท assignment status เป็น completed
+        await updateAssignmentStatus(
+          params.assignmentId,
+          "completed",
+          Timestamp.now(),
+          params.productId
+        );
+
+        Alert.alert(
+          "ยืนยันสำเร็จ",
+          `ยืนยันผลการนับ ${barcodeCount} รายการเรียบร้อยแล้ว\n\n${
+            variance !== 0
+              ? `ผลต่าง: ${variance > 0 ? "+" : ""}${variance} (${
+                  variance > 0 ? "ขาด" : "เกิน"
+                })`
+              : "จำนวนตรงกัน ✓"
+          }`,
+          [
+            {
+              text: "ตกลง",
+              onPress: () => router.replace("/(tabs)/products"),
+            },
+          ]
+        );
+        return;
+      }
+
+      // ถ้าไม่มี sessionId ให้สร้างใหม่ (กรณีเก่า)
       const sessionId = `session_${Date.now()}`;
 
-      // 2. Upload image to Firebase Storage
+      // Upload image to Firebase Storage
       let imageUrl = "";
       if (params.imageUri) {
         imageUrl = await uploadCountingImage(
@@ -90,25 +133,23 @@ export default function ResultScreen() {
         currentCountQty: barcodeCount,
         variance: variance,
         imageUrl: imageUrl,
-        aiConfidence: 0.95, // TODO: Get actual confidence from AI
+        aiConfidence: 0.95,
         aiModel: "gemini-2.5-flash",
         processingTime: processingTime,
         deviceInfo: watermarkData?.deviceModel || "",
         appVersion: "1.0.0",
-        // Additional fields for admin-web
         userName: user.name || "",
         userEmail: user.email || "",
         branchName: user.branchName || "",
         productName: params.productName || "",
         productSKU: params.productBarcode || params.productId || "",
-        imageURL: imageUrl, // Alias for admin-web
+        imageURL: imageUrl,
         aiCount: barcodeCount,
         manualCount: barcodeCount,
         finalCount: barcodeCount,
         standardCount: beforeQty,
         discrepancy: Math.abs(variance),
-        status: "pending", // Pending admin approval
-        // Metadata for anti-fraud
+        status: "completed", // เปลี่ยนเป็น completed เลย
         ...(watermarkData && {
           remarks: JSON.stringify({
             location: watermarkData.location,
