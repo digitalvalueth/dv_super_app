@@ -59,6 +59,16 @@ const ALL_MINI_APPS: MiniApp[] = [
     category: "tools",
   },
   {
+    id: "delivery-receive",
+    name: "รับสินค้า",
+    description: "รับพัสดุและถ่ายรูปยืนยัน",
+    icon: "cube",
+    color: "#6366F1",
+    bgColor: "#EEF2FF",
+    route: "/(mini-apps)/delivery-receive",
+    category: "inventory",
+  },
+  {
     id: "stock-counter",
     name: "นับสต็อก",
     description: "นับสินค้าด้วย AI Camera",

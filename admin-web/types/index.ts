@@ -287,3 +287,70 @@ export interface AttendanceSummary {
   lateCount: number;
   onTimeCount: number;
 }
+
+// ==================== Delivery Types ====================
+
+export type ShipmentStatus =
+  | "pending"
+  | "in_transit"
+  | "delivered"
+  | "received"
+  | "cancelled";
+
+export interface ShipmentProduct {
+  productId: string;
+  productName: string;
+  productSKU?: string;
+  quantity: number;
+  unit: string;
+}
+
+export interface Shipment {
+  id?: string;
+  trackingNumber: string;
+  companyId: string;
+  branchId: string;
+  branchName: string;
+  products: ShipmentProduct[];
+  totalItems: number;
+  deliveryPersonName?: string;
+  deliveryCompany?: string;
+  deliveryPhone?: string;
+  status: ShipmentStatus;
+  estimatedDelivery?: Date;
+  notes?: string;
+  createdAt?: Date;
+  updatedAt?: Date;
+}
+
+export type DeliveryReceiveStatus = "received" | "verified" | "issue";
+
+export interface DeliveryReceive {
+  id?: string;
+  shipmentId: string;
+  trackingNumber: string;
+  branchId: string;
+  branchName: string;
+  products: ShipmentProduct[];
+  totalItems: number;
+  receivedBy: string;
+  receivedByName: string;
+  receivedAt: string;
+  imageUrl: string;
+  watermarkData?: {
+    timestamp?: string;
+    location?: string;
+    coordinates?: {
+      latitude: number;
+      longitude: number;
+    };
+    employeeName?: string;
+    employeeId?: string;
+    deviceModel?: string;
+    deviceName?: string;
+  };
+  notes?: string;
+  status: DeliveryReceiveStatus;
+  createdAt?: Date;
+  updatedAt?: Date;
+}

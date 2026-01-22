@@ -349,3 +349,100 @@ export interface AttendanceSummary {
   lateCount: number;
   onTimeCount: number;
 }
+
+// ==================== Delivery / Shipment Types ====================
+
+export type ShipmentStatus =
+  | "pending"
+  | "in_transit"
+  | "delivered"
+  | "received"
+  | "cancelled";
+
+export interface ShipmentProduct {
+  productId: string;
+  productName: string;
+  productSKU?: string;
+  quantity: number;
+  unit?: string;
+}
+
+export interface Shipment {
+  id: string;
+  trackingNumber: string;
+  companyId: string;
+
+  // ปลายทาง
+  branchId: string;
+  branchName?: string;
+
+  // สินค้า
+  products: ShipmentProduct[];
+  totalItems: number;
+
+  // พนักงานส่ง
+  deliveryPersonName?: string;
+  deliveryCompany?: string;
+  deliveryPhone?: string;
+
+  // สถานะ
+  status: ShipmentStatus;
+  estimatedDelivery?: Timestamp;
+
+  // Metadata
+  notes?: string;
+  remarks?: string;
+  createdAt: Timestamp;
+  updatedAt?: Timestamp;
+}
+
+export type DeliveryReceiveStatus = "received" | "verified" | "issue";
+
+// WatermarkData stored in Firestore (timestamp as string for serialization)
+export interface WatermarkDataStored {
+  timestamp: string;
+  location: string;
+  coordinates?: {
+    latitude: number;
+    longitude: number;
+  };
+  employeeName: string;
+  employeeId: string;
+  deviceModel?: string;
+  deviceName?: string;
+}
+
+export interface DeliveryReceive {
+  id: string;
+  shipmentId: string;
+  trackingNumber: string;
+  companyId: string;
+  branchId: string;
+  branchName?: string;
+
+  // สินค้าที่รับ
+  products: ShipmentProduct[];
+  totalItems: number;
+
+  // พนักงานส่ง
+  deliveryPersonName?: string;
+  deliveryCompany?: string;
+
+  // พนักงานรับ
+  receivedBy: string;
+  receivedByName: string;
+  receivedByEmail?: string;
+  receivedAt: Timestamp;
+
+  // รูปภาพ + Watermark
+  imageUrl: string;
+  watermarkData?: WatermarkDataStored;
+
+  // สถานะ
+  status: DeliveryReceiveStatus;
+  notes?: string;
+  remarks?: string;
+
+  createdAt: Timestamp;
+  updatedAt?: Timestamp;
+}

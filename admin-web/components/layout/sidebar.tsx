@@ -13,6 +13,7 @@ import {
   Menu,
   Package,
   Shield,
+  Truck,
   Users,
   X,
 } from "lucide-react";
@@ -39,6 +40,7 @@ const navigation = [
   { name: "สินค้า", href: "/dashboard/products", icon: Package },
   { name: "ข้อมูลการนับ", href: "/dashboard/counting", icon: ClipboardList },
   { name: "เช็คชื่อพนักงาน", href: "/dashboard/attendance", icon: Clock },
+  { name: "รับสินค้า", href: "/dashboard/delivery", icon: Truck },
   { name: "ค่าคอมมิชชั่น", href: "/dashboard/commission", icon: DollarSign },
   { name: "รายงาน", href: "/dashboard/reports", icon: BarChart3 },
   { name: "เชิญผู้ใช้", href: "/dashboard/invitations", icon: Mail },

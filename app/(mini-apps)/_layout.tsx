@@ -35,6 +35,13 @@ export default function MiniAppsLayout() {
         }}
       />
       <Stack.Screen
+        name="delivery-receive"
+        options={{
+          headerShown: false,
+          title: "รับสินค้า",
+        }}
+      />
+      <Stack.Screen
         name="speech-to-text"
         options={{
           title: "Speech to Text",
