@@ -58,7 +58,6 @@ export default function ProductsPage() {
     name: "",
     description: "",
     barcode: "",
-    sellerCode: "",
     category: "",
     beforeCount: 0,
     companyId: "",
@@ -87,11 +86,11 @@ export default function ProductsPage() {
       if (companyId) {
         productsQuery = query(
           collection(db, "products"),
-          where("companyId", "==", companyId)
+          where("companyId", "==", companyId),
         );
         branchesQuery = query(
           collection(db, "branches"),
-          where("companyId", "==", companyId)
+          where("companyId", "==", companyId),
         );
       } else {
         productsQuery = query(collection(db, "products"));
@@ -115,7 +114,6 @@ export default function ProductsPage() {
           name: data.name,
           description: data.description,
           barcode: data.barcode,
-          sellerCode: data.sellerCode,
           category: data.category,
           beforeCount: data.beforeCount,
           // Support both imageUrl and imageURL for backward compatibility
@@ -218,7 +216,6 @@ export default function ProductsPage() {
         name: formData.name.trim(),
         description: formData.description.trim() || null,
         barcode: formData.barcode.trim() || null,
-        sellerCode: formData.sellerCode.trim() || null,
         category: formData.category.trim() || null,
         beforeCount: formData.beforeCount || 0,
         companyId: targetCompanyId,
@@ -247,7 +244,6 @@ export default function ProductsPage() {
       name: product.name,
       description: product.description || "",
       barcode: product.barcode || "",
-      sellerCode: product.sellerCode || "",
       category: product.category || "",
       beforeCount: product.beforeCount || 0,
       companyId: product.companyId || "",
@@ -296,7 +292,6 @@ export default function ProductsPage() {
         name: formData.name.trim(),
         description: formData.description.trim() || null,
         barcode: formData.barcode.trim() || null,
-        sellerCode: formData.sellerCode.trim() || null,
         category: formData.category.trim() || null,
         beforeCount: formData.beforeCount || 0,
         branchId: formData.branchId || null,
@@ -338,7 +333,6 @@ export default function ProductsPage() {
       name: "",
       description: "",
       barcode: "",
-      sellerCode: "",
       category: "",
       beforeCount: 0,
       companyId: companies[0]?.id || "",
@@ -695,7 +689,6 @@ interface ProductModalProps {
     name: string;
     description: string;
     barcode: string;
-    sellerCode: string;
     category: string;
     beforeCount: number;
     companyId: string;
@@ -734,7 +727,7 @@ function ProductModal({
   uploadingImage,
 }: ProductModalProps) {
   const filteredBranches = branches.filter(
-    (b) => !formData.companyId || b.companyId === formData.companyId
+    (b) => !formData.companyId || b.companyId === formData.companyId,
   );
 
   return (
@@ -875,35 +868,19 @@ function ProductModal({
             />
           </div>
 
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                บาร์โค้ด
-              </label>
-              <input
-                type="text"
-                value={formData.barcode}
-                onChange={(e) =>
-                  setFormData({ ...formData, barcode: e.target.value })
-                }
-                placeholder="8859109897033"
-                className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                รหัสผู้ขาย
-              </label>
-              <input
-                type="text"
-                value={formData.sellerCode}
-                onChange={(e) =>
-                  setFormData({ ...formData, sellerCode: e.target.value })
-                }
-                placeholder="283160"
-                className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-              />
-            </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+              บาร์โค้ด
+            </label>
+            <input
+              type="text"
+              value={formData.barcode}
+              onChange={(e) =>
+                setFormData({ ...formData, barcode: e.target.value })
+              }
+              placeholder="8859109897033"
+              className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+            />
           </div>
 
           <div className="grid grid-cols-2 gap-4">

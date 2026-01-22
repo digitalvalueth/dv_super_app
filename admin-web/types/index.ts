@@ -82,7 +82,6 @@ export interface Product {
   name: string;
   description?: string;
   barcode: string;
-  sellerCode: string;
   category?: string;
   beforeCount?: number;
   imageUrl?: string;

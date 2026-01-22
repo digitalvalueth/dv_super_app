@@ -22,7 +22,7 @@ export default function CountingPage() {
   const { userData } = useAuthStore();
   const [sessions, setSessions] = useState<CountingSession[]>([]);
   const [filteredSessions, setFilteredSessions] = useState<CountingSession[]>(
-    []
+    [],
   );
   const [loading, setLoading] = useState(true);
   const [selectedSession, setSelectedSession] =
@@ -52,7 +52,7 @@ export default function CountingPage() {
       if (companyId) {
         sessionsQuery = query(
           collection(db, "countingSessions"),
-          where("companyId", "==", companyId)
+          where("companyId", "==", companyId),
         );
       } else {
         sessionsQuery = query(collection(db, "countingSessions"));
@@ -91,7 +91,7 @@ export default function CountingPage() {
       });
 
       sessionsData.sort(
-        (a, b) => (b.createdAt?.getTime() || 0) - (a.createdAt?.getTime() || 0)
+        (a, b) => (b.createdAt?.getTime() || 0) - (a.createdAt?.getTime() || 0),
       );
       setSessions(sessionsData);
     } catch (error) {
@@ -118,7 +118,7 @@ export default function CountingPage() {
           s.userName?.toLowerCase().includes(term) ||
           s.productName?.toLowerCase().includes(term) ||
           s.productSKU?.toLowerCase().includes(term) ||
-          s.branchName?.toLowerCase().includes(term)
+          s.branchName?.toLowerCase().includes(term),
       );
     }
 
@@ -376,6 +376,7 @@ function SessionDetailModal({
             timestamp?: string;
             employeeName?: string;
             employeeId?: string;
+            deviceModel?: string;
           };
         }
       }
@@ -520,6 +521,9 @@ function SessionDetailModal({
                           👤 {watermarkData.employeeName} (
                           {watermarkData.employeeId})
                         </span>
+                      )}
+                      {watermarkData.deviceModel && (
+                        <span>📱 {watermarkData.deviceModel}</span>
                       )}
                     </div>
                   </div>

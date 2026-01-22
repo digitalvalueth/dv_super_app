@@ -217,7 +217,6 @@ export default function BranchDetailPage() {
           name: data.name,
           description: data.description,
           barcode: data.barcode,
-          sellerCode: data.sellerCode,
           category: data.category,
           beforeCount: data.beforeCount,
           // Support both imageUrl and imageURL for backward compatibility
