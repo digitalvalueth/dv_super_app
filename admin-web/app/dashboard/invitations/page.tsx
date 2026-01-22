@@ -27,7 +27,7 @@ export default function InvitationsPage() {
   const [showInviteForm, setShowInviteForm] = useState(false);
   const [formData, setFormData] = useState({
     email: "",
-    role: "staff" as "manager" | "staff",
+    role: "employee" as "manager" | "employee",
     branchId: "",
   });
 
@@ -48,11 +48,11 @@ export default function InvitationsPage() {
       if (companyId) {
         invitationsQuery = query(
           collection(db, "invitations"),
-          where("companyId", "==", companyId)
+          where("companyId", "==", companyId),
         );
         branchesQuery = query(
           collection(db, "branches"),
-          where("companyId", "==", companyId)
+          where("companyId", "==", companyId),
         );
       } else {
         invitationsQuery = query(collection(db, "invitations"));
@@ -81,7 +81,7 @@ export default function InvitationsPage() {
       });
 
       invitationsData.sort(
-        (a, b) => (b.createdAt?.getTime() || 0) - (a.createdAt?.getTime() || 0)
+        (a, b) => (b.createdAt?.getTime() || 0) - (a.createdAt?.getTime() || 0),
       );
       setInvitations(invitationsData);
 
@@ -122,8 +122,8 @@ export default function InvitationsPage() {
       const companyDoc = await getDocs(
         query(
           collection(db, "companies"),
-          where("__name__", "==", userData.companyId)
-        )
+          where("__name__", "==", userData.companyId),
+        ),
       );
       let companyName = "บริษัท";
       if (!companyDoc.empty) {
@@ -145,7 +145,7 @@ export default function InvitationsPage() {
 
       toast.success("ส่งคำเชิญสำเร็จ");
       setShowInviteForm(false);
-      setFormData({ email: "", role: "staff", branchId: "" });
+      setFormData({ email: "", role: "employee", branchId: "" });
       fetchData();
     } catch (error) {
       console.error("Error sending invitation:", error);
@@ -228,20 +228,20 @@ export default function InvitationsPage() {
 
               <div>
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                  บทบาท
+                  ตำแหน่ง
                 </label>
                 <select
                   value={formData.role}
                   onChange={(e) =>
                     setFormData({
                       ...formData,
-                      role: e.target.value as "manager" | "staff",
+                      role: e.target.value as "manager" | "employee",
                     })
                   }
                   className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 >
-                  <option value="staff">พนักงาน</option>
-                  <option value="manager">ผู้จัดการ</option>
+                  <option value="employee">พนักงาน</option>
+                  <option value="manager">ผู้จัดการสาขา</option>
                 </select>
               </div>
 
@@ -336,7 +336,9 @@ export default function InvitationsPage() {
                           : "bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400"
                       }`}
                     >
-                      {invitation.role === "manager" ? "ผู้จัดการ" : "พนักงาน"}
+                      {invitation.role === "manager"
+                        ? "ผู้จัดการสาขา"
+                        : "พนักงาน"}
                     </span>
                   </td>
                   <td className="px-6 py-4 text-sm text-gray-900 dark:text-gray-100">

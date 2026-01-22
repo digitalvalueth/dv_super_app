@@ -70,9 +70,8 @@ export default function ResultScreen() {
         console.log("📝 Updating existing session:", params.sessionId);
 
         // อัพเดท session ที่มีอยู่ให้เป็น completed
-        const { updateDoc, doc, Timestamp } = await import(
-          "firebase/firestore"
-        );
+        const { updateDoc, doc, Timestamp } =
+          await import("firebase/firestore");
         const { db } = await import("@/config/firebase");
 
         await updateDoc(doc(db, "countingSessions", params.sessionId), {
@@ -87,7 +86,7 @@ export default function ResultScreen() {
           params.assignmentId,
           "completed",
           Timestamp.now(),
-          params.productId
+          params.productId,
         );
 
         Alert.alert(
@@ -102,9 +101,10 @@ export default function ResultScreen() {
           [
             {
               text: "ตกลง",
-              onPress: () => router.replace("/(tabs)/products"),
+              onPress: () =>
+                router.replace("/(mini-apps)/stock-counter/products"),
             },
-          ]
+          ],
         );
         return;
       }
@@ -118,7 +118,7 @@ export default function ResultScreen() {
         imageUrl = await uploadCountingImage(
           user.uid,
           sessionId,
-          params.imageUri
+          params.imageUri,
         );
       }
 
@@ -173,15 +173,16 @@ export default function ResultScreen() {
         [
           {
             text: "ตกลง",
-            onPress: () => router.replace("/(tabs)/products"),
+            onPress: () =>
+              router.replace("/(mini-apps)/stock-counter/products"),
           },
-        ]
+        ],
       );
     } catch (error) {
       console.error("Error saving counting result:", error);
       Alert.alert(
         "เกิดข้อผิดพลาด",
-        "ไม่สามารถบันทึกข้อมูลได้ กรุณาลองใหม่อีกครั้ง"
+        "ไม่สามารถบันทึกข้อมูลได้ กรุณาลองใหม่อีกครั้ง",
       );
     } finally {
       setIsSaving(false);

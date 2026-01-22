@@ -21,7 +21,11 @@ export default function DashboardPage() {
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [loading, setLoading] = useState(true);
 
+  console.log("Dashboard - userData:", userData);
+  console.log("Dashboard - loading:", loading);
+
   useEffect(() => {
+    console.log("Dashboard - useEffect triggered", { userData });
     if (!userData) return;
 
     const fetchDashboardData = async () => {
@@ -34,19 +38,19 @@ export default function DashboardPage() {
         if (companyId) {
           usersQuery = query(
             collection(db, "users"),
-            where("companyId", "==", companyId)
+            where("companyId", "==", companyId),
           );
           branchesQuery = query(
             collection(db, "branches"),
-            where("companyId", "==", companyId)
+            where("companyId", "==", companyId),
           );
           productsQuery = query(
             collection(db, "products"),
-            where("companyId", "==", companyId)
+            where("companyId", "==", companyId),
           );
           sessionsQuery = query(
             collection(db, "countingSessions"),
-            where("companyId", "==", companyId)
+            where("companyId", "==", companyId),
           );
         } else {
           // Superadmin - ดึงทั้งหมด
@@ -114,7 +118,7 @@ export default function DashboardPage() {
         // Sort sessions by date (most recent first)
         sessions.sort(
           (a, b) =>
-            (b.createdAt?.getTime() || 0) - (a.createdAt?.getTime() || 0)
+            (b.createdAt?.getTime() || 0) - (a.createdAt?.getTime() || 0),
         );
         const recentSessions = sessions.slice(0, 5);
 
@@ -129,7 +133,18 @@ export default function DashboardPage() {
         });
       } catch (error) {
         console.error("Error fetching dashboard data:", error);
+        // Don't block the UI, just show empty state
+        setStats({
+          totalUsers: 0,
+          totalBranches: 0,
+          totalProducts: 0,
+          totalSessions: 0,
+          pendingSessions: 0,
+          totalDiscrepancy: 0,
+          recentSessions: [],
+        });
       } finally {
+        console.log("Dashboard - fetchDashboardData complete");
         setLoading(false);
       }
     };

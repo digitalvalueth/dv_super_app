@@ -51,12 +51,12 @@ export default function ProductDetailsScreen() {
   const [hasPermissions, setHasPermissions] = useState(false);
   const [isPickingImage, setIsPickingImage] = useState(false);
   const [location, setLocation] = useState<Location.LocationObject | null>(
-    null
+    null,
   );
   const [imageLoading, setImageLoading] = useState(false);
   const [imageError, setImageError] = useState(false);
   const [countingSessions, setCountingSessions] = useState<CountingSession[]>(
-    []
+    [],
   );
 
   const productId = params.productId as string;
@@ -92,7 +92,7 @@ export default function ProductDetailsScreen() {
     const locationStatus = await Location.requestForegroundPermissionsAsync();
 
     setHasPermissions(
-      cameraStatus.granted && mediaStatus.granted && locationStatus.granted
+      cameraStatus.granted && mediaStatus.granted && locationStatus.granted,
     );
   };
 
@@ -116,18 +116,18 @@ export default function ProductDetailsScreen() {
         [
           { text: "ยกเลิก", style: "cancel" },
           { text: "ตั้งค่า", onPress: checkPermissions },
-        ]
+        ],
       );
       return;
     }
 
     // ถ้ามี pending session อยู่แล้ว ให้ส่ง existingSessionId ไปเพื่ออัพเดทแทนสร้างใหม่
     const pendingSession = countingSessions.find(
-      (s) => s.status === "pending" || s.status === "analyzed"
+      (s) => s.status === "pending" || s.status === "analyzed",
     );
 
     router.push({
-      pathname: "/camera",
+      pathname: "/(mini-apps)/stock-counter/camera",
       params: {
         productId,
         productName,
@@ -184,16 +184,16 @@ export default function ProductDetailsScreen() {
           user?.name || "Unknown",
           user?.uid || "",
           productName,
-          productBarcode
+          productBarcode,
         );
 
         // ถ้ามี pending session อยู่แล้ว ให้ส่ง existingSessionId ไปเพื่ออัพเดทแทนสร้างใหม่
         const pendingSession = countingSessions.find(
-          (s) => s.status === "pending" || s.status === "analyzed"
+          (s) => s.status === "pending" || s.status === "analyzed",
         );
 
         router.push({
-          pathname: "/preview",
+          pathname: "/(mini-apps)/stock-counter/preview",
           params: {
             imageUri: asset.uri,
             imageBase64: base64Data,
@@ -376,7 +376,7 @@ export default function ProductDetailsScreen() {
                     // analyzed = วิเคราะห์แล้วยังไม่ยืนยัน → ไป result
                     // completed = เสร็จสมบูรณ์ → ไป completed
                     const fixedImageUrl = fixFirebaseStorageUrl(
-                      session.imageUrl
+                      session.imageUrl,
                     );
 
                     // Parse remarks และเพิ่ม deviceModel ถ้าไม่มี
@@ -396,7 +396,7 @@ export default function ProductDetailsScreen() {
                     if (session.status === "pending") {
                       // ไปหน้า preview เพื่อวิเคราะห์
                       router.push({
-                        pathname: "/preview",
+                        pathname: "/(mini-apps)/stock-counter/preview",
                         params: {
                           existingSessionId: session.id,
                           imageUri: fixedImageUrl,
@@ -412,7 +412,7 @@ export default function ProductDetailsScreen() {
                     } else if (session.status === "analyzed") {
                       // ไปหน้า result เพื่อยืนยัน
                       router.push({
-                        pathname: "/result",
+                        pathname: "/(mini-apps)/stock-counter/result",
                         params: {
                           sessionId: session.id,
                           imageUri: fixedImageUrl,
@@ -429,7 +429,8 @@ export default function ProductDetailsScreen() {
                       });
                     } else {
                       router.push({
-                        pathname: "/(tabs)/products/completed",
+                        pathname:
+                          "/(mini-apps)/stock-counter/products/completed",
                         params: {
                           productId,
                           productName,

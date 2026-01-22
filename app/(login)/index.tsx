@@ -75,12 +75,12 @@ export default function LoginScreen() {
 
         // Check if onboarding is completed
         const onboardingCompleted = await AsyncStorage.getItem(
-          "onboarding_completed"
+          "onboarding_completed",
         );
 
         if (onboardingCompleted === "true") {
-          console.log("✅ Onboarding completed, redirecting to products");
-          router.replace("/(tabs)/products");
+          console.log("✅ Onboarding completed, redirecting to home");
+          router.replace("/(tabs)/home");
         } else {
           console.log("⚠️ Onboarding not completed, redirecting to onboarding");
           router.replace("/onboarding");

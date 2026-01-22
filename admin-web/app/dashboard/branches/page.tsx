@@ -23,6 +23,7 @@ import {
   MapPin,
   Plus,
   Search,
+  Shield,
   Trash2,
   Users,
 } from "lucide-react";
@@ -49,7 +50,7 @@ export default function BranchesPage() {
   const [searchTerm, setSearchTerm] = useState("");
   const [filterCompany, setFilterCompany] = useState<string>("all");
   const [selectedBranch, setSelectedBranch] = useState<BranchWithStats | null>(
-    null
+    null,
   );
   const [showAddModal, setShowAddModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
@@ -62,7 +63,10 @@ export default function BranchesPage() {
   });
 
   // ตรวจสอบว่าเป็น superadmin (ไม่มี companyId) หรือไม่
-  const isSuperAdmin = !userData?.companyId;
+  const isSuperAdmin = userData?.role === "super_admin";
+  // ตรวจสอบว่าสามารถจัดการสาขาได้หรือไม่ (Admin และ Super Admin เท่านั้น)
+  const canManageBranches =
+    userData?.role === "admin" || userData?.role === "super_admin";
 
   useEffect(() => {
     if (!userData) return;
@@ -83,11 +87,11 @@ export default function BranchesPage() {
       if (companyId) {
         branchesQuery = query(
           collection(db, "branches"),
-          where("companyId", "==", companyId)
+          where("companyId", "==", companyId),
         );
         usersQuery = query(
           collection(db, "users"),
-          where("companyId", "==", companyId)
+          where("companyId", "==", companyId),
         );
       } else {
         branchesQuery = query(collection(db, "branches"));
@@ -262,6 +266,45 @@ export default function BranchesPage() {
     );
   }
 
+  // ถ้ายังไม่มีบริษัทเลย แสดงข้อความแจ้งเตือน
+  if (!isSuperAdmin && companies.length === 0) {
+    return (
+      <div className="space-y-6">
+        <div>
+          <h1 className="text-2xl lg:text-3xl font-bold text-gray-900 dark:text-white">
+            จัดการสาขา
+          </h1>
+          <p className="text-gray-600 dark:text-gray-400 mt-1">
+            จัดการสาขาและที่ตั้งของบริษัท
+          </p>
+        </div>
+
+        <div className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-xl p-8">
+          <div className="text-center max-w-md mx-auto">
+            <div className="bg-yellow-100 dark:bg-yellow-900/30 rounded-full p-4 w-16 h-16 mx-auto mb-4 flex items-center justify-center">
+              <Factory className="w-8 h-8 text-yellow-600 dark:text-yellow-500" />
+            </div>
+            <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">
+              ยังไม่มีบริษัทในระบบ
+            </h3>
+            <p className="text-gray-600 dark:text-gray-400 mb-4">
+              ก่อนที่จะสามารถเพิ่มสาขาได้ จำเป็นต้องมีบริษัทในระบบก่อน
+            </p>
+            <div className="bg-white dark:bg-gray-800 rounded-lg p-4 border border-yellow-200 dark:border-yellow-800">
+              <p className="text-sm text-gray-700 dark:text-gray-300 mb-2">
+                📞 กรุณาติดต่อ <strong>นักพัฒนาระบบ</strong>{" "}
+                เพื่อขอให้เพิ่มบริษัทให้คุณ
+              </p>
+              <p className="text-xs text-gray-500 dark:text-gray-400">
+                เฉพาะ ผู้ดูแลระบบ เท่วนั้นที่สามารถสร้างบริษัทได้
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-4 lg:space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
@@ -273,22 +316,82 @@ export default function BranchesPage() {
             จัดการสาขาและที่ตั้งของบริษัท
           </p>
         </div>
-        <button
-          onClick={() => {
-            setFormData({
-              name: "",
-              code: "",
-              address: "",
-              companyId: companies[0]?.id || "",
-            });
-            setShowAddModal(true);
-          }}
-          className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-        >
-          <Plus className="w-5 h-5" />
-          เพิ่มสาขา
-        </button>
+        {canManageBranches && (
+          <button
+            onClick={() => {
+              setFormData({
+                name: "",
+                code: "",
+                address: "",
+                companyId: isSuperAdmin
+                  ? companies[0]?.id || ""
+                  : userData?.companyId || "",
+              });
+              setShowAddModal(true);
+            }}
+            className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+          >
+            <Plus className="w-5 h-5" />
+            เพิ่มสาขา
+          </button>
+        )}
       </div>
+
+      {/* Manager Info Banner */}
+      {userData?.role === "manager" && (
+        <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-xl p-4">
+          <div className="flex items-start gap-3">
+            <div className="bg-blue-100 dark:bg-blue-900/30 rounded-lg p-2 shrink-0">
+              <Shield className="w-5 h-5 text-blue-600 dark:text-blue-400" />
+            </div>
+            <div className="flex-1">
+              <h3 className="font-semibold text-blue-900 dark:text-blue-100 mb-1">
+                สาขาที่คุณรับผิดชอบ
+              </h3>
+              <p className="text-sm text-blue-700 dark:text-blue-300 mb-2">
+                คุณมีหน้าที่ดูแลและจัดการสาขาเหล่านี้ในบริษัท{" "}
+                <strong>{userData.companyName || "ของคุณ"}</strong>
+                {userData.managedBranchIds &&
+                userData.managedBranchIds.length > 0
+                  ? ` (${userData.managedBranchIds.length} สาขา)`
+                  : ""}
+              </p>
+              {(!userData.managedBranchIds ||
+                userData.managedBranchIds.length === 0) && (
+                <p className="text-xs text-blue-600 dark:text-blue-400">
+                  ⚠️ ยังไม่มีสาขาที่ถูกกำหนดให้คุณ กรุณาติดต่อเจ้าของบริษัท
+                </p>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Admin Info Banner */}
+      {userData?.role === "admin" && userData?.companyName && (
+        <div className="bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-xl p-4">
+          <div className="flex items-start gap-3">
+            <div className="bg-green-100 dark:bg-green-900/30 rounded-lg p-2 shrink-0">
+              <Factory className="w-5 h-5 text-green-600 dark:text-green-400" />
+            </div>
+            <div className="flex-1">
+              <h3 className="font-semibold text-green-900 dark:text-green-100 mb-1">
+                สาขาในบริษัทของคุณ
+              </h3>
+              <p className="text-sm text-green-700 dark:text-green-300">
+                คุณกำลังจัดการสาขาในบริษัท{" "}
+                <strong>{userData.companyName}</strong>
+                {userData.companyCode && (
+                  <span className="text-green-600 dark:text-green-400">
+                    {" "}
+                    ({userData.companyCode})
+                  </span>
+                )}
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Search and Filter */}
       <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-4">
@@ -360,31 +463,33 @@ export default function BranchesPage() {
             </Link>
 
             {/* Action Buttons - Stop propagation */}
-            <div className="absolute top-5 right-5 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-              <button
-                onClick={(e) => {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  handleEditBranch(branch);
-                }}
-                className="p-2 text-blue-600 bg-white dark:bg-gray-800 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg transition-colors shadow-sm border border-gray-200 dark:border-gray-600"
-                title="แก้ไข"
-              >
-                <Edit2 className="w-4 h-4" />
-              </button>
-              <button
-                onClick={(e) => {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  setSelectedBranch(branch);
-                  setShowDeleteConfirm(true);
-                }}
-                className="p-2 text-red-600 bg-white dark:bg-gray-800 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors shadow-sm border border-gray-200 dark:border-gray-600"
-                title="ลบ"
-              >
-                <Trash2 className="w-4 h-4" />
-              </button>
-            </div>
+            {canManageBranches && (
+              <div className="absolute top-5 right-5 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                <button
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    handleEditBranch(branch);
+                  }}
+                  className="p-2 text-blue-600 bg-white dark:bg-gray-800 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg transition-colors shadow-sm border border-gray-200 dark:border-gray-600"
+                  title="แก้ไข"
+                >
+                  <Edit2 className="w-4 h-4" />
+                </button>
+                <button
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    setSelectedBranch(branch);
+                    setShowDeleteConfirm(true);
+                  }}
+                  className="p-2 text-red-600 bg-white dark:bg-gray-800 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors shadow-sm border border-gray-200 dark:border-gray-600"
+                  title="ลบ"
+                >
+                  <Trash2 className="w-4 h-4" />
+                </button>
+              </div>
+            )}
 
             {/* Footer */}
             <Link
@@ -411,12 +516,14 @@ export default function BranchesPage() {
         <div className="text-center py-12 bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700">
           <Building2 className="w-12 h-12 text-gray-400 mx-auto mb-4" />
           <p className="text-gray-500 dark:text-gray-400">ไม่พบสาขา</p>
-          <button
-            onClick={() => setShowAddModal(true)}
-            className="mt-4 text-blue-600 dark:text-blue-400 hover:underline"
-          >
-            เพิ่มสาขาใหม่
-          </button>
+          {canManageBranches && (
+            <button
+              onClick={() => setShowAddModal(true)}
+              className="mt-4 text-blue-600 dark:text-blue-400 hover:underline"
+            >
+              เพิ่มสาขาใหม่
+            </button>
+          )}
         </div>
       )}
 
@@ -449,6 +556,18 @@ export default function BranchesPage() {
                       </option>
                     ))}
                   </select>
+                </div>
+              )}
+
+              {/* แสดงชื่อบริษัทสำหรับ Admin (ไม่สามารถเปลี่ยนได้) */}
+              {!isSuperAdmin && userData?.companyName && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                    บริษัท
+                  </label>
+                  <div className="w-full px-4 py-2 bg-gray-100 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg text-gray-700 dark:text-gray-300">
+                    {userData.companyName}
+                  </div>
                 </div>
               )}
 

@@ -257,8 +257,8 @@ export default function CompletedProductScreen() {
                         latestSession.variance > 0
                           ? "#EF444420"
                           : latestSession.variance < 0
-                          ? "#10B98120"
-                          : colors.border,
+                            ? "#10B98120"
+                            : colors.border,
                     },
                   ]}
                 >
@@ -270,8 +270,8 @@ export default function CompletedProductScreen() {
                           latestSession.variance > 0
                             ? "#EF4444"
                             : latestSession.variance < 0
-                            ? "#10B981"
-                            : colors.textSecondary,
+                              ? "#10B981"
+                              : colors.textSecondary,
                       },
                     ]}
                   >
@@ -285,16 +285,16 @@ export default function CompletedProductScreen() {
                           latestSession.variance > 0
                             ? "#EF4444"
                             : latestSession.variance < 0
-                            ? "#10B981"
-                            : colors.textSecondary,
+                              ? "#10B981"
+                              : colors.textSecondary,
                       },
                     ]}
                   >
                     {latestSession.variance > 0
                       ? "-"
                       : latestSession.variance < 0
-                      ? "+"
-                      : ""}
+                        ? "+"
+                        : ""}
                     {Math.abs(latestSession.variance)}
                   </Text>
                 </View>
@@ -315,7 +315,7 @@ export default function CompletedProductScreen() {
                       ? formatTimestamp(
                           latestSession.createdAt instanceof Date
                             ? latestSession.createdAt
-                            : latestSession.createdAt.toDate()
+                            : latestSession.createdAt.toDate(),
                         )
                       : "ไม่ระบุเวลา"}
                   </Text>
@@ -386,7 +386,7 @@ export default function CompletedProductScreen() {
                         ? formatTimestamp(
                             session.createdAt instanceof Date
                               ? session.createdAt
-                              : session.createdAt.toDate()
+                              : session.createdAt.toDate(),
                           )
                         : ""}
                     </Text>
@@ -399,8 +399,8 @@ export default function CompletedProductScreen() {
                           session.variance > 0
                             ? "#EF444420"
                             : session.variance < 0
-                            ? "#10B98120"
-                            : colors.border,
+                              ? "#10B98120"
+                              : colors.border,
                       },
                     ]}
                   >
@@ -412,16 +412,16 @@ export default function CompletedProductScreen() {
                             session.variance > 0
                               ? "#EF4444"
                               : session.variance < 0
-                              ? "#10B981"
-                              : colors.textSecondary,
+                                ? "#10B981"
+                                : colors.textSecondary,
                         },
                       ]}
                     >
                       {session.variance > 0
                         ? "-"
                         : session.variance < 0
-                        ? "+"
-                        : ""}
+                          ? "+"
+                          : ""}
                       {Math.abs(session.variance)}
                     </Text>
                   </View>

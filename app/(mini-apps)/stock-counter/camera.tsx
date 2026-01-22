@@ -48,7 +48,7 @@ export default function CameraScreen() {
         user?.name || "Unknown",
         user?.uid || "",
         params.productName,
-        params.productBarcode
+        params.productBarcode,
       );
 
       // Take photo
@@ -68,7 +68,7 @@ export default function CameraScreen() {
 
       // Navigate to preview with photo data
       router.push({
-        pathname: "/preview",
+        pathname: "/(mini-apps)/stock-counter/preview",
         params: {
           imageUri: photo.uri,
           imageBase64: photo.base64,
@@ -112,12 +112,12 @@ export default function CameraScreen() {
         user?.name || "Unknown",
         user?.uid || "",
         params.productName,
-        params.productBarcode
+        params.productBarcode,
       );
 
       // Navigate to preview
       router.push({
-        pathname: "/preview",
+        pathname: "/(mini-apps)/stock-counter/preview",
         params: {
           imageUri: asset.uri,
           imageBase64: asset.base64,

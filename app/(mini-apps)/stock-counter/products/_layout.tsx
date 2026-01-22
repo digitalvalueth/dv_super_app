@@ -8,6 +8,8 @@ export default function ProductsLayout() {
       }}
     >
       <Stack.Screen name="index" />
+      <Stack.Screen name="details" />
+      <Stack.Screen name="completed" />
     </Stack>
   );
 }

@@ -45,7 +45,7 @@ export default function UnauthorizedPage() {
             คุณไม่มีสิทธิ์ในการเข้าใช้งานระบบ Admin Dashboard
           </p>
           <p className="text-sm text-gray-500 mt-2">
-            ระบบนี้สำหรับผู้ดูแลระบบ (Admin) และผู้จัดการ (Manager) เท่านั้น
+            ระบบนี้สำหรับเจ้าของบริษัท และผู้จัดการสาขา เท่านั้น
           </p>
         </div>
 

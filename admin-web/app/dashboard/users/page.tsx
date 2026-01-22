@@ -54,12 +54,16 @@ export default function UsersPage() {
       | "manager"
       | "employee"
       | "staff",
+    companyId: "",
     branchId: "",
     status: "active" as "pending" | "active" | "inactive" | "suspended",
   });
 
-  // ตรวจสอบว่าเป็น superadmin (ไม่มี companyId) หรือไม่
-  const isSuperAdmin = !userData?.companyId;
+  // ตรวจสอบว่าเป็น superadmin หรือไม่
+  const isSuperAdmin = userData?.role === "super_admin";
+  // ตรวจสอบว่าสามารถจัดการผู้ใช้ได้หรือไม่ (Admin และ Super Admin เท่านั้น)
+  const canManageUsers =
+    userData?.role === "admin" || userData?.role === "super_admin";
 
   useEffect(() => {
     if (!userData) return;
@@ -71,43 +75,39 @@ export default function UsersPage() {
     if (!userData) return;
 
     try {
-      const companyId = userData.companyId;
-
-      // ถ้าเป็น superadmin (ไม่มี companyId) ดึงข้อมูลทั้งหมด
-      // ถ้าไม่ใช่ ดึงเฉพาะ company ของตัวเอง
+      // ใช้ role ในการกำหนดว่าจะดึงข้อมูลแบบไหน
       let usersQuery;
       let branchesQuery;
 
-      if (companyId) {
-        usersQuery = query(
-          collection(db, "users"),
-          where("companyId", "==", companyId)
-        );
-        branchesQuery = query(
-          collection(db, "branches"),
-          where("companyId", "==", companyId)
-        );
-      } else {
+      if (isSuperAdmin) {
         // Superadmin - ดึงทั้งหมด
         usersQuery = query(collection(db, "users"));
         branchesQuery = query(collection(db, "branches"));
+      } else if (userData.companyId) {
+        // Admin/Manager ที่มี companyId - ดึงเฉพาะบริษัทของตัวเอง
+        usersQuery = query(
+          collection(db, "users"),
+          where("companyId", "==", userData.companyId),
+        );
+        branchesQuery = query(
+          collection(db, "branches"),
+          where("companyId", "==", userData.companyId),
+        );
+      } else {
+        // ถ้าไม่มี companyId และไม่ใช่ super_admin -> ไม่ควรเห็นอะไรเลย
+        setUsers([]);
+        setBranches([]);
+        setCompanies([]);
+        setLoading(false);
+        return;
       }
 
       // Fetch users
       const usersSnapshot = await getDocs(usersQuery);
       const usersData: User[] = [];
-      const companiesMap = new Map<string, Company>();
 
       usersSnapshot.forEach((doc) => {
         const data = doc.data();
-        // เก็บข้อมูล company จาก user
-        if (data.companyId && data.companyName) {
-          companiesMap.set(data.companyId, {
-            id: data.companyId,
-            name: data.companyName,
-            code: data.companyCode || "",
-          });
-        }
 
         usersData.push({
           id: doc.id,
@@ -128,7 +128,21 @@ export default function UsersPage() {
         });
       });
       setUsers(usersData);
-      setCompanies(Array.from(companiesMap.values()));
+
+      // Fetch companies - ดึงจาก collection companies โดยตรง (เฉพาะ Super Admin)
+      if (isSuperAdmin) {
+        const companiesSnapshot = await getDocs(collection(db, "companies"));
+        const companiesData: Company[] = [];
+        companiesSnapshot.forEach((doc) => {
+          const data = doc.data();
+          companiesData.push({
+            id: doc.id,
+            name: data.name,
+            code: data.code,
+          });
+        });
+        setCompanies(companiesData);
+      }
 
       // Fetch branches
       const branchesSnapshot = await getDocs(branchesQuery);
@@ -166,7 +180,12 @@ export default function UsersPage() {
 
   // กรอง branches ตาม company ที่เลือก
   const filteredBranches = branches.filter(
-    (branch) => filterCompany === "all" || branch.companyId === filterCompany
+    (branch) => filterCompany === "all" || branch.companyId === filterCompany,
+  );
+
+  // กรอง branches สำหรับ edit modal ตามบริษัทที่เลือก
+  const editModalBranches = branches.filter(
+    (branch) => !editForm.companyId || branch.companyId === editForm.companyId,
   );
 
   const handleEditUser = (user: User) => {
@@ -174,6 +193,7 @@ export default function UsersPage() {
     setEditForm({
       name: user.name || "",
       role: user.role || "employee",
+      companyId: user.companyId || "",
       branchId: user.branchId || "",
       status: user.status || "active",
     });
@@ -185,10 +205,16 @@ export default function UsersPage() {
 
     try {
       const selectedBranch = branches.find((b) => b.id === editForm.branchId);
+      const selectedCompany = companies.find(
+        (c) => c.id === editForm.companyId,
+      );
 
       await updateDoc(doc(db, "users", selectedUser.id), {
         name: editForm.name,
         role: editForm.role,
+        companyId: editForm.companyId || null,
+        companyName: selectedCompany?.name || null,
+        companyCode: selectedCompany?.code || null,
         branchId: editForm.branchId || null,
         branchName: selectedBranch?.name || null,
         status: editForm.status,
@@ -228,7 +254,7 @@ export default function UsersPage() {
         updatedAt: serverTimestamp(),
       });
       toast.success(
-        newStatus === "active" ? "เปิดใช้งานผู้ใช้แล้ว" : "ปิดใช้งานผู้ใช้แล้ว"
+        newStatus === "active" ? "เปิดใช้งานผู้ใช้แล้ว" : "ปิดใช้งานผู้ใช้แล้ว",
       );
       fetchData();
     } catch (error) {
@@ -260,6 +286,52 @@ export default function UsersPage() {
           จัดการบัญชีผู้ใช้และสิทธิ์การเข้าถึง
         </p>
       </div>
+
+      {/* Manager Info Banner */}
+      {userData?.role === "manager" && (
+        <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-xl p-4">
+          <div className="flex items-start gap-3">
+            <div className="bg-blue-100 dark:bg-blue-900/30 rounded-lg p-2 shrink-0">
+              <Building2 className="w-5 h-5 text-blue-600 dark:text-blue-400" />
+            </div>
+            <div className="flex-1">
+              <h3 className="font-semibold text-blue-900 dark:text-blue-100 mb-1">
+                ข้อมูลผู้ใช้ในบริษัท
+              </h3>
+              <p className="text-sm text-blue-700 dark:text-blue-300">
+                คุณกำลังดูรายชื่อผู้ใช้ในบริษัท{" "}
+                <strong>{userData.companyName || "ของคุณ"}</strong> เท่านั้น
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Admin Info Banner */}
+      {userData?.role === "admin" && userData?.companyName && (
+        <div className="bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-xl p-4">
+          <div className="flex items-start gap-3">
+            <div className="bg-green-100 dark:bg-green-900/30 rounded-lg p-2 shrink-0">
+              <Building2 className="w-5 h-5 text-green-600 dark:text-green-400" />
+            </div>
+            <div className="flex-1">
+              <h3 className="font-semibold text-green-900 dark:text-green-100 mb-1">
+                บริษัทของคุณ
+              </h3>
+              <p className="text-sm text-green-700 dark:text-green-300">
+                คุณกำลังจัดการผู้ใช้ในบริษัท{" "}
+                <strong>{userData.companyName}</strong>
+                {userData.companyCode && (
+                  <span className="text-green-600 dark:text-green-400">
+                    {" "}
+                    ({userData.companyCode})
+                  </span>
+                )}
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Filters */}
       <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-4">
@@ -394,42 +466,50 @@ export default function UsersPage() {
                       : "-"}
                   </td>
                   <td className="px-4 lg:px-6 py-4 text-right">
-                    <div className="flex items-center justify-end gap-2">
-                      <button
-                        onClick={() => handleToggleStatus(user)}
-                        className={`p-2 rounded-lg transition-colors ${
-                          user.status === "active"
-                            ? "text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20"
-                            : "text-green-600 hover:bg-green-50 dark:hover:bg-green-900/20"
-                        }`}
-                        title={
-                          user.status === "active" ? "ปิดใช้งาน" : "เปิดใช้งาน"
-                        }
-                      >
-                        {user.status === "active" ? (
-                          <UserX className="w-4 h-4" />
-                        ) : (
-                          <UserCheck className="w-4 h-4" />
-                        )}
-                      </button>
-                      <button
-                        onClick={() => handleEditUser(user)}
-                        className="p-2 text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg transition-colors"
-                        title="แก้ไข"
-                      >
-                        <Edit2 className="w-4 h-4" />
-                      </button>
-                      <button
-                        onClick={() => {
-                          setSelectedUser(user);
-                          setShowDeleteConfirm(true);
-                        }}
-                        className="p-2 text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors"
-                        title="ลบ"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
-                    </div>
+                    {canManageUsers ? (
+                      <div className="flex items-center justify-end gap-2">
+                        <button
+                          onClick={() => handleToggleStatus(user)}
+                          className={`p-2 rounded-lg transition-colors ${
+                            user.status === "active"
+                              ? "text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20"
+                              : "text-green-600 hover:bg-green-50 dark:hover:bg-green-900/20"
+                          }`}
+                          title={
+                            user.status === "active"
+                              ? "ปิดใช้งาน"
+                              : "เปิดใช้งาน"
+                          }
+                        >
+                          {user.status === "active" ? (
+                            <UserX className="w-4 h-4" />
+                          ) : (
+                            <UserCheck className="w-4 h-4" />
+                          )}
+                        </button>
+                        <button
+                          onClick={() => handleEditUser(user)}
+                          className="p-2 text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg transition-colors"
+                          title="แก้ไข"
+                        >
+                          <Edit2 className="w-4 h-4" />
+                        </button>
+                        <button
+                          onClick={() => {
+                            setSelectedUser(user);
+                            setShowDeleteConfirm(true);
+                          }}
+                          className="p-2 text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors"
+                          title="ลบ"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
+                    ) : (
+                      <span className="text-xs text-gray-400 dark:text-gray-500">
+                        ดูอย่างเดียว
+                      </span>
+                    )}
                   </td>
                 </tr>
               ))}
@@ -445,123 +525,214 @@ export default function UsersPage() {
       </div>
 
       {/* Edit Modal */}
-      {showEditModal && selectedUser && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white dark:bg-gray-800 rounded-xl max-w-md w-full p-6">
-            <h2 className="text-xl font-semibold text-gray-900 dark:text-white mb-4">
-              แก้ไขผู้ใช้
-            </h2>
+      {showEditModal &&
+        selectedUser &&
+        (() => {
+          // เช็คว่ากำลังแก้ไขตัวเองหรือไม่
+          const isEditingSelf = selectedUser.id === userData?.id;
 
-            <div className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                  ชื่อ
-                </label>
-                <input
-                  type="text"
-                  value={editForm.name}
-                  onChange={(e) =>
-                    setEditForm({ ...editForm, name: e.target.value })
-                  }
-                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-                />
-              </div>
+          // กำหนด role ที่สามารถแก้ไขได้
+          // Super Admin: แก้ไขได้ทุก role (ยกเว้นตัวเอง)
+          // Admin: แก้ไขได้เฉพาะ manager, supervisor, employee, staff
+          const allowedRoles = isSuperAdmin
+            ? [
+                "super_admin",
+                "admin",
+                "supervisor",
+                "manager",
+                "employee",
+                "staff",
+              ]
+            : ["manager", "supervisor", "employee", "staff"];
 
-              <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                  บทบาท
-                </label>
-                <select
-                  value={editForm.role}
-                  onChange={(e) =>
-                    setEditForm({
-                      ...editForm,
-                      role: e.target.value as
-                        | "super_admin"
-                        | "admin"
-                        | "supervisor"
-                        | "manager"
-                        | "employee"
-                        | "staff",
-                    })
-                  }
-                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-                >
-                  <option value="super_admin">Super Admin</option>
-                  <option value="admin">Admin</option>
-                  <option value="supervisor">Supervisor</option>
-                  <option value="manager">Manager</option>
-                  <option value="employee">Employee</option>
-                  <option value="staff">Staff</option>
-                </select>
-              </div>
+          return (
+            <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+              <div className="bg-white dark:bg-gray-800 rounded-xl max-w-md w-full p-6">
+                <h2 className="text-xl font-semibold text-gray-900 dark:text-white mb-4">
+                  แก้ไขผู้ใช้
+                </h2>
 
-              <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                  สาขา
-                </label>
-                <select
-                  value={editForm.branchId}
-                  onChange={(e) =>
-                    setEditForm({ ...editForm, branchId: e.target.value })
-                  }
-                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-                >
-                  <option value="">ไม่ระบุ</option>
-                  {filteredBranches.map((branch) => (
-                    <option key={branch.id} value={branch.id}>
-                      {branch.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
+                <div className="space-y-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                      ชื่อ
+                    </label>
+                    <input
+                      type="text"
+                      value={editForm.name}
+                      onChange={(e) =>
+                        setEditForm({ ...editForm, name: e.target.value })
+                      }
+                      className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                    />
+                  </div>
 
-              <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                  สถานะ
-                </label>
-                <select
-                  value={editForm.status}
-                  onChange={(e) =>
-                    setEditForm({
-                      ...editForm,
-                      status: e.target.value as
-                        | "pending"
-                        | "active"
-                        | "inactive"
-                        | "suspended",
-                    })
-                  }
-                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-                >
-                  <option value="active">ใช้งาน</option>
-                  <option value="pending">รออนุมัติ</option>
-                  <option value="inactive">ปิดใช้งาน</option>
-                  <option value="suspended">ระงับการใช้งาน</option>
-                </select>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                      บทบาท
+                    </label>
+                    {isEditingSelf ? (
+                      <div>
+                        <div className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-gray-100 dark:bg-gray-600 text-gray-700 dark:text-gray-300">
+                          {editForm.role === "super_admin" && "ผู้ดูแลระบบ"}
+                          {editForm.role === "admin" && "เจ้าของบริษัท"}
+                          {editForm.role === "supervisor" && "หัวหน้างาน"}
+                          {editForm.role === "manager" && "ผู้จัดการสาขา"}
+                          {editForm.role === "employee" && "พนักงาน"}
+                          {editForm.role === "staff" && "พนักงาน"}
+                        </div>
+                        <p className="text-xs text-yellow-600 dark:text-yellow-400 mt-1">
+                          ⚠️ ไม่สามารถเปลี่ยนบทบาทของตัวเองได้
+                        </p>
+                      </div>
+                    ) : (
+                      <select
+                        value={editForm.role}
+                        onChange={(e) =>
+                          setEditForm({
+                            ...editForm,
+                            role: e.target.value as
+                              | "super_admin"
+                              | "admin"
+                              | "supervisor"
+                              | "manager"
+                              | "employee"
+                              | "staff",
+                          })
+                        }
+                        className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                      >
+                        {allowedRoles.includes("super_admin") && (
+                          <option value="super_admin">ผู้ดูแลระบบ</option>
+                        )}
+                        {allowedRoles.includes("admin") && (
+                          <option value="admin">เจ้าของบริษัท</option>
+                        )}
+                        {allowedRoles.includes("supervisor") && (
+                          <option value="supervisor">หัวหน้างาน</option>
+                        )}
+                        {allowedRoles.includes("manager") && (
+                          <option value="manager">ผู้จัดการสาขา</option>
+                        )}
+                        {allowedRoles.includes("employee") && (
+                          <option value="employee">พนักงาน</option>
+                        )}
+                        {allowedRoles.includes("staff") && (
+                          <option value="staff">พนักงาน</option>
+                        )}
+                      </select>
+                    )}
+                    {!isEditingSelf && !isSuperAdmin && (
+                      <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                        💡 เจ้าของบริษัทสามารถจัดการได้เฉพาะ ผู้จัดการสาขา,
+                        หัวหน้างาน, พนักงาน
+                      </p>
+                    )}
+                  </div>
+
+                  {/* Company selector - แสดงเฉพาะ Super Admin */}
+                  {isSuperAdmin && companies.length > 0 && (
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                        บริษัท
+                      </label>
+                      <select
+                        value={editForm.companyId}
+                        onChange={(e) => {
+                          setEditForm({
+                            ...editForm,
+                            companyId: e.target.value,
+                            branchId: "", // รีเซ็ตสาขาเมื่อเปลี่ยนบริษัท
+                          });
+                        }}
+                        className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                      >
+                        <option value="">ไม่ระบุ (Super Admin)</option>
+                        {companies.map((company) => (
+                          <option key={company.id} value={company.id}>
+                            {company.name}
+                          </option>
+                        ))}
+                      </select>
+                      <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                        💡 Admin/Manager ต้องมีบริษัท
+                      </p>
+                    </div>
+                  )}
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                      สาขา
+                    </label>
+                    <select
+                      value={editForm.branchId}
+                      onChange={(e) =>
+                        setEditForm({ ...editForm, branchId: e.target.value })
+                      }
+                      className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                      disabled={!editForm.companyId && isSuperAdmin}
+                    >
+                      <option value="">ไม่ระบุ</option>
+                      {editModalBranches.map((branch) => (
+                        <option key={branch.id} value={branch.id}>
+                          {branch.name}
+                        </option>
+                      ))}
+                    </select>
+                    {isSuperAdmin && !editForm.companyId && (
+                      <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                        เลือกบริษัทก่อนเพื่อดูสาขา
+                      </p>
+                    )}
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                      สถานะ
+                    </label>
+                    <select
+                      value={editForm.status}
+                      onChange={(e) =>
+                        setEditForm({
+                          ...editForm,
+                          status: e.target.value as
+                            | "pending"
+                            | "active"
+                            | "inactive"
+                            | "suspended",
+                        })
+                      }
+                      className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                    >
+                      <option value="active">ใช้งาน</option>
+                      <option value="pending">รออนุมัติ</option>
+                      <option value="inactive">ปิดใช้งาน</option>
+                      <option value="suspended">ระงับการใช้งาน</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div className="flex gap-3 mt-6">
+                  <button
+                    onClick={() => {
+                      setShowEditModal(false);
+                      setSelectedUser(null);
+                    }}
+                    className="flex-1 px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700"
+                  >
+                    ยกเลิก
+                  </button>
+                  <button
+                    onClick={handleUpdateUser}
+                    className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+                  >
+                    บันทึก
+                  </button>
+                </div>
               </div>
             </div>
-
-            <div className="flex gap-3 mt-6">
-              <button
-                onClick={() => {
-                  setShowEditModal(false);
-                  setSelectedUser(null);
-                }}
-                className="flex-1 px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700"
-              >
-                ยกเลิก
-              </button>
-              <button
-                onClick={handleUpdateUser}
-                className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
-              >
-                บันทึก
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+          );
+        })()}
 
       {/* Delete Confirm Modal */}
       {showDeleteConfirm && selectedUser && (
@@ -635,31 +806,31 @@ function StatusBadge({ status }: { status?: string }) {
 function RoleBadge({ role }: { role: string }) {
   const config = {
     super_admin: {
-      label: "Super Admin",
+      label: "ผู้ดูแลระบบ",
       className: "bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400",
     },
     admin: {
-      label: "Admin",
+      label: "เจ้าของบริษัท",
       className:
         "bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-400",
     },
     supervisor: {
-      label: "Supervisor",
+      label: "หัวหน้างาน",
       className:
         "bg-orange-100 text-orange-800 dark:bg-orange-900/30 dark:text-orange-400",
     },
     manager: {
-      label: "Manager",
+      label: "ผู้จัดการสาขา",
       className:
         "bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400",
     },
     employee: {
-      label: "Employee",
+      label: "พนักงาน",
       className:
         "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400",
     },
     staff: {
-      label: "Staff",
+      label: "พนักงาน",
       className:
         "bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-400",
     },

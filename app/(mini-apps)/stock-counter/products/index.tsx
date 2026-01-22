@@ -11,13 +11,12 @@ import {
   ActivityIndicator,
   FlatList,
   ScrollView,
-  StatusBar,
   StyleSheet,
   Text,
   TouchableOpacity,
   View,
 } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
+import { useViewMode } from "../index";
 
 // Fix Firebase Storage URL encoding
 const fixFirebaseStorageUrl = (url: string): string => {
@@ -41,11 +40,11 @@ export default function HomeScreen() {
   const user = useAuthStore((state) => state.user);
   const { products, setProducts, setLoading, loading } = useProductStore();
   const { colors, isDark } = useTheme();
+  const { viewMode } = useViewMode(); // ใช้จาก context
   const [refreshing, setRefreshing] = useState(false);
   const [filter, setFilter] = useState<
     "all" | "pending" | "in_progress" | "completed"
   >("all");
-  const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
 
   // Calculate counts for filter badges
   const counts = {
@@ -74,7 +73,7 @@ export default function HomeScreen() {
         console.error("❌ Products listener error:", error);
         setLoading(false);
         setRefreshing(false);
-      }
+      },
     );
 
     // Cleanup on unmount
@@ -95,7 +94,7 @@ export default function HomeScreen() {
     if (product.status === "completed") {
       // Navigate to completed product view with history
       router.push({
-        pathname: "/(tabs)/products/completed",
+        pathname: "/(mini-apps)/stock-counter/products/completed",
         params: {
           productId: product.productId || product.sku || product.id,
           productName: product.name,
@@ -110,7 +109,7 @@ export default function HomeScreen() {
     // Navigate to product details
     // Use productId (product code like SK-CD-136) not document ID
     router.push({
-      pathname: "/(tabs)/products/details",
+      pathname: "/(mini-apps)/stock-counter/products/details",
       params: {
         productId: product.productId || product.sku || product.id, // Product code (SK-CD-136)
         productName: product.name,
@@ -387,152 +386,74 @@ export default function HomeScreen() {
   // Show message for users without company/branch
   if (!user?.companyId || !user?.branchId) {
     return (
-      <SafeAreaView
-        style={[styles.safeArea, { backgroundColor: colors.card }]}
-        edges={["top"]}
-      >
-        <StatusBar
-          barStyle={isDark ? "light-content" : "dark-content"}
-          backgroundColor={colors.card}
-        />
+      <View style={[styles.centered, { backgroundColor: colors.background }]}>
         <View
           style={[
-            styles.header,
-            { backgroundColor: colors.card, borderBottomColor: colors.border },
+            styles.noBranchIcon,
+            { backgroundColor: colors.primary + "15" },
           ]}
         >
-          <Text style={[styles.headerTitle, { color: colors.text }]}>
-            รายการสินค้า
+          <Ionicons name="business-outline" size={60} color={colors.primary} />
+        </View>
+        <Text style={[styles.noBranchTitle, { color: colors.text }]}>
+          ยังไม่มีสาขา
+        </Text>
+        <Text
+          style={[styles.noBranchDescription, { color: colors.textSecondary }]}
+        >
+          คุณยังไม่ได้เป็นสมาชิกของสาขาใดๆ{"\n"}
+          กรุณารอคำเชิญจากผู้ดูแลระบบ
+        </Text>
+
+        {/* Check Inbox Button */}
+        <TouchableOpacity
+          style={[styles.checkInboxButton, { backgroundColor: colors.primary }]}
+          onPress={() => router.push("/(tabs)/settings/inbox")}
+        >
+          <Ionicons name="mail-outline" size={20} color="#fff" />
+          <Text style={styles.checkInboxText}>ตรวจสอบข้อความ</Text>
+        </TouchableOpacity>
+
+        <View
+          style={[
+            styles.infoCard,
+            { backgroundColor: colors.card, borderColor: colors.border },
+          ]}
+        >
+          <Ionicons
+            name="information-circle"
+            size={20}
+            color={colors.primary}
+          />
+          <Text style={[styles.infoText, { color: colors.textSecondary }]}>
+            เมื่อได้รับคำเชิญ คุณจะเห็นในหน้า &quot;ข้อความ&quot;{"\n"}
+            สามารถยอมรับหรือปฏิเสธได้ที่นั่น
           </Text>
         </View>
-        <View style={[styles.centered, { backgroundColor: colors.background }]}>
-          <View
-            style={[
-              styles.noBranchIcon,
-              { backgroundColor: colors.primary + "15" },
-            ]}
-          >
-            <Ionicons
-              name="business-outline"
-              size={60}
-              color={colors.primary}
-            />
-          </View>
-          <Text style={[styles.noBranchTitle, { color: colors.text }]}>
-            ยังไม่มีสาขา
-          </Text>
-          <Text
-            style={[
-              styles.noBranchDescription,
-              { color: colors.textSecondary },
-            ]}
-          >
-            คุณยังไม่ได้เป็นสมาชิกของสาขาใดๆ{"\n"}
-            กรุณารอคำเชิญจากผู้ดูแลระบบ
-          </Text>
-
-          {/* Check Inbox Button */}
-          <TouchableOpacity
-            style={[
-              styles.checkInboxButton,
-              { backgroundColor: colors.primary },
-            ]}
-            onPress={() => router.push("/(tabs)/settings/inbox")}
-          >
-            <Ionicons name="mail-outline" size={20} color="#fff" />
-            <Text style={styles.checkInboxText}>ตรวจสอบข้อความ</Text>
-          </TouchableOpacity>
-
-          <View
-            style={[
-              styles.infoCard,
-              { backgroundColor: colors.card, borderColor: colors.border },
-            ]}
-          >
-            <Ionicons
-              name="information-circle"
-              size={20}
-              color={colors.primary}
-            />
-            <Text style={[styles.infoText, { color: colors.textSecondary }]}>
-              เมื่อได้รับคำเชิญ คุณจะเห็นในหน้า &quot;ข้อความ&quot;{"\n"}
-              สามารถยอมรับหรือปฏิเสธได้ที่นั่น
-            </Text>
-          </View>
-        </View>
-      </SafeAreaView>
+      </View>
     );
   }
 
   if (loading && products.length === 0) {
     return (
-      <SafeAreaView
-        style={[styles.safeArea, { backgroundColor: colors.card }]}
-        edges={["top"]}
-      >
-        <StatusBar
-          barStyle={isDark ? "light-content" : "dark-content"}
-          backgroundColor={colors.card}
-        />
-        <View
-          style={[
-            styles.header,
-            { backgroundColor: colors.card, borderBottomColor: colors.border },
-          ]}
-        >
-          <Text style={[styles.headerTitle, { color: colors.text }]}>
-            รายการสินค้า
-          </Text>
-        </View>
-        <View style={[styles.centered, { backgroundColor: colors.background }]}>
-          <ActivityIndicator size="large" color={colors.primary} />
-          <Text style={[styles.loadingText, { color: colors.textSecondary }]}>
-            กำลังโหลดรายการสินค้า...
-          </Text>
-        </View>
-      </SafeAreaView>
+      <View style={[styles.centered, { backgroundColor: colors.background }]}>
+        <ActivityIndicator size="large" color={colors.primary} />
+        <Text style={[styles.loadingText, { color: colors.textSecondary }]}>
+          กำลังโหลดรายการสินค้า...
+        </Text>
+      </View>
     );
   }
 
   return (
-    <SafeAreaView
-      style={[styles.safeArea, { backgroundColor: colors.card }]}
-      edges={["top"]}
-    >
-      <StatusBar
-        barStyle={isDark ? "light-content" : "dark-content"}
-        backgroundColor={colors.card}
-      />
+    <View style={[styles.container, { backgroundColor: colors.background }]}>
+      {/* Filter Section */}
       <View
         style={[
-          styles.header,
+          styles.filterSection,
           { backgroundColor: colors.card, borderBottomColor: colors.border },
         ]}
       >
-        <View style={styles.headerRow}>
-          <Text style={[styles.headerTitle, { color: colors.text }]}>
-            รายการสินค้า
-          </Text>
-
-          {/* View Mode Toggle */}
-          <TouchableOpacity
-            style={[
-              styles.viewToggle,
-              {
-                backgroundColor: colors.background,
-                borderColor: colors.border,
-              },
-            ]}
-            onPress={() => setViewMode(viewMode === "grid" ? "list" : "grid")}
-          >
-            <Ionicons
-              name={viewMode === "grid" ? "list" : "grid"}
-              size={20}
-              color={colors.text}
-            />
-          </TouchableOpacity>
-        </View>
-
         {/* Filter Buttons */}
         <ScrollView
           horizontal
@@ -570,84 +491,62 @@ export default function HomeScreen() {
           ))}
         </ScrollView>
       </View>
-      <View style={[styles.container, { backgroundColor: colors.background }]}>
-        <FlatList
-          data={filteredProducts}
-          renderItem={viewMode === "grid" ? renderProduct : renderProductList}
-          keyExtractor={(item) => item.id}
-          numColumns={viewMode === "grid" ? 2 : 1}
-          key={viewMode}
-          columnWrapperStyle={viewMode === "grid" ? styles.row : undefined}
-          contentContainerStyle={
-            filteredProducts.length === 0
-              ? styles.emptyContainer
-              : [styles.listContent, { paddingBottom: 110 }]
-          }
-          refreshing={refreshing}
-          onRefresh={handleRefresh}
-          ListEmptyComponent={
-            !loading ? (
-              <View style={styles.centered}>
-                <Ionicons
-                  name="cube-outline"
-                  size={80}
-                  color={colors.textSecondary}
-                />
-                <Text style={[styles.emptyText, { color: colors.text }]}>
-                  {filter === "all"
-                    ? "ไม่มีรายการสินค้า"
-                    : `ไม่มีสินค้า${
-                        filters.find((f) => f.key === filter)?.label
-                      }`}
-                </Text>
-                <Text
-                  style={[styles.emptySubtext, { color: colors.textSecondary }]}
-                >
-                  ลากลงเพื่อรีเฟรช
-                </Text>
-              </View>
-            ) : null
-          }
-        />
-      </View>
-    </SafeAreaView>
+
+      {/* Product List */}
+      <FlatList
+        data={filteredProducts}
+        renderItem={viewMode === "grid" ? renderProduct : renderProductList}
+        keyExtractor={(item) => item.id}
+        numColumns={viewMode === "grid" ? 2 : 1}
+        key={viewMode}
+        columnWrapperStyle={viewMode === "grid" ? styles.row : undefined}
+        contentContainerStyle={
+          filteredProducts.length === 0
+            ? styles.emptyContainer
+            : [styles.listContent, { paddingBottom: 110 }]
+        }
+        refreshing={refreshing}
+        onRefresh={handleRefresh}
+        ListEmptyComponent={
+          !loading ? (
+            <View style={styles.centered}>
+              <Ionicons
+                name="cube-outline"
+                size={80}
+                color={colors.textSecondary}
+              />
+              <Text style={[styles.emptyText, { color: colors.text }]}>
+                {filter === "all"
+                  ? "ไม่มีรายการสินค้า"
+                  : `ไม่มีสินค้า${
+                      filters.find((f) => f.key === filter)?.label
+                    }`}
+              </Text>
+              <Text
+                style={[styles.emptySubtext, { color: colors.textSecondary }]}
+              >
+                ลากลงเพื่อรีเฟรช
+              </Text>
+            </View>
+          ) : null
+        }
+      />
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  safeArea: {
+  container: {
     flex: 1,
   },
-  header: {
+  filterSection: {
     paddingHorizontal: 16,
-    paddingTop: 12,
-    paddingBottom: 8,
+    paddingVertical: 12,
     borderBottomWidth: StyleSheet.hairlineWidth,
-  },
-  headerRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: 12,
-  },
-  headerTitle: {
-    fontSize: 34,
-    fontWeight: "700",
-    letterSpacing: 0.4,
-  },
-  viewToggle: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    justifyContent: "center",
-    alignItems: "center",
-    borderWidth: 1,
   },
   filterContainer: {
     flexDirection: "row",
     gap: 8,
-    paddingBottom: 8,
-    paddingHorizontal: 16,
   },
   filterButton: {
     flexDirection: "row",
@@ -661,9 +560,6 @@ const styles = StyleSheet.create({
   filterText: {
     fontSize: 13,
     fontWeight: "600",
-  },
-  container: {
-    flex: 1,
   },
   listContent: {
     padding: 8,

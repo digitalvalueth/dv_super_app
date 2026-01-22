@@ -33,7 +33,7 @@ export default function ReportsPage() {
         if (companyId) {
           sessionsQuery = query(
             collection(db, "countingSessions"),
-            where("companyId", "==", companyId)
+            where("companyId", "==", companyId),
           );
         } else {
           sessionsQuery = query(collection(db, "countingSessions"));
@@ -76,7 +76,7 @@ export default function ReportsPage() {
         const totalSessions = sessions.length;
         const totalDiscrepancy = sessions.reduce(
           (sum, s) => sum + (s.discrepancy ?? 0),
-          0
+          0,
         );
         const averageDiscrepancy =
           totalSessions > 0 ? totalDiscrepancy / totalSessions : 0;
@@ -337,7 +337,10 @@ export default function ReportsPage() {
               </thead>
               <tbody className="divide-y divide-gray-200">
                 {report?.topDiscrepancyUsers.map((user, index) => (
-                  <tr key={user.userId} className="hover:bg-gray-50">
+                  <tr
+                    key={`user-${user.userId}-${index}`}
+                    className="hover:bg-gray-50"
+                  >
                     <td className="px-4 py-2">
                       <span className="font-semibold text-gray-900">
                         {index + 1}.
@@ -379,7 +382,10 @@ export default function ReportsPage() {
               </thead>
               <tbody className="divide-y divide-gray-200">
                 {report?.topDiscrepancyBranches.map((branch, index) => (
-                  <tr key={branch.branchId} className="hover:bg-gray-50">
+                  <tr
+                    key={`branch-${branch.branchId}-${index}`}
+                    className="hover:bg-gray-50"
+                  >
                     <td className="px-4 py-2">
                       <span className="font-semibold text-gray-900">
                         {index + 1}.
@@ -421,7 +427,10 @@ export default function ReportsPage() {
               </thead>
               <tbody className="divide-y divide-gray-200">
                 {report?.topDiscrepancyProducts.map((product, index) => (
-                  <tr key={product.productId} className="hover:bg-gray-50">
+                  <tr
+                    key={`product-${product.productId}-${index}`}
+                    className="hover:bg-gray-50"
+                  >
                     <td className="px-4 py-2">
                       <div>
                         <span className="font-semibold text-gray-900">

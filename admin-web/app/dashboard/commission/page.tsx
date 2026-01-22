@@ -446,12 +446,12 @@ export default function CommissionPage() {
 
       // Format role display
       const roleDisplayMap: Record<string, string> = {
-        super_admin: "Super Admin",
-        admin: "Admin",
-        supervisor: "Supervisor",
-        manager: "Manager",
-        employee: "Employee",
-        staff: "Staff",
+        super_admin: "ผู้ดูแลระบบ",
+        admin: "เจ้าของบริษัท",
+        supervisor: "หัวหน้างาน",
+        manager: "ผู้จัดการสาขา",
+        employee: "พนักงาน",
+        staff: "พนักงาน",
       };
 
       const metadata = {
@@ -535,12 +535,12 @@ export default function CommissionPage() {
 
       // Format role display
       const roleDisplayMapPDF: Record<string, string> = {
-        super_admin: "Super Admin",
-        admin: "Admin",
-        supervisor: "Supervisor",
-        manager: "Manager",
-        employee: "Employee",
-        staff: "Staff",
+        super_admin: "ผู้ดูแลระบบ",
+        admin: "เจ้าของบริษัท",
+        supervisor: "หัวหน้างาน",
+        manager: "ผู้จัดการสาขา",
+        employee: "พนักงาน",
+        staff: "พนักงาน",
       };
 
       const metadata = {

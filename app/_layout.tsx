@@ -40,10 +40,10 @@ export default function RootLayout() {
       if (data?.type === "company_invite") {
         router.push("/(tabs)/settings/inbox");
       } else if (data?.type === "assignment") {
-        router.push("/(tabs)/products");
+        router.push("/(mini-apps)/stock-counter/products");
       }
     },
-    [router]
+    [router],
   );
 
   // Setup push notifications when user is logged in
@@ -58,7 +58,7 @@ export default function RootLayout() {
 
       // Handle notification tap
       const subscription = addNotificationResponseReceivedListener(
-        handleNotificationTap
+        handleNotificationTap,
       );
       responseListener.current = subscription;
 
@@ -85,11 +85,9 @@ export default function RootLayout() {
       >
         <Stack.Screen name="(login)" />
         <Stack.Screen name="(tabs)" />
+        <Stack.Screen name="(mini-apps)" />
         <Stack.Screen name="onboarding" />
         <Stack.Screen name="pending-approval" />
-        <Stack.Screen name="camera" />
-        <Stack.Screen name="preview" />
-        <Stack.Screen name="result" />
       </Stack>
       <StatusBar style="auto" />
     </ThemeProvider>

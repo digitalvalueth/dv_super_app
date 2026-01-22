@@ -1,14 +1,17 @@
 "use client";
 
+import { useAuthStore } from "@/stores/auth.store";
 import {
   BarChart3,
   Building2,
   ClipboardList,
   DollarSign,
+  Factory,
   LayoutDashboard,
   Mail,
   Menu,
   Package,
+  Shield,
   Users,
   X,
 } from "lucide-react";
@@ -19,7 +22,19 @@ import { useState } from "react";
 const navigation = [
   { name: "แดชบอร์ด", href: "/dashboard", icon: LayoutDashboard },
   { name: "ผู้ใช้งาน", href: "/dashboard/users", icon: Users },
+  {
+    name: "บริษัท",
+    href: "/dashboard/companies",
+    icon: Factory,
+    superAdminOnly: true, // เฉพาะ Super Admin
+  },
   { name: "สาขา", href: "/dashboard/branches", icon: Building2 },
+  {
+    name: "Manager",
+    href: "/dashboard/managers",
+    icon: Shield,
+    adminOnly: true, // เฉพาะ Admin และ Super Admin
+  },
   { name: "สินค้า", href: "/dashboard/products", icon: Package },
   { name: "ข้อมูลการนับ", href: "/dashboard/counting", icon: ClipboardList },
   { name: "ค่าคอมมิชชั่น", href: "/dashboard/commission", icon: DollarSign },
@@ -30,6 +45,24 @@ const navigation = [
 export function Sidebar() {
   const pathname = usePathname();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const { userData } = useAuthStore();
+
+  // Check if user is super admin by role
+  const isSuperAdmin = userData?.role === "super_admin";
+  // Check if user is admin or super admin
+  const isAdminOrAbove =
+    userData?.role === "admin" || userData?.role === "super_admin";
+
+  // Filter navigation based on user role
+  const filteredNavigation = navigation.filter((item) => {
+    if (item.superAdminOnly) {
+      return isSuperAdmin;
+    }
+    if (item.adminOnly) {
+      return isAdminOrAbove;
+    }
+    return true;
+  });
 
   return (
     <>
@@ -77,7 +110,7 @@ export function Sidebar() {
           </div>
 
           <nav className="flex-1 p-4 space-y-1 overflow-y-auto">
-            {navigation.map((item) => {
+            {filteredNavigation.map((item) => {
               // Check if the current path matches the navigation item
               // For nested routes like /dashboard/branches/[id], highlight the parent menu
               const isActive =

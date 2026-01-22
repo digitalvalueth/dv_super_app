@@ -65,7 +65,7 @@ export default function BranchDetailPage() {
   // Assignment modal state
   const [showAssignModal, setShowAssignModal] = useState(false);
   const [selectedUser, setSelectedUser] = useState<UserWithAssignments | null>(
-    null
+    null,
   );
   const [assignmentForm, setAssignmentForm] = useState({
     productIds: [] as string[],
@@ -112,7 +112,7 @@ export default function BranchDetailPage() {
       let companyName = "";
       if (branchData.companyId) {
         const companyDoc = await getDoc(
-          doc(db, "companies", branchData.companyId)
+          doc(db, "companies", branchData.companyId),
         );
         if (companyDoc.exists()) {
           companyName = companyDoc.data().name || "";
@@ -135,7 +135,7 @@ export default function BranchDetailPage() {
       // Fetch users in this branch
       const usersQuery = query(
         collection(db, "users"),
-        where("branchId", "==", branchId)
+        where("branchId", "==", branchId),
       );
       const usersSnapshot = await getDocs(usersQuery);
 
@@ -160,7 +160,7 @@ export default function BranchDetailPage() {
       // Fetch assignments for each user
       const assignmentsQuery = query(
         collection(db, "assignments"),
-        where("branchId", "==", branchId)
+        where("branchId", "==", branchId),
       );
       const assignmentsSnapshot = await getDocs(assignmentsQuery);
 
@@ -199,7 +199,7 @@ export default function BranchDetailPage() {
       if (companyId) {
         productsQuery = query(
           collection(db, "products"),
-          where("companyId", "==", companyId)
+          where("companyId", "==", companyId),
         );
       } else {
         productsQuery = query(collection(db, "products"));
@@ -236,7 +236,7 @@ export default function BranchDetailPage() {
 
   const openAssignModal = (
     user: UserWithAssignments,
-    assignmentId?: string
+    assignmentId?: string,
   ) => {
     setSelectedUser(user);
 
@@ -258,7 +258,7 @@ export default function BranchDetailPage() {
     } else {
       // Check if user already has assignment for current month/year
       const existing = user.assignments?.find(
-        (a) => a.month === currentMonth && a.year === currentYear
+        (a) => a.month === currentMonth && a.year === currentYear,
       );
 
       if (existing) {
@@ -291,7 +291,7 @@ export default function BranchDetailPage() {
 
     const existing = selectedUser.assignments?.find(
       (a) =>
-        a.month === month && a.year === year && a.id !== selectedAssignmentId
+        a.month === month && a.year === year && a.id !== selectedAssignmentId,
     );
 
     if (existing) {
@@ -354,7 +354,7 @@ export default function BranchDetailPage() {
       (productSearchTerm === "" ||
         p.name?.toLowerCase().includes(productSearchTerm.toLowerCase()) ||
         p.productId?.toLowerCase().includes(productSearchTerm.toLowerCase()) ||
-        p.barcode?.toLowerCase().includes(productSearchTerm.toLowerCase()))
+        p.barcode?.toLowerCase().includes(productSearchTerm.toLowerCase())),
   );
 
   // Products that ARE assigned
@@ -364,7 +364,7 @@ export default function BranchDetailPage() {
       (assignedSearchTerm === "" ||
         p.name?.toLowerCase().includes(assignedSearchTerm.toLowerCase()) ||
         p.productId?.toLowerCase().includes(assignedSearchTerm.toLowerCase()) ||
-        p.barcode?.toLowerCase().includes(assignedSearchTerm.toLowerCase()))
+        p.barcode?.toLowerCase().includes(assignedSearchTerm.toLowerCase())),
   );
 
   const handleSaveAssignment = async () => {
@@ -451,7 +451,7 @@ export default function BranchDetailPage() {
       // Check if user already exists
       const usersQuery = query(
         collection(db, "users"),
-        where("email", "==", inviteEmail.toLowerCase().trim())
+        where("email", "==", inviteEmail.toLowerCase().trim()),
       );
       const usersSnapshot = await getDocs(usersQuery);
 
@@ -489,7 +489,7 @@ export default function BranchDetailPage() {
 
       const inviteRef = await addDoc(
         collection(db, "invitations"),
-        invitationData
+        invitationData,
       );
 
       // If user exists, send in-app notification
@@ -535,7 +535,7 @@ export default function BranchDetailPage() {
       toast.success(
         targetUserId
           ? "ส่งคำเชิญสำเร็จ! ผู้ใช้จะได้รับการแจ้งเตือนในแอป"
-          : "ส่งคำเชิญสำเร็จ! ระบบจะส่ง email เชิญให้ผู้ใช้"
+          : "ส่งคำเชิญสำเร็จ! ระบบจะส่ง email เชิญให้ผู้ใช้",
       );
 
       setShowInviteModal(false);
@@ -552,7 +552,7 @@ export default function BranchDetailPage() {
   const filteredUsers = users.filter(
     (user) =>
       user.displayName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      user.email?.toLowerCase().includes(searchTerm.toLowerCase())
+      user.email?.toLowerCase().includes(searchTerm.toLowerCase()),
   );
 
   const getStatusBadge = (status: string) => {
@@ -758,7 +758,7 @@ export default function BranchDetailPage() {
                   acc +
                   (u.assignments?.filter((a) => a.status === "completed")
                     .length || 0),
-                0
+                0,
               )}
             </p>
             <p className="text-sm text-gray-500 dark:text-gray-400">
@@ -772,7 +772,7 @@ export default function BranchDetailPage() {
                   acc +
                   (u.assignments?.filter((a) => a.status === "pending")
                     .length || 0),
-                0
+                0,
               )}
             </p>
             <p className="text-sm text-gray-500 dark:text-gray-400">
@@ -1342,9 +1342,9 @@ export default function BranchDetailPage() {
                   onChange={(e) => setInviteRole(e.target.value)}
                   className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-green-500"
                 >
-                  <option value="employee">พนักงาน (Employee)</option>
-                  <option value="supervisor">หัวหน้างาน (Supervisor)</option>
-                  <option value="admin">ผู้ดูแลสาขา (Admin)</option>
+                  <option value="employee">พนักงาน</option>
+                  <option value="supervisor">หัวหน้างาน</option>
+                  <option value="manager">ผู้จัดการสาขา</option>
                 </select>
               </div>
 

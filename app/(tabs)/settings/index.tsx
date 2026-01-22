@@ -60,7 +60,7 @@ export default function ProfileScreen() {
         if (user.companyId && !user.companyName) {
           try {
             const companyDoc = await getDoc(
-              doc(db, "companies", user.companyId)
+              doc(db, "companies", user.companyId),
             );
             if (companyDoc.exists()) {
               setCompanyName(companyDoc.data().name || "");
@@ -88,7 +88,7 @@ export default function ProfileScreen() {
       };
 
       loadNames();
-    }, [user])
+    }, [user]),
   );
 
   // Load unread notifications count
@@ -101,7 +101,7 @@ export default function ProfileScreen() {
           const q = query(
             notificationsRef,
             where("userId", "==", user.uid),
-            where("read", "==", false)
+            where("read", "==", false),
           );
           const snapshot = await getDocs(q);
           setUnreadCount(snapshot.size);
@@ -110,7 +110,7 @@ export default function ProfileScreen() {
         }
       };
       loadUnreadCount();
-    }, [user])
+    }, [user]),
   );
 
   const handleLogout = () => {
@@ -322,12 +322,14 @@ export default function ProfileScreen() {
               {user?.role === "employee"
                 ? "พนักงาน"
                 : user?.role === "admin"
-                ? "ผู้ดูแลระบบ"
-                : user?.role === "super_admin"
-                ? "ผู้ดูแลระบบสูงสุด"
-                : user?.role === "supervisor"
-                ? "หัวหน้างาน"
-                : user?.role}
+                  ? "เจ้าของบริษัท"
+                  : user?.role === "super_admin"
+                    ? "ผู้ดูแลระบบ"
+                    : user?.role === "supervisor"
+                      ? "หัวหน้างาน"
+                      : user?.role === "manager"
+                        ? "ผู้จัดการสาขา"
+                        : user?.role}
             </Text>
           </View>
 

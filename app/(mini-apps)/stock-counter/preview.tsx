@@ -57,13 +57,13 @@ export default function PreviewScreen() {
   const [barcodeCount, setBarcodeCount] = useState<number | null>(null);
   const [processingTime, setProcessingTime] = useState<number | null>(null);
   const [sessionId, setSessionId] = useState<string | null>(
-    params.existingSessionId || null
+    params.existingSessionId || null,
   );
   const [imageBase64, setImageBase64] = useState<string | null>(
-    params.imageBase64 || null
+    params.imageBase64 || null,
   );
   const [displayImageUri, setDisplayImageUri] = useState<string>(
-    params.imageUri || ""
+    params.imageUri || "",
   );
 
   // Parse watermark data
@@ -107,7 +107,7 @@ export default function PreviewScreen() {
           if (!response.ok) {
             Alert.alert(
               "เกิดข้อผิดพลาด",
-              `ไม่สามารถโหลดรูปภาพได้ (${response.status})`
+              `ไม่สามารถโหลดรูปภาพได้ (${response.status})`,
             );
             return;
           }
@@ -149,7 +149,7 @@ export default function PreviewScreen() {
           params.assignmentId,
           "in_progress",
           undefined,
-          params.productId
+          params.productId,
         );
 
         // 2. อัพโหลดรูปปกติ (ไม่มี watermark) ไป Firebase Storage
@@ -158,7 +158,7 @@ export default function PreviewScreen() {
         const imageUrl = await uploadCountingImage(
           user.uid,
           sessionIdTemp,
-          params.imageUri
+          params.imageUri,
         );
 
         // 3. ถ้ามี existingSessionId ให้อัพเดทรูปแทนสร้างใหม่
@@ -177,7 +177,7 @@ export default function PreviewScreen() {
               aiCount: 0,
               aiConfidence: 0,
               updatedAt: new Date(),
-            }
+            },
           );
 
           setSessionId(params.existingSessionId);
@@ -308,14 +308,14 @@ export default function PreviewScreen() {
     if (barcodeCount === null || !sessionId) {
       Alert.alert(
         "กรุณาวิเคราะห์รูปก่อน",
-        "กดปุ่ม 'วิเคราะห์ด้วย AI' เพื่อนับจำนวน Barcode"
+        "กดปุ่ม 'วิเคราะห์ด้วย AI' เพื่อนับจำนวน Barcode",
       );
       return;
     }
 
     // Navigate to result screen with session ID
     router.push({
-      pathname: "/result",
+      pathname: "/(mini-apps)/stock-counter/result",
       params: {
         sessionId: sessionId, // ส่ง session ID ไปเพื่ออัพเดท
         imageUri: params.imageUri,

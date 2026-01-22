@@ -18,6 +18,8 @@ export interface User {
   branchId?: string;
   branchCode?: string;
   branchName?: string;
+  managedBranchIds?: string[]; // For managers who control multiple branches
+  phoneNumber?: string;
   photoURL?: string;
   status?: "pending" | "active" | "inactive" | "suspended";
   createdAt?: Date;

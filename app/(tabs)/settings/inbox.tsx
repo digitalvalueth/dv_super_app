@@ -45,7 +45,7 @@ export default function InboxScreen() {
     const q = query(
       notificationsRef,
       where("userId", "==", user.uid),
-      orderBy("createdAt", "desc")
+      orderBy("createdAt", "desc"),
     );
 
     const unsubscribe = onSnapshot(
@@ -63,7 +63,7 @@ export default function InboxScreen() {
       (error) => {
         console.error("❌ Error in notifications listener:", error);
         setLoading(false);
-      }
+      },
     );
 
     // Cleanup listener on unmount
@@ -88,7 +88,7 @@ export default function InboxScreen() {
       });
 
       setNotifications((prev) =>
-        prev.map((n) => (n.id === notificationId ? { ...n, read: true } : n))
+        prev.map((n) => (n.id === notificationId ? { ...n, read: true } : n)),
       );
     } catch (error) {
       console.error("Error marking as read:", error);
@@ -132,14 +132,14 @@ export default function InboxScreen() {
               onPress: () => rejectInvite(notification),
             },
             { text: "ยอมรับ", onPress: () => acceptInvite(notification) },
-          ]
+          ],
         );
         break;
       case "branch_transfer":
         Alert.alert(
           "แจ้งย้ายสาขา",
           `คุณถูกย้ายจาก ${notification.data?.fromBranchName} ไป ${notification.data?.toBranchName}`,
-          [{ text: "รับทราบ" }]
+          [{ text: "รับทราบ" }],
         );
         break;
       default:
@@ -185,8 +185,8 @@ export default function InboxScreen() {
                 read: true,
                 data: { ...n.data, status: "accepted", actionRequired: false },
               }
-            : n
-        )
+            : n,
+        ),
       );
 
       // Update auth store with new user data
@@ -223,7 +223,7 @@ export default function InboxScreen() {
           const invitationRef = doc(
             db,
             "invitations",
-            notification.data.invitationId
+            notification.data.invitationId,
           );
           await updateDoc(invitationRef, {
             status: "accepted",
@@ -238,7 +238,13 @@ export default function InboxScreen() {
       Alert.alert(
         "สำเร็จ",
         `คุณได้เข้าร่วมสาขา ${notification.data.branchName || ""} แล้ว`,
-        [{ text: "ตกลง", onPress: () => router.replace("/(tabs)/products") }]
+        [
+          {
+            text: "ตกลง",
+            onPress: () =>
+              router.replace("/(mini-apps)/stock-counter/products"),
+          },
+        ],
       );
     } catch (error) {
       console.error("Error accepting invite:", error);
@@ -263,7 +269,7 @@ export default function InboxScreen() {
           const invitationRef = doc(
             db,
             "invitations",
-            notification.data.invitationId
+            notification.data.invitationId,
           );
           await updateDoc(invitationRef, {
             status: "rejected",
@@ -284,8 +290,8 @@ export default function InboxScreen() {
                 read: true,
                 data: { ...n.data, status: "rejected", actionRequired: false },
               }
-            : n
-        )
+            : n,
+        ),
       );
 
       Alert.alert("ปฏิเสธแล้ว", "คุณได้ปฏิเสธคำเชิญแล้ว");
@@ -295,7 +301,7 @@ export default function InboxScreen() {
   };
 
   const getNotificationIcon = (
-    type: NotificationType
+    type: NotificationType,
   ): keyof typeof Ionicons.glyphMap => {
     switch (type) {
       case "company_invite":
