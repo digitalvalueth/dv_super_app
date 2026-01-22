@@ -49,6 +49,16 @@ interface MiniApp {
 
 const ALL_MINI_APPS: MiniApp[] = [
   {
+    id: "check-in",
+    name: "เช็คชื่อพนักงาน",
+    description: "ลงเวลาเข้า-ออกงาน",
+    icon: "person-circle-outline",
+    color: "#10B981",
+    bgColor: "#D1FAE5",
+    route: "/(mini-apps)/check-in",
+    category: "tools",
+  },
+  {
     id: "stock-counter",
     name: "นับสต็อก",
     description: "นับสินค้าด้วย AI Camera",

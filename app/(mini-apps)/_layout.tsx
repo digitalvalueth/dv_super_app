@@ -28,6 +28,13 @@ export default function MiniAppsLayout() {
         }}
       />
       <Stack.Screen
+        name="check-in"
+        options={{
+          headerShown: false,
+          title: "เช็คชื่อพนักงาน",
+        }}
+      />
+      <Stack.Screen
         name="speech-to-text"
         options={{
           title: "Speech to Text",

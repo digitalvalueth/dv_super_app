@@ -285,3 +285,67 @@ export type HistoryStackParamList = {
 export type ProfileStackParamList = {
   index: undefined;
 };
+
+// ==================== Check-in Types ====================
+
+export type CheckInType = "check-in" | "check-out";
+
+export interface CheckIn {
+  id: string;
+  userId: string;
+  userName: string;
+  userEmail?: string;
+  companyId: string;
+  companyName?: string;
+  branchId: string;
+  branchName?: string;
+
+  type: CheckInType;
+
+  // รูปภาพ + Watermark
+  imageUrl: string;
+  watermarkData: {
+    timestamp: string;
+    location: string;
+    coordinates?: {
+      latitude: number;
+      longitude: number;
+    };
+    employeeName: string;
+    employeeId: string;
+    deviceModel?: string;
+    deviceName?: string;
+  };
+
+  // ข้อมูลเวลา
+  isLate?: boolean;
+  lateMinutes?: number;
+  remarks?: string;
+
+  createdAt: Timestamp;
+  updatedAt?: Timestamp;
+}
+
+export interface AttendanceSettings {
+  id: string;
+  companyId: string;
+  branchId?: string; // ถ้าไม่มี = ใช้ทั้งบริษัท
+  workStartTime: string; // "10:00"
+  workEndTime?: string; // "18:00"
+  lateThresholdMinutes?: number; // default 0
+  requirePhoto: boolean;
+  requireLocation: boolean;
+  createdAt: Timestamp;
+  updatedAt?: Timestamp;
+}
+
+export interface AttendanceSummary {
+  date: string; // "2026-01-22"
+  companyId: string;
+  branchId?: string;
+  totalEmployees: number;
+  checkedIn: number;
+  notCheckedIn: number;
+  lateCount: number;
+  onTimeCount: number;
+}
