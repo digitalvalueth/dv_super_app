@@ -32,7 +32,7 @@ export const getProducts = async (companyId: string): Promise<Product[]> => {
  * Get single product by ID
  */
 export const getProductById = async (
-  productId: string
+  productId: string,
 ): Promise<Product | null> => {
   try {
     const productDoc = await getDoc(doc(db, "products", productId));
@@ -52,7 +52,7 @@ export const getProductById = async (
  * Get user's assigned products (monthly counting list)
  */
 export const getUserAssignedProducts = async (
-  userId: string
+  userId: string,
 ): Promise<UserAssignment[]> => {
   try {
     const assignmentsRef = collection(db, "userAssignments");
@@ -60,7 +60,7 @@ export const getUserAssignedProducts = async (
       assignmentsRef,
       where("userId", "==", userId),
       orderBy("status", "asc"), // pending first
-      orderBy("dueDate", "asc")
+      orderBy("dueDate", "asc"),
     );
 
     const snapshot = await getDocs(q);
@@ -76,7 +76,7 @@ export const getUserAssignedProducts = async (
  * Get products with assignment status (combined data for UI)
  */
 export const getProductsWithAssignments = async (
-  userId: string
+  userId: string,
 ): Promise<ProductWithAssignment[]> => {
   try {
     console.log("🔍 Fetching assignments for user:", userId);
@@ -103,7 +103,7 @@ export const getProductsWithAssignments = async (
 
       console.log(
         `📦 Processing ${productIds.length} products from assignment:`,
-        assignmentId
+        assignmentId,
       );
 
       // Get all products
@@ -113,7 +113,7 @@ export const getProductsWithAssignments = async (
           const productsRef = collection(db, "products");
           const productQuery = query(
             productsRef,
-            where("productId", "==", productId)
+            where("productId", "==", productId),
           );
           const productSnapshot = await getDocs(productQuery);
 
@@ -134,7 +134,6 @@ export const getProductsWithAssignments = async (
               name: productData.name,
               sku: productData.productId,
               barcode: productData.barcode,
-              sellerCode: productData.sellerCode || "",
               description: productData.description,
               category: productData.category,
               companyId: productData.companyId,
@@ -175,13 +174,13 @@ export const getProductsWithAssignments = async (
  */
 export const searchProducts = async (
   companyId: string,
-  searchTerm: string
+  searchTerm: string,
 ): Promise<Product[]> => {
   try {
     const productsRef = collection(db, "products");
     const q = query(
       productsRef,
-      where("companyId", "==", companyId)
+      where("companyId", "==", companyId),
       // Note: Firestore doesn't support full-text search
       // You'll need to implement this client-side or use Algolia
     );
@@ -195,7 +194,7 @@ export const searchProducts = async (
       (p) =>
         p.name.toLowerCase().includes(term) ||
         p.sku.toLowerCase().includes(term) ||
-        p.barcode.includes(term)
+        p.barcode.includes(term),
     );
   } catch (error) {
     console.error("Error searching products:", error);
@@ -210,7 +209,7 @@ export const searchProducts = async (
 export const subscribeToProductsWithAssignments = (
   userId: string,
   onUpdate: (products: ProductWithAssignment[]) => void,
-  onError?: (error: Error) => void
+  onError?: (error: Error) => void,
 ): Unsubscribe => {
   console.log("🔔 Setting up realtime products listener for user:", userId);
 
@@ -244,7 +243,7 @@ export const subscribeToProductsWithAssignments = (
             const productsRef = collection(db, "products");
             const productQuery = query(
               productsRef,
-              where("productId", "==", productId)
+              where("productId", "==", productId),
             );
             const productSnapshot = await getDocs(productQuery);
 
@@ -270,7 +269,6 @@ export const subscribeToProductsWithAssignments = (
                 name: productData.name,
                 sku: productData.productId,
                 barcode: productData.barcode,
-                sellerCode: productData.sellerCode || "",
                 description: productData.description,
                 category: productData.category,
                 companyId: productData.companyId,
@@ -301,7 +299,7 @@ export const subscribeToProductsWithAssignments = (
     (error) => {
       console.error("❌ Error in products listener:", error);
       if (onError) onError(error);
-    }
+    },
   );
 
   return unsubscribe;

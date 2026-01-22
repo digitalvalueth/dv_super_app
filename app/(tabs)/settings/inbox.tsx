@@ -238,13 +238,7 @@ export default function InboxScreen() {
       Alert.alert(
         "สำเร็จ",
         `คุณได้เข้าร่วมสาขา ${notification.data.branchName || ""} แล้ว`,
-        [
-          {
-            text: "ตกลง",
-            onPress: () =>
-              router.replace("/(mini-apps)/stock-counter/products"),
-          },
-        ],
+        [{ text: "ตกลง" }],
       );
     } catch (error) {
       console.error("Error accepting invite:", error);

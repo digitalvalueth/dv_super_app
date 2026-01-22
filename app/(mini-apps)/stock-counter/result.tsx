@@ -101,8 +101,7 @@ export default function ResultScreen() {
           [
             {
               text: "ตกลง",
-              onPress: () =>
-                router.replace("/(mini-apps)/stock-counter/products"),
+              onPress: () => router.replace("/(mini-apps)/stock-counter"),
             },
           ],
         );
@@ -173,8 +172,7 @@ export default function ResultScreen() {
         [
           {
             text: "ตกลง",
-            onPress: () =>
-              router.replace("/(mini-apps)/stock-counter/products"),
+            onPress: () => router.replace("/(mini-apps)/stock-counter"),
           },
         ],
       );
