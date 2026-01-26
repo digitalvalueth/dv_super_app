@@ -177,9 +177,9 @@ export default function StockCounterIndex() {
         >
           <TouchableOpacity
             style={styles.headerButton}
-            onPress={() => router.back()}
+            onPress={() => router.replace("/(tabs)/services")}
           >
-            <Ionicons name="arrow-back" size={24} color={colors.text} />
+            <Ionicons name="home-outline" size={24} color={colors.text} />
           </TouchableOpacity>
           <Text style={[styles.headerTitle, { color: colors.text }]}>
             นับสต็อก

@@ -93,9 +93,7 @@ export default function ResultScreen() {
           "ยืนยันสำเร็จ",
           `ยืนยันผลการนับ ${barcodeCount} รายการเรียบร้อยแล้ว\n\n${
             variance !== 0
-              ? `ผลต่าง: ${variance > 0 ? "+" : ""}${variance} (${
-                  variance > 0 ? "ขาด" : "เกิน"
-                })`
+              ? `สินค้าคุณ${variance > 0 ? "ขาดไป" : "เกิน"} ${Math.abs(variance)} ชิ้น`
               : "จำนวนตรงกัน ✓"
           }`,
           [
@@ -164,9 +162,7 @@ export default function ResultScreen() {
         "บันทึกสำเร็จ",
         `บันทึกผลการนับ ${barcodeCount} รายการเรียบร้อยแล้ว\n\n${
           variance !== 0
-            ? `ผลต่าง: ${variance > 0 ? "+" : ""}${variance} (${
-                variance > 0 ? "ขาด" : "เกิน"
-              })`
+            ? `สินค้าคุณ${variance > 0 ? "ขาดไป" : "เกิน"} ${Math.abs(variance)} ชิ้น`
             : "จำนวนตรงกัน ✓"
         }`,
         [

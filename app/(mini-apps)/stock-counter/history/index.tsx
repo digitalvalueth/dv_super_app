@@ -264,7 +264,7 @@ export default function HistoryScreen() {
                 { color: getVarianceColor(session.variance) },
               ]}
             >
-              {session.variance > 0 ? "+" : ""}
+              {session.variance > 0 ? "+" : session.variance < 0 ? "" : ""}
               {session.variance}
             </Text>
           </View>
