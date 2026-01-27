@@ -177,7 +177,7 @@ export default function StockCounterIndex() {
         >
           <TouchableOpacity
             style={styles.headerButton}
-            onPress={() => router.replace("/(tabs)/services")}
+            onPress={() => router.replace("/(tabs)/home")}
           >
             <Ionicons name="home-outline" size={24} color={colors.text} />
           </TouchableOpacity>

@@ -1,14 +1,27 @@
 "use client";
 
+import { db } from "@/config/firebase";
 import { useAuthStore } from "@/stores/auth.store";
 import { useTheme } from "@/stores/theme.store";
 import { Ionicons } from "@expo/vector-icons";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Image } from "expo-image";
-import { Link, router } from "expo-router";
-import { useState } from "react";
+import { LinearGradient } from "expo-linear-gradient";
+import { router, useFocusEffect } from "expo-router";
 import {
+  collection,
+  getDocs,
+  limit,
+  orderBy,
+  query,
+  where,
+} from "firebase/firestore";
+import { useCallback, useEffect, useState } from "react";
+import {
+  ActivityIndicator,
   Alert,
   Dimensions,
+  RefreshControl,
   ScrollView,
   StatusBar,
   StyleSheet,
@@ -16,7 +29,12 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
-import Animated, { FadeInDown, FadeInRight } from "react-native-reanimated";
+import Animated, {
+  FadeIn,
+  FadeInDown,
+  FadeInRight,
+  FadeInUp,
+} from "react-native-reanimated";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 const { width } = Dimensions.get("window");
@@ -29,7 +47,7 @@ interface MiniApp {
   description: string;
   icon: keyof typeof Ionicons.glyphMap;
   color: string;
-  bgColor: string;
+  gradientColors: [string, string];
   route: string;
   badge?: number;
   comingSoon?: boolean;
@@ -42,8 +60,26 @@ const MINI_APPS: MiniApp[] = [
     description: "นับสินค้าด้วย AI",
     icon: "cube-outline",
     color: "#3B82F6",
-    bgColor: "#EFF6FF",
+    gradientColors: ["#3B82F6", "#1D4ED8"],
     route: "/(mini-apps)/stock-counter",
+  },
+  {
+    id: "delivery-receive",
+    name: "รับสินค้า",
+    description: "รับพัสดุและสินค้า",
+    icon: "cube",
+    color: "#10B981",
+    gradientColors: ["#10B981", "#059669"],
+    route: "/(mini-apps)/delivery-receive",
+  },
+  {
+    id: "check-in",
+    name: "เช็คชื่อ",
+    description: "เช็คชื่อพนักงาน",
+    icon: "finger-print-outline",
+    color: "#6366F1",
+    gradientColors: ["#6366F1", "#4F46E5"],
+    route: "/(mini-apps)/check-in",
   },
   {
     id: "speech-to-text",
@@ -51,7 +87,7 @@ const MINI_APPS: MiniApp[] = [
     description: "แปลงเสียงเป็นข้อความ",
     icon: "mic-outline",
     color: "#8B5CF6",
-    bgColor: "#F5F3FF",
+    gradientColors: ["#8B5CF6", "#6D28D9"],
     route: "/(mini-apps)/speech-to-text",
     comingSoon: true,
   },
@@ -61,7 +97,7 @@ const MINI_APPS: MiniApp[] = [
     description: "ดูสถิติและรายงาน",
     icon: "bar-chart-outline",
     color: "#10B981",
-    bgColor: "#ECFDF5",
+    gradientColors: ["#10B981", "#047857"],
     route: "/(mini-apps)/reports",
     comingSoon: true,
   },
@@ -70,65 +106,193 @@ const MINI_APPS: MiniApp[] = [
     name: "เพิ่มเติม",
     description: "บริการอื่นๆ",
     icon: "apps-outline",
-    color: "#6B7280",
-    bgColor: "#F3F4F6",
+    color: "#F59E0B",
+    gradientColors: ["#F59E0B", "#D97706"],
     route: "/(tabs)/services",
   },
 ];
 
-// Recent activity mock data
+// Stats interface
+interface DashboardStats {
+  totalCounted: number;
+  completedToday: number;
+  pendingReview: number;
+  totalProducts: number;
+  discrepancy: number;
+}
+
+// Activity interface
 interface RecentActivity {
   id: string;
-  miniAppId: string;
-  title: string;
-  subtitle: string;
-  timestamp: string;
-  icon: keyof typeof Ionicons.glyphMap;
-  color: string;
+  productName: string;
+  branchName: string;
+  status: string;
+  finalCount: number;
+  discrepancy: number;
+  createdAt: Date;
 }
 
 export default function HomeScreen() {
   const user = useAuthStore((state) => state.user);
   const { colors, isDark } = useTheme();
-  const [recentActivities] = useState<RecentActivity[]>([
-    {
-      id: "1",
-      miniAppId: "stock-counter",
-      title: "นับสต็อกสำเร็จ",
-      subtitle: "สาขากรุงเทพฯ • 15 รายการ",
-      timestamp: "2 ชม.ที่แล้ว",
-      icon: "cube-outline",
-      color: "#3B82F6",
-    },
-    {
-      id: "2",
-      miniAppId: "stock-counter",
-      title: "รอตรวจสอบ",
-      subtitle: "สาขาเชียงใหม่ • 8 รายการ",
-      timestamp: "วานนี้",
-      icon: "time-outline",
-      color: "#F59E0B",
-    },
-  ]);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [stats, setStats] = useState<DashboardStats>({
+    totalCounted: 0,
+    completedToday: 0,
+    pendingReview: 0,
+    totalProducts: 0,
+    discrepancy: 0,
+  });
+  const [recentActivities, setRecentActivities] = useState<RecentActivity[]>(
+    [],
+  );
+  const [recentApps, setRecentApps] = useState<MiniApp[]>([]);
 
-  const handleMiniAppPress = (app: MiniApp) => {
-    console.log("🎯 Mini App pressed:", app.name, "Route:", app.route);
+  // Storage key for recent apps
+  const RECENT_APPS_KEY = `recent_apps_${user?.uid || "guest"}`;
 
-    if (app.comingSoon) {
-      Alert.alert("เร็วๆ นี้", `${app.name} กำลังอยู่ระหว่างการพัฒนา`);
+  // Load recent apps from storage
+  const loadRecentApps = useCallback(async () => {
+    try {
+      const stored = await AsyncStorage.getItem(RECENT_APPS_KEY);
+      if (stored) {
+        const recentIds: string[] = JSON.parse(stored);
+        // Map ids back to MiniApp objects, filter out comingSoon
+        const apps = recentIds
+          .map((id) => MINI_APPS.find((app) => app.id === id))
+          .filter((app): app is MiniApp => !!app && !app.comingSoon)
+          .slice(0, 4); // Max 4 recent apps
+        setRecentApps(apps);
+      } else {
+        // Default to available apps if no history
+        setRecentApps(MINI_APPS.filter((app) => !app.comingSoon).slice(0, 4));
+      }
+    } catch (error) {
+      console.error("Error loading recent apps:", error);
+      setRecentApps(MINI_APPS.filter((app) => !app.comingSoon).slice(0, 4));
+    }
+  }, [RECENT_APPS_KEY]);
+
+  // Save app usage to storage
+  const saveAppUsage = async (appId: string) => {
+    try {
+      const stored = await AsyncStorage.getItem(RECENT_APPS_KEY);
+      let recentIds: string[] = stored ? JSON.parse(stored) : [];
+
+      // Remove if already exists, add to front
+      recentIds = recentIds.filter((id) => id !== appId);
+      recentIds.unshift(appId);
+
+      // Keep only last 10
+      recentIds = recentIds.slice(0, 10);
+
+      await AsyncStorage.setItem(RECENT_APPS_KEY, JSON.stringify(recentIds));
+    } catch (error) {
+      console.error("Error saving app usage:", error);
+    }
+  };
+
+  // Reload recent apps when screen comes into focus
+  useFocusEffect(
+    useCallback(() => {
+      loadRecentApps();
+    }, [loadRecentApps]),
+  );
+
+  const fetchDashboardData = useCallback(async () => {
+    if (!user?.companyId) {
+      setLoading(false);
       return;
     }
 
-    console.log("🚀 Navigating to:", app.route);
-
-    // Use href with Link or router.replace for tab navigation
     try {
-      router.replace(app.route as any);
+      const companyId = user.companyId;
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+
+      // Fetch counting sessions
+      const sessionsQuery = query(
+        collection(db, "countingSessions"),
+        where("companyId", "==", companyId),
+        orderBy("createdAt", "desc"),
+        limit(50),
+      );
+      const sessionsSnapshot = await getDocs(sessionsQuery);
+
+      let totalCounted = 0;
+      let completedToday = 0;
+      let pendingReview = 0;
+      let totalDiscrepancy = 0;
+      const activities: RecentActivity[] = [];
+
+      sessionsSnapshot.forEach((doc) => {
+        const data = doc.data();
+        const createdAt = data.createdAt?.toDate();
+
+        totalCounted++;
+
+        // Check if completed today
+        if (createdAt && createdAt >= today) {
+          if (data.status === "completed" || data.status === "approved") {
+            completedToday++;
+          }
+        }
+
+        // Pending review
+        if (data.status === "pending-review" || data.status === "pending") {
+          pendingReview++;
+        }
+
+        // Total discrepancy
+        totalDiscrepancy += Math.abs(data.discrepancy || 0);
+
+        // Recent activities (first 5)
+        if (activities.length < 5) {
+          activities.push({
+            id: doc.id,
+            productName: data.productName || "ไม่ระบุ",
+            branchName: data.branchName || "ไม่ระบุ",
+            status: data.status,
+            finalCount: data.finalCount || 0,
+            discrepancy: data.discrepancy || 0,
+            createdAt: createdAt || new Date(),
+          });
+        }
+      });
+
+      // Fetch total products
+      const productsQuery = query(
+        collection(db, "products"),
+        where("companyId", "==", companyId),
+      );
+      const productsSnapshot = await getDocs(productsQuery);
+
+      setStats({
+        totalCounted,
+        completedToday,
+        pendingReview,
+        totalProducts: productsSnapshot.size,
+        discrepancy: totalDiscrepancy,
+      });
+
+      setRecentActivities(activities);
     } catch (error) {
-      console.error("Navigation error:", error);
-      Alert.alert("เกิดข้อผิดพลาด", "ไม่สามารถเปิดหน้านี้ได้");
+      console.error("Error fetching dashboard data:", error);
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
     }
-  };
+  }, [user?.companyId]);
+
+  useEffect(() => {
+    fetchDashboardData();
+  }, [fetchDashboardData]);
+
+  const onRefresh = useCallback(() => {
+    setRefreshing(true);
+    fetchDashboardData();
+  }, [fetchDashboardData]);
 
   const greeting = () => {
     const hour = new Date().getHours();
@@ -137,6 +301,50 @@ export default function HomeScreen() {
     return "สวัสดีตอนเย็น";
   };
 
+  const getStatusInfo = (status: string) => {
+    switch (status) {
+      case "completed":
+      case "approved":
+        return { label: "สำเร็จ", color: "#10B981", icon: "checkmark-circle" };
+      case "pending-review":
+      case "pending":
+        return { label: "รอตรวจสอบ", color: "#F59E0B", icon: "time" };
+      case "rejected":
+        return { label: "ถูกปฏิเสธ", color: "#EF4444", icon: "close-circle" };
+      default:
+        return { label: status, color: "#6B7280", icon: "help-circle" };
+    }
+  };
+
+  const formatTimeAgo = (date: Date) => {
+    const now = new Date();
+    const diffMs = now.getTime() - date.getTime();
+    const diffMins = Math.floor(diffMs / 60000);
+    const diffHours = Math.floor(diffMs / 3600000);
+    const diffDays = Math.floor(diffMs / 86400000);
+
+    if (diffMins < 1) return "เมื่อสักครู่";
+    if (diffMins < 60) return `${diffMins} นาทีที่แล้ว`;
+    if (diffHours < 24) return `${diffHours} ชม.ที่แล้ว`;
+    if (diffDays === 1) return "เมื่อวาน";
+    return `${diffDays} วันที่แล้ว`;
+  };
+
+  if (loading) {
+    return (
+      <SafeAreaView
+        style={[styles.container, { backgroundColor: colors.background }]}
+      >
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color={colors.primary} />
+          <Text style={[styles.loadingText, { color: colors.textSecondary }]}>
+            กำลังโหลดข้อมูล...
+          </Text>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
   return (
     <SafeAreaView
       style={[styles.container, { backgroundColor: colors.background }]}
@@ -144,7 +352,7 @@ export default function HomeScreen() {
       <StatusBar barStyle={isDark ? "light-content" : "dark-content"} />
 
       {/* Header */}
-      <View style={styles.header}>
+      <Animated.View entering={FadeIn.duration(400)} style={styles.header}>
         <View style={styles.headerLeft}>
           <Image
             source={require("@/assets/images/icon.png")}
@@ -156,54 +364,145 @@ export default function HomeScreen() {
           </Text>
         </View>
         <View style={styles.headerRight}>
-          <TouchableOpacity style={styles.headerButton}>
+          <TouchableOpacity
+            style={[styles.headerButton, { backgroundColor: colors.card }]}
+            onPress={() => router.push("/(tabs)/profile" as any)}
+          >
             <Ionicons
               name="notifications-outline"
-              size={24}
+              size={22}
               color={colors.text}
             />
-            <View style={styles.notificationBadge}>
-              <Text style={styles.badgeText}>2</Text>
-            </View>
+            {stats.pendingReview > 0 && (
+              <View style={styles.notificationBadge}>
+                <Text style={styles.badgeText}>
+                  {stats.pendingReview > 9 ? "9+" : stats.pendingReview}
+                </Text>
+              </View>
+            )}
           </TouchableOpacity>
         </View>
-      </View>
+      </Animated.View>
 
       <ScrollView
         style={styles.scrollView}
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.scrollContent}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            tintColor={colors.primary}
+          />
+        }
       >
-        {/* User Banner */}
-        <Animated.View
-          entering={FadeInDown.delay(100).duration(500)}
-          style={[styles.userBanner, { backgroundColor: colors.primary }]}
-        >
-          <View style={styles.bannerContent}>
-            <View style={styles.bannerTextContainer}>
-              <Text style={styles.greeting}>{greeting()} 👋</Text>
-              <Text style={styles.userName}>
-                {user?.name || user?.email?.split("@")[0] || "ผู้ใช้"}
-              </Text>
-              <Text style={styles.companyName}>
-                {user?.companyName || "ยังไม่ได้เลือกบริษัท"}
-              </Text>
+        {/* User Banner with Gradient */}
+        <Animated.View entering={FadeInDown.delay(100).duration(500)}>
+          <LinearGradient
+            colors={isDark ? ["#1E40AF", "#3B82F6"] : ["#3B82F6", "#60A5FA"]}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={styles.userBanner}
+          >
+            <View style={styles.bannerContent}>
+              <View style={styles.bannerTextContainer}>
+                <Text style={styles.greeting}>{greeting()} 👋</Text>
+                <Text style={styles.userName}>
+                  {user?.name || user?.email?.split("@")[0] || "ผู้ใช้"}
+                </Text>
+                <View style={styles.companyBadge}>
+                  <Ionicons name="business-outline" size={14} color="#fff" />
+                  <Text style={styles.companyName}>
+                    {user?.companyName || "ยังไม่ได้เลือกบริษัท"}
+                  </Text>
+                </View>
+              </View>
+              <View style={styles.bannerAvatar}>
+                {user?.photoURL ? (
+                  <Image
+                    source={{ uri: user.photoURL }}
+                    style={styles.avatarImage}
+                  />
+                ) : (
+                  <View style={styles.avatarPlaceholder}>
+                    <Ionicons name="person" size={32} color="#fff" />
+                  </View>
+                )}
+              </View>
             </View>
-            <View style={styles.bannerAvatar}>
-              <Ionicons
-                name="person-circle"
-                size={60}
-                color="rgba(255,255,255,0.9)"
-              />
+
+            {/* Quick Stats in Banner */}
+            <View style={styles.bannerStats}>
+              <View style={styles.bannerStatItem}>
+                <Text style={styles.bannerStatValue}>
+                  {stats.totalProducts}
+                </Text>
+                <Text style={styles.bannerStatLabel}>สินค้า</Text>
+              </View>
+              <View style={styles.bannerStatDivider} />
+              <View style={styles.bannerStatItem}>
+                <Text style={styles.bannerStatValue}>{stats.totalCounted}</Text>
+                <Text style={styles.bannerStatLabel}>นับแล้ว</Text>
+              </View>
+              <View style={styles.bannerStatDivider} />
+              <View style={styles.bannerStatItem}>
+                <Text style={styles.bannerStatValue}>
+                  {stats.pendingReview}
+                </Text>
+                <Text style={styles.bannerStatLabel}>รอตรวจ</Text>
+              </View>
             </View>
-          </View>
+          </LinearGradient>
         </Animated.View>
 
-        {/* Mini Apps Section */}
+        {/* Quick Access - Available Apps */}
         <View style={styles.section}>
           <View style={styles.sectionHeader}>
             <Text style={[styles.sectionTitle, { color: colors.text }]}>
-              บริการของเรา
+              ใช้งานล่าสุด
+            </Text>
+          </View>
+
+          <View style={styles.quickAccessGrid}>
+            {(recentApps.length > 0
+              ? recentApps
+              : MINI_APPS.filter((app) => !app.comingSoon)
+            ).map((app, index) => (
+              <Animated.View
+                key={app.id}
+                entering={FadeInUp.delay(200 + 80 * index).duration(400)}
+              >
+                <TouchableOpacity
+                  style={styles.quickAccessItem}
+                  activeOpacity={0.7}
+                  onPress={() => {
+                    saveAppUsage(app.id);
+                    router.push(app.route as any);
+                  }}
+                >
+                  <LinearGradient
+                    colors={app.gradientColors}
+                    style={styles.quickAccessIcon}
+                  >
+                    <Ionicons name={app.icon} size={28} color="#fff" />
+                  </LinearGradient>
+                  <Text
+                    style={[styles.quickAccessName, { color: colors.text }]}
+                    numberOfLines={1}
+                  >
+                    {app.name}
+                  </Text>
+                </TouchableOpacity>
+              </Animated.View>
+            ))}
+          </View>
+        </View>
+
+        {/* Coming Soon Services */}
+        <View style={styles.section}>
+          <View style={styles.sectionHeader}>
+            <Text style={[styles.sectionTitle, { color: colors.text }]}>
+              บริการเร็วๆ นี้
             </Text>
             <TouchableOpacity onPress={() => router.push("/(tabs)/services")}>
               <Text style={[styles.seeAll, { color: colors.primary }]}>
@@ -212,203 +511,260 @@ export default function HomeScreen() {
             </TouchableOpacity>
           </View>
 
-          <View style={styles.miniAppsGrid}>
-            {MINI_APPS.map((app, index) => (
+          <View style={styles.quickAccessGrid}>
+            {MINI_APPS.filter((app) => app.comingSoon).map((app, index) => (
               <Animated.View
                 key={app.id}
-                entering={FadeInRight.delay(150 * index).duration(400)}
+                entering={FadeInUp.delay(300 + 80 * index).duration(400)}
               >
-                {app.comingSoon ? (
-                  <TouchableOpacity
+                <TouchableOpacity
+                  style={styles.quickAccessItem}
+                  activeOpacity={0.7}
+                  onPress={() =>
+                    Alert.alert(
+                      "เร็วๆ นี้",
+                      `${app.name} กำลังอยู่ระหว่างการพัฒนา`,
+                    )
+                  }
+                >
+                  <View
                     style={[
-                      styles.miniAppCard,
-                      { backgroundColor: isDark ? colors.card : app.bgColor },
-                      styles.comingSoonCard,
+                      styles.quickAccessIcon,
+                      styles.quickAccessIconDisabled,
+                      { backgroundColor: colors.card },
                     ]}
-                    onPress={() =>
-                      Alert.alert(
-                        "เร็วๆ นี้",
-                        `${app.name} กำลังอยู่ระหว่างการพัฒนา`,
-                      )
-                    }
-                    activeOpacity={0.7}
                   >
-                    <View
-                      style={[
-                        styles.iconContainer,
-                        { backgroundColor: app.color + "20" },
-                      ]}
-                    >
-                      <Ionicons name={app.icon} size={28} color={app.color} />
-                    </View>
-                    <Text
-                      style={[
-                        styles.miniAppName,
-                        { color: isDark ? colors.text : "#1F2937" },
-                      ]}
-                      numberOfLines={1}
-                    >
-                      {app.name}
-                    </Text>
-                    <Text
-                      style={[
-                        styles.miniAppDesc,
-                        { color: colors.textSecondary },
-                      ]}
-                      numberOfLines={2}
-                    >
-                      {app.description}
-                    </Text>
-                    <View style={styles.comingSoonBadge}>
-                      <Text style={styles.comingSoonText}>เร็วๆ นี้</Text>
-                    </View>
-                  </TouchableOpacity>
-                ) : (
-                  <Link href={app.route as any} asChild>
-                    <TouchableOpacity
-                      style={[
-                        styles.miniAppCard,
-                        { backgroundColor: isDark ? colors.card : app.bgColor },
-                      ]}
-                      activeOpacity={0.7}
-                    >
-                      <View
-                        style={[
-                          styles.iconContainer,
-                          { backgroundColor: app.color + "20" },
-                        ]}
-                      >
-                        <Ionicons name={app.icon} size={28} color={app.color} />
-                      </View>
-                      <Text
-                        style={[
-                          styles.miniAppName,
-                          { color: isDark ? colors.text : "#1F2937" },
-                        ]}
-                        numberOfLines={1}
-                      >
-                        {app.name}
-                      </Text>
-                      <Text
-                        style={[
-                          styles.miniAppDesc,
-                          { color: colors.textSecondary },
-                        ]}
-                        numberOfLines={2}
-                      >
-                        {app.description}
-                      </Text>
-                      {app.badge && (
-                        <View
-                          style={[
-                            styles.appBadge,
-                            { backgroundColor: app.color },
-                          ]}
-                        >
-                          <Text style={styles.appBadgeText}>{app.badge}</Text>
-                        </View>
-                      )}
-                    </TouchableOpacity>
-                  </Link>
-                )}
+                    <Ionicons
+                      name={app.icon}
+                      size={28}
+                      color={colors.textSecondary}
+                    />
+                  </View>
+                  <Text
+                    style={[
+                      styles.quickAccessName,
+                      { color: colors.textSecondary },
+                    ]}
+                    numberOfLines={1}
+                  >
+                    {app.name}
+                  </Text>
+                </TouchableOpacity>
               </Animated.View>
             ))}
           </View>
         </View>
 
+        {/* Today's Stats */}
+        <Animated.View
+          entering={FadeInDown.delay(400).duration(500)}
+          style={styles.section}
+        >
+          <Text style={[styles.sectionTitle, { color: colors.text }]}>
+            สถิติวันนี้
+          </Text>
+          <View style={styles.statsGrid}>
+            <View
+              style={[
+                styles.statCard,
+                { backgroundColor: isDark ? colors.card : "#EFF6FF" },
+              ]}
+            >
+              <View
+                style={[styles.statIconBg, { backgroundColor: "#3B82F620" }]}
+              >
+                <Ionicons name="cube" size={22} color="#3B82F6" />
+              </View>
+              <Text style={[styles.statValue, { color: colors.text }]}>
+                {stats.completedToday}
+              </Text>
+              <Text style={[styles.statLabel, { color: colors.textSecondary }]}>
+                นับวันนี้
+              </Text>
+            </View>
+
+            <View
+              style={[
+                styles.statCard,
+                { backgroundColor: isDark ? colors.card : "#ECFDF5" },
+              ]}
+            >
+              <View
+                style={[styles.statIconBg, { backgroundColor: "#10B98120" }]}
+              >
+                <Ionicons name="checkmark-circle" size={22} color="#10B981" />
+              </View>
+              <Text style={[styles.statValue, { color: colors.text }]}>
+                {stats.totalCounted}
+              </Text>
+              <Text style={[styles.statLabel, { color: colors.textSecondary }]}>
+                นับทั้งหมด
+              </Text>
+            </View>
+
+            <View
+              style={[
+                styles.statCard,
+                { backgroundColor: isDark ? colors.card : "#FEF3C7" },
+              ]}
+            >
+              <View
+                style={[styles.statIconBg, { backgroundColor: "#F59E0B20" }]}
+              >
+                <Ionicons name="time" size={22} color="#F59E0B" />
+              </View>
+              <Text style={[styles.statValue, { color: colors.text }]}>
+                {stats.pendingReview}
+              </Text>
+              <Text style={[styles.statLabel, { color: colors.textSecondary }]}>
+                รอตรวจสอบ
+              </Text>
+            </View>
+
+            <View
+              style={[
+                styles.statCard,
+                { backgroundColor: isDark ? colors.card : "#FEE2E2" },
+              ]}
+            >
+              <View
+                style={[styles.statIconBg, { backgroundColor: "#EF444420" }]}
+              >
+                <Ionicons name="trending-down" size={22} color="#EF4444" />
+              </View>
+              <Text style={[styles.statValue, { color: colors.text }]}>
+                {stats.discrepancy}
+              </Text>
+              <Text style={[styles.statLabel, { color: colors.textSecondary }]}>
+                ของหาย
+              </Text>
+            </View>
+          </View>
+        </Animated.View>
+
         {/* Recent Activity Section */}
-        <View style={styles.section}>
+        <Animated.View
+          entering={FadeInDown.delay(500).duration(500)}
+          style={styles.section}
+        >
           <View style={styles.sectionHeader}>
             <Text style={[styles.sectionTitle, { color: colors.text }]}>
               กิจกรรมล่าสุด
             </Text>
-            <TouchableOpacity>
+            <TouchableOpacity
+              onPress={() => router.push("/(mini-apps)/stock-counter")}
+            >
               <Text style={[styles.seeAll, { color: colors.primary }]}>
                 ดูทั้งหมด
               </Text>
             </TouchableOpacity>
           </View>
 
-          {recentActivities.map((activity, index) => (
-            <Animated.View
-              key={activity.id}
-              entering={FadeInDown.delay(300 + 100 * index).duration(400)}
-            >
-              <TouchableOpacity
-                style={[styles.activityCard, { backgroundColor: colors.card }]}
-                activeOpacity={0.7}
-              >
-                <View
-                  style={[
-                    styles.activityIcon,
-                    { backgroundColor: activity.color + "20" },
-                  ]}
-                >
-                  <Ionicons
-                    name={activity.icon}
-                    size={24}
-                    color={activity.color}
-                  />
-                </View>
-                <View style={styles.activityContent}>
-                  <Text style={[styles.activityTitle, { color: colors.text }]}>
-                    {activity.title}
-                  </Text>
-                  <Text
-                    style={[
-                      styles.activitySubtitle,
-                      { color: colors.textSecondary },
-                    ]}
+          {recentActivities.length > 0 ? (
+            <View style={styles.activitiesContainer}>
+              {recentActivities.map((activity, index) => {
+                const statusInfo = getStatusInfo(activity.status);
+                return (
+                  <Animated.View
+                    key={activity.id}
+                    entering={FadeInRight.delay(600 + 80 * index).duration(400)}
                   >
-                    {activity.subtitle}
-                  </Text>
-                </View>
-                <Text
-                  style={[styles.activityTime, { color: colors.textSecondary }]}
-                >
-                  {activity.timestamp}
-                </Text>
-              </TouchableOpacity>
-            </Animated.View>
-          ))}
-
-          {recentActivities.length === 0 && (
+                    <TouchableOpacity
+                      style={[
+                        styles.activityCard,
+                        { backgroundColor: colors.card },
+                      ]}
+                      activeOpacity={0.7}
+                    >
+                      <View
+                        style={[
+                          styles.activityIcon,
+                          { backgroundColor: statusInfo.color + "15" },
+                        ]}
+                      >
+                        <Ionicons
+                          name={statusInfo.icon as any}
+                          size={22}
+                          color={statusInfo.color}
+                        />
+                      </View>
+                      <View style={styles.activityContent}>
+                        <Text
+                          style={[styles.activityTitle, { color: colors.text }]}
+                          numberOfLines={1}
+                        >
+                          {activity.productName}
+                        </Text>
+                        <Text
+                          style={[
+                            styles.activitySubtitle,
+                            { color: colors.textSecondary },
+                          ]}
+                        >
+                          {activity.branchName} • นับได้ {activity.finalCount}{" "}
+                          ชิ้น
+                        </Text>
+                      </View>
+                      <View style={styles.activityMeta}>
+                        <View
+                          style={[
+                            styles.statusBadge,
+                            { backgroundColor: statusInfo.color + "15" },
+                          ]}
+                        >
+                          <Text
+                            style={[
+                              styles.statusText,
+                              { color: statusInfo.color },
+                            ]}
+                          >
+                            {statusInfo.label}
+                          </Text>
+                        </View>
+                        <Text
+                          style={[
+                            styles.activityTime,
+                            { color: colors.textSecondary },
+                          ]}
+                        >
+                          {formatTimeAgo(activity.createdAt)}
+                        </Text>
+                      </View>
+                    </TouchableOpacity>
+                  </Animated.View>
+                );
+              })}
+            </View>
+          ) : (
             <View style={[styles.emptyState, { backgroundColor: colors.card }]}>
-              <Ionicons
-                name="time-outline"
-                size={48}
-                color={colors.textSecondary}
-              />
-              <Text style={[styles.emptyText, { color: colors.textSecondary }]}>
-                ยังไม่มีกิจกรรมล่าสุด
+              <View style={styles.emptyIconContainer}>
+                <Ionicons
+                  name="document-text-outline"
+                  size={48}
+                  color={colors.textSecondary}
+                />
+              </View>
+              <Text style={[styles.emptyTitle, { color: colors.text }]}>
+                ยังไม่มีกิจกรรม
               </Text>
+              <Text style={[styles.emptyText, { color: colors.textSecondary }]}>
+                เริ่มนับสต็อกเพื่อดูกิจกรรมที่นี่
+              </Text>
+              <TouchableOpacity
+                style={styles.emptyButton}
+                onPress={() => router.push("/(mini-apps)/stock-counter")}
+              >
+                <LinearGradient
+                  colors={["#3B82F6", "#1D4ED8"]}
+                  style={styles.emptyButtonGradient}
+                >
+                  <Ionicons name="add" size={20} color="#fff" />
+                  <Text style={styles.emptyButtonText}>เริ่มนับสต็อก</Text>
+                </LinearGradient>
+              </TouchableOpacity>
             </View>
           )}
-        </View>
-
-        {/* Quick Stats */}
-        <View style={styles.section}>
-          <Text style={[styles.sectionTitle, { color: colors.text }]}>
-            สถิติวันนี้
-          </Text>
-          <View style={styles.statsRow}>
-            <View style={[styles.statCard, { backgroundColor: "#EFF6FF" }]}>
-              <Ionicons name="cube" size={24} color="#3B82F6" />
-              <Text style={styles.statValue}>24</Text>
-              <Text style={styles.statLabel}>รายการนับ</Text>
-            </View>
-            <View style={[styles.statCard, { backgroundColor: "#ECFDF5" }]}>
-              <Ionicons name="checkmark-circle" size={24} color="#10B981" />
-              <Text style={styles.statValue}>18</Text>
-              <Text style={styles.statLabel}>สำเร็จ</Text>
-            </View>
-            <View style={[styles.statCard, { backgroundColor: "#FEF3C7" }]}>
-              <Ionicons name="time" size={24} color="#F59E0B" />
-              <Text style={styles.statValue}>6</Text>
-              <Text style={styles.statLabel}>รอตรวจ</Text>
-            </View>
-          </View>
-        </View>
+        </Animated.View>
 
         <View style={{ height: 100 }} />
       </ScrollView>
@@ -420,6 +776,15 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
   },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  loadingText: {
+    marginTop: 12,
+    fontSize: 14,
+  },
   header: {
     flexDirection: "row",
     justifyContent: "space-between",
@@ -430,16 +795,17 @@ const styles = StyleSheet.create({
   headerLeft: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 8,
+    gap: 10,
   },
   logo: {
-    width: 36,
-    height: 36,
-    borderRadius: 8,
+    width: 38,
+    height: 38,
+    borderRadius: 10,
   },
   appName: {
-    fontSize: 20,
-    fontWeight: "700",
+    fontSize: 22,
+    fontWeight: "800",
+    letterSpacing: -0.5,
   },
   headerRight: {
     flexDirection: "row",
@@ -447,7 +813,8 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   headerButton: {
-    padding: 8,
+    padding: 10,
+    borderRadius: 12,
     position: "relative",
   },
   notificationBadge: {
@@ -456,10 +823,11 @@ const styles = StyleSheet.create({
     right: 4,
     backgroundColor: "#EF4444",
     borderRadius: 10,
-    width: 18,
+    minWidth: 18,
     height: 18,
     justifyContent: "center",
     alignItems: "center",
+    paddingHorizontal: 4,
   },
   badgeText: {
     color: "#fff",
@@ -473,35 +841,92 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
   },
   userBanner: {
-    borderRadius: 16,
+    borderRadius: 20,
     padding: 20,
     marginBottom: 24,
+    overflow: "hidden",
   },
   bannerContent: {
     flexDirection: "row",
     justifyContent: "space-between",
-    alignItems: "center",
+    alignItems: "flex-start",
   },
   bannerTextContainer: {
     flex: 1,
   },
   greeting: {
-    color: "rgba(255,255,255,0.8)",
+    color: "rgba(255,255,255,0.85)",
     fontSize: 14,
+    fontWeight: "500",
   },
   userName: {
     color: "#fff",
-    fontSize: 22,
-    fontWeight: "700",
+    fontSize: 24,
+    fontWeight: "800",
     marginTop: 4,
+    letterSpacing: -0.5,
+  },
+  companyBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    marginTop: 8,
+    backgroundColor: "rgba(255,255,255,0.15)",
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 20,
+    alignSelf: "flex-start",
   },
   companyName: {
-    color: "rgba(255,255,255,0.8)",
-    fontSize: 14,
-    marginTop: 4,
+    color: "rgba(255,255,255,0.9)",
+    fontSize: 12,
+    fontWeight: "500",
   },
   bannerAvatar: {
     marginLeft: 16,
+  },
+  avatarImage: {
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    borderWidth: 3,
+    borderColor: "rgba(255,255,255,0.3)",
+  },
+  avatarPlaceholder: {
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    backgroundColor: "rgba(255,255,255,0.2)",
+    justifyContent: "center",
+    alignItems: "center",
+    borderWidth: 3,
+    borderColor: "rgba(255,255,255,0.3)",
+  },
+  bannerStats: {
+    flexDirection: "row",
+    justifyContent: "space-around",
+    marginTop: 20,
+    paddingTop: 16,
+    borderTopWidth: 1,
+    borderTopColor: "rgba(255,255,255,0.15)",
+  },
+  bannerStatItem: {
+    alignItems: "center",
+  },
+  bannerStatValue: {
+    color: "#fff",
+    fontSize: 22,
+    fontWeight: "800",
+  },
+  bannerStatLabel: {
+    color: "rgba(255,255,255,0.75)",
+    fontSize: 12,
+    marginTop: 2,
+  },
+  bannerStatDivider: {
+    width: 1,
+    height: 36,
+    backgroundColor: "rgba(255,255,255,0.15)",
   },
   section: {
     marginBottom: 24,
@@ -510,41 +935,75 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    marginBottom: 12,
+    marginBottom: 14,
   },
   sectionTitle: {
     fontSize: 18,
     fontWeight: "700",
+    letterSpacing: -0.3,
   },
   seeAll: {
     fontSize: 14,
-    fontWeight: "500",
+    fontWeight: "600",
+  },
+  quickAccessGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 20,
+    paddingVertical: 8,
+  },
+  quickAccessItem: {
+    alignItems: "center",
+    width: 72,
+  },
+  quickAccessIcon: {
+    width: 56,
+    height: 56,
+    borderRadius: 16,
+    justifyContent: "center",
+    alignItems: "center",
+    marginBottom: 8,
+  },
+  quickAccessIconDisabled: {
+    opacity: 0.6,
+  },
+  quickAccessName: {
+    fontSize: 12,
+    fontWeight: "600",
+    textAlign: "center",
   },
   miniAppsGrid: {
     flexDirection: "row",
     flexWrap: "wrap",
     gap: 12,
   },
-  miniAppCard: {
+  miniAppWrapper: {
     width: CARD_WIDTH,
+  },
+  miniAppCard: {
     padding: 16,
     borderRadius: 16,
     position: "relative",
+    minHeight: 130,
+    borderWidth: 1,
+    borderColor: "rgba(0,0,0,0.05)",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 8,
+    elevation: 2,
   },
-  comingSoonCard: {
-    opacity: 0.7,
-  },
-  iconContainer: {
-    width: 48,
-    height: 48,
-    borderRadius: 12,
+  iconGradient: {
+    width: 50,
+    height: 50,
+    borderRadius: 14,
     justifyContent: "center",
     alignItems: "center",
     marginBottom: 12,
   },
   miniAppName: {
-    fontSize: 16,
-    fontWeight: "600",
+    fontSize: 15,
+    fontWeight: "700",
     marginBottom: 4,
   },
   miniAppDesc: {
@@ -553,11 +1012,11 @@ const styles = StyleSheet.create({
   },
   comingSoonBadge: {
     position: "absolute",
-    top: 8,
-    right: 8,
+    top: 10,
+    right: 10,
     backgroundColor: "#6B7280",
     paddingHorizontal: 8,
-    paddingVertical: 2,
+    paddingVertical: 3,
     borderRadius: 8,
   },
   comingSoonText: {
@@ -565,32 +1024,49 @@ const styles = StyleSheet.create({
     fontSize: 10,
     fontWeight: "600",
   },
-  appBadge: {
-    position: "absolute",
-    top: 8,
-    right: 8,
-    width: 22,
-    height: 22,
-    borderRadius: 11,
+  statsGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 10,
+    marginTop: 8,
+  },
+  statCard: {
+    width: (width - 54) / 2,
+    padding: 16,
+    borderRadius: 16,
+    alignItems: "flex-start",
+  },
+  statIconBg: {
+    width: 40,
+    height: 40,
+    borderRadius: 12,
     justifyContent: "center",
     alignItems: "center",
+    marginBottom: 10,
   },
-  appBadgeText: {
-    color: "#fff",
+  statValue: {
+    fontSize: 26,
+    fontWeight: "800",
+    letterSpacing: -0.5,
+  },
+  statLabel: {
     fontSize: 12,
-    fontWeight: "700",
+    marginTop: 2,
+    fontWeight: "500",
+  },
+  activitiesContainer: {
+    gap: 10,
   },
   activityCard: {
     flexDirection: "row",
     alignItems: "center",
-    padding: 16,
-    borderRadius: 12,
-    marginBottom: 8,
+    padding: 14,
+    borderRadius: 14,
   },
   activityIcon: {
-    width: 44,
-    height: 44,
-    borderRadius: 12,
+    width: 46,
+    height: 46,
+    borderRadius: 13,
     justifyContent: "center",
     alignItems: "center",
     marginRight: 12,
@@ -601,43 +1077,65 @@ const styles = StyleSheet.create({
   activityTitle: {
     fontSize: 15,
     fontWeight: "600",
-    marginBottom: 2,
+    marginBottom: 3,
   },
   activitySubtitle: {
     fontSize: 13,
   },
+  activityMeta: {
+    alignItems: "flex-end",
+    gap: 4,
+  },
+  statusBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+  },
+  statusText: {
+    fontSize: 11,
+    fontWeight: "600",
+  },
   activityTime: {
-    fontSize: 12,
+    fontSize: 11,
   },
   emptyState: {
     padding: 32,
-    borderRadius: 12,
+    borderRadius: 16,
     alignItems: "center",
+  },
+  emptyIconContainer: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    backgroundColor: "rgba(107, 114, 128, 0.1)",
+    justifyContent: "center",
+    alignItems: "center",
+    marginBottom: 16,
+  },
+  emptyTitle: {
+    fontSize: 16,
+    fontWeight: "700",
+    marginBottom: 4,
   },
   emptyText: {
-    marginTop: 12,
     fontSize: 14,
+    textAlign: "center",
+    marginBottom: 20,
   },
-  statsRow: {
-    flexDirection: "row",
-    gap: 12,
-    marginTop: 8,
-  },
-  statCard: {
-    flex: 1,
-    padding: 16,
+  emptyButton: {
     borderRadius: 12,
+    overflow: "hidden",
+  },
+  emptyButtonGradient: {
+    flexDirection: "row",
     alignItems: "center",
+    gap: 6,
+    paddingHorizontal: 20,
+    paddingVertical: 12,
   },
-  statValue: {
-    fontSize: 24,
-    fontWeight: "700",
-    color: "#1F2937",
-    marginTop: 8,
-  },
-  statLabel: {
-    fontSize: 12,
-    color: "#6B7280",
-    marginTop: 2,
+  emptyButtonText: {
+    color: "#fff",
+    fontSize: 14,
+    fontWeight: "600",
   },
 });

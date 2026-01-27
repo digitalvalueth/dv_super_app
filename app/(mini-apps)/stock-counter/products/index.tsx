@@ -42,7 +42,7 @@ const fixFirebaseStorageUrl = (url: string): string => {
 export default function HomeScreen() {
   const user = useAuthStore((state) => state.user);
   const { products, setProducts, setLoading, loading } = useProductStore();
-  const { colors, isDark } = useTheme();
+  const { colors } = useTheme();
   const { viewMode } = useViewMode(); // ใช้จาก context
   const [refreshing, setRefreshing] = useState(false);
   const [filter, setFilter] = useState<
@@ -158,7 +158,7 @@ export default function HomeScreen() {
     });
   };
 
-  const getStatusColor = (status: string) => {
+  const getStatusColor = (status?: string) => {
     switch (status) {
       case "completed":
         return "#4caf50";
@@ -169,7 +169,7 @@ export default function HomeScreen() {
     }
   };
 
-  const getStatusIcon = (status: string): keyof typeof Ionicons.glyphMap => {
+  const getStatusIcon = (status?: string): keyof typeof Ionicons.glyphMap => {
     switch (status) {
       case "completed":
         return "checkmark-circle";
@@ -180,7 +180,7 @@ export default function HomeScreen() {
     }
   };
 
-  const getStatusText = (status: string) => {
+  const getStatusText = (status?: string) => {
     switch (status) {
       case "completed":
         return "นับแล้ว";

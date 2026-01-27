@@ -212,7 +212,7 @@ export default function DeliveryReceiveIndex() {
       >
         <TouchableOpacity
           style={styles.backButton}
-          onPress={() => router.replace("/(tabs)/services")}
+          onPress={() => router.replace("/(tabs)/home")}
         >
           <Ionicons name="home-outline" size={24} color={colors.text} />
         </TouchableOpacity>

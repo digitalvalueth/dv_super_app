@@ -117,9 +117,9 @@ export default function CheckInIndex() {
       >
         <TouchableOpacity
           style={styles.backButton}
-          onPress={() => router.back()}
+          onPress={() => router.replace("/(tabs)/home")}
         >
-          <Ionicons name="arrow-back" size={24} color={colors.text} />
+          <Ionicons name="home-outline" size={24} color={colors.text} />
         </TouchableOpacity>
         <Text style={[styles.headerTitle, { color: colors.text }]}>
           เช็คชื่อพนักงาน
