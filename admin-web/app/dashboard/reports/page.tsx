@@ -4,7 +4,16 @@ import { db } from "@/lib/firebase";
 import { useAuthStore } from "@/stores/auth.store";
 import { CountingSession, DiscrepancyReport } from "@/types";
 import { collection, getDocs, query, where } from "firebase/firestore";
-import { Building2, Package, TrendingDown, Users } from "lucide-react";
+import {
+  ArrowRight,
+  Building2,
+  FileBarChart2,
+  Package,
+  TrendingDown,
+  UserCog,
+  Users,
+} from "lucide-react";
+import Link from "next/link";
 import { useEffect, useState } from "react";
 import {
   Bar,
@@ -191,7 +200,70 @@ export default function ReportsPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-3xl font-bold text-gray-900">รายงานของหาย</h1>
+        <h1 className="text-3xl font-bold text-gray-900">รายงาน</h1>
+        <p className="text-gray-600 mt-1">รายงานและการวิเคราะห์ข้อมูลต่างๆ</p>
+      </div>
+
+      {/* Quick Links to Sub-Reports */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <Link
+          href="/dashboard/reports/employee-behavior"
+          className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 hover:border-purple-400 hover:shadow-md transition-all group"
+        >
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-4">
+              <div className="p-3 bg-purple-500 rounded-lg text-white">
+                <UserCog className="w-6 h-6" />
+              </div>
+              <div>
+                <h3 className="font-semibold text-gray-900 group-hover:text-purple-600">
+                  พฤติกรรมพนักงาน
+                </h3>
+                <p className="text-sm text-gray-500">
+                  วิเคราะห์ location และความเสี่ยง
+                </p>
+              </div>
+            </div>
+            <ArrowRight className="w-5 h-5 text-gray-400 group-hover:text-purple-500 transition-colors" />
+          </div>
+        </Link>
+
+        <Link
+          href="/dashboard/reports/stock-comparison"
+          className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 hover:border-teal-400 hover:shadow-md transition-all group"
+        >
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-4">
+              <div className="p-3 bg-teal-500 rounded-lg text-white">
+                <FileBarChart2 className="w-6 h-6" />
+              </div>
+              <div>
+                <h3 className="font-semibold text-gray-900 group-hover:text-teal-600">
+                  เปรียบเทียบสต็อก
+                </h3>
+                <p className="text-sm text-gray-500">เทียบกับระบบ ERP ภายนอก</p>
+              </div>
+            </div>
+            <ArrowRight className="w-5 h-5 text-gray-400 group-hover:text-teal-500 transition-colors" />
+          </div>
+        </Link>
+
+        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+          <div className="flex items-center gap-4">
+            <div className="p-3 bg-red-500 rounded-lg text-white">
+              <TrendingDown className="w-6 h-6" />
+            </div>
+            <div>
+              <h3 className="font-semibold text-gray-900">รายงานของหาย</h3>
+              <p className="text-sm text-gray-500">หน้านี้ (ดูด้านล่าง)</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Discrepancy Report Header */}
+      <div className="border-t pt-6">
+        <h2 className="text-2xl font-bold text-gray-900">รายงานของหาย</h2>
         <p className="text-gray-600 mt-1">วิเคราะห์ความคลาดเคลื่อนของสินค้า</p>
       </div>
 

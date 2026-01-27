@@ -121,7 +121,7 @@ export default function CompletedProductScreen() {
             )}
             <View style={styles.productInfo}>
               <Text style={[styles.productSKU, { color: colors.primary }]}>
-                {productSKU}
+                {params.productBarcode || productSKU}
               </Text>
               <Text
                 style={[styles.productName, { color: colors.text }]}

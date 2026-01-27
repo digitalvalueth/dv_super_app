@@ -299,7 +299,7 @@ export default function ProductDetailsScreen() {
         {/* Product Info */}
         <View style={[styles.infoCard, { backgroundColor: colors.card }]}>
           <Text style={[styles.sku, { color: colors.primary }]}>
-            {productSKU}
+            {productBarcode || productSKU}
           </Text>
           <Text style={[styles.productName, { color: colors.text }]}>
             {productName}

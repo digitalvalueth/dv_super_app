@@ -22,15 +22,19 @@ import {
 } from "firebase/storage";
 import {
   Barcode,
+  Clock,
   Edit2,
   Image as ImageIcon,
+  Loader2,
   Package,
   Plus,
   Search,
   Trash2,
+  Users,
   X,
 } from "lucide-react";
 import Image from "next/image";
+import Link from "next/link";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 
@@ -59,6 +63,7 @@ export default function ProductsPage() {
     description: "",
     barcode: "",
     category: "",
+    series: "",
     beforeCount: 0,
     companyId: "",
     branchId: "",
@@ -66,6 +71,8 @@ export default function ProductsPage() {
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
   const [uploadingImage, setUploadingImage] = useState(false);
+  const [assigningAll, setAssigningAll] = useState(false);
+  const [pendingCount, setPendingCount] = useState(0);
 
   const isSuperAdmin = !userData?.companyId;
 
@@ -155,6 +162,23 @@ export default function ProductsPage() {
         });
       });
       setBranches(branchesData);
+
+      // Fetch pending products count
+      let pendingQuery;
+      if (companyId) {
+        pendingQuery = query(
+          collection(db, "products"),
+          where("companyId", "==", companyId),
+          where("status", "==", "pending_verification"),
+        );
+      } else {
+        pendingQuery = query(
+          collection(db, "products"),
+          where("status", "==", "pending_verification"),
+        );
+      }
+      const pendingSnapshot = await getDocs(pendingQuery);
+      setPendingCount(pendingSnapshot.size);
     } catch (error) {
       console.error("Error fetching products:", error);
       toast.error("ไม่สามารถดึงข้อมูลสินค้าได้");
@@ -217,6 +241,7 @@ export default function ProductsPage() {
         description: formData.description.trim() || null,
         barcode: formData.barcode.trim() || null,
         category: formData.category.trim() || null,
+        series: formData.series.trim() || null,
         beforeCount: formData.beforeCount || 0,
         companyId: targetCompanyId,
         branchId: formData.branchId || null,
@@ -245,6 +270,7 @@ export default function ProductsPage() {
       description: product.description || "",
       barcode: product.barcode || "",
       category: product.category || "",
+      series: product.series || "",
       beforeCount: product.beforeCount || 0,
       companyId: product.companyId || "",
       branchId: product.branchId || "",
@@ -293,6 +319,7 @@ export default function ProductsPage() {
         description: formData.description.trim() || null,
         barcode: formData.barcode.trim() || null,
         category: formData.category.trim() || null,
+        series: formData.series.trim() || null,
         beforeCount: formData.beforeCount || 0,
         branchId: formData.branchId || null,
         imageUrl: imageUrl,
@@ -334,12 +361,115 @@ export default function ProductsPage() {
       description: "",
       barcode: "",
       category: "",
+      series: "",
       beforeCount: 0,
       companyId: companies[0]?.id || "",
       branchId: "",
     });
     setImageFile(null);
     setImagePreview(null);
+  };
+
+  // Function to assign all products to all employees
+  const handleAssignAllProducts = async () => {
+    if (!userData) return;
+
+    const confirmAssign = confirm(
+      `คุณต้องการมอบหมายสินค้าทั้งหมด (${products.length} รายการ) ให้พนักงานทุกคนใช่หรือไม่?`,
+    );
+    if (!confirmAssign) return;
+
+    setAssigningAll(true);
+
+    try {
+      const companyId = userData.companyId;
+      const currentMonth = new Date().getMonth() + 1;
+      const currentYear = new Date().getFullYear();
+
+      // Get all product IDs
+      const allProductIds = products.map((p) => p.productId);
+
+      if (allProductIds.length === 0) {
+        toast.error("ไม่มีสินค้าในระบบ");
+        return;
+      }
+
+      // Get all employees in the company
+      let usersQuery;
+      if (companyId) {
+        usersQuery = query(
+          collection(db, "users"),
+          where("companyId", "==", companyId),
+          where("role", "==", "employee"),
+        );
+      } else {
+        // Super admin - get all employees
+        usersQuery = query(
+          collection(db, "users"),
+          where("role", "==", "employee"),
+        );
+      }
+
+      const usersSnapshot = await getDocs(usersQuery);
+
+      if (usersSnapshot.empty) {
+        toast.error("ไม่พบพนักงานในระบบ");
+        return;
+      }
+
+      let assignedCount = 0;
+      let skippedCount = 0;
+
+      // For each employee, create or update assignment
+      for (const userDoc of usersSnapshot.docs) {
+        const user = userDoc.data();
+        const userId = userDoc.id;
+        const userBranchId = user.branchId;
+        const userCompanyId = user.companyId;
+
+        // Check if assignment already exists for this user/month/year
+        const existingQuery = query(
+          collection(db, "assignments"),
+          where("userId", "==", userId),
+          where("month", "==", currentMonth),
+          where("year", "==", currentYear),
+        );
+        const existingSnapshot = await getDocs(existingQuery);
+
+        if (!existingSnapshot.empty) {
+          // Update existing assignment
+          const existingDoc = existingSnapshot.docs[0];
+          await updateDoc(doc(db, "assignments", existingDoc.id), {
+            productIds: allProductIds,
+            updatedAt: serverTimestamp(),
+          });
+          skippedCount++;
+        } else {
+          // Create new assignment
+          await addDoc(collection(db, "assignments"), {
+            companyId: userCompanyId,
+            branchId: userBranchId,
+            userId: userId,
+            productIds: allProductIds,
+            month: currentMonth,
+            year: currentYear,
+            status: "pending",
+            createdAt: serverTimestamp(),
+            updatedAt: serverTimestamp(),
+          });
+          assignedCount++;
+        }
+      }
+
+      toast.success(
+        `มอบหมายสำเร็จ! สร้างใหม่ ${assignedCount} รายการ, อัปเดท ${skippedCount} รายการ`,
+      );
+    } catch (error) {
+      console.error("Error assigning products:", error);
+      toast.error("ไม่สามารถมอบหมายสินค้าได้");
+    } finally {
+      setAssigningAll(false);
+    }
   };
 
   const handleImageSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -391,7 +521,31 @@ export default function ProductsPage() {
             จัดการสินค้าและรหัสสินค้าของบริษัท
           </p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
+          {pendingCount > 0 && (
+            <Link
+              href="/dashboard/products/pending"
+              className="inline-flex items-center gap-2 px-4 py-2 bg-orange-500 text-white rounded-lg hover:bg-orange-600 transition-colors"
+            >
+              <Clock className="w-5 h-5" />
+              สินค้ารอตรวจสอบ
+              <span className="px-2 py-0.5 bg-white/20 rounded-full text-sm">
+                {pendingCount}
+              </span>
+            </Link>
+          )}
+          <button
+            onClick={handleAssignAllProducts}
+            disabled={assigningAll || products.length === 0}
+            className="inline-flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {assigningAll ? (
+              <Loader2 className="w-5 h-5 animate-spin" />
+            ) : (
+              <Users className="w-5 h-5" />
+            )}
+            มอบหมายทุกสินค้าให้พนักงานทุกคน
+          </button>
           <button
             onClick={() => {
               resetForm();
@@ -690,6 +844,7 @@ interface ProductModalProps {
     description: string;
     barcode: string;
     category: string;
+    series: string;
     beforeCount: number;
     companyId: string;
     branchId: string;
@@ -879,6 +1034,21 @@ function ProductModal({
                 setFormData({ ...formData, barcode: e.target.value })
               }
               placeholder="8859109897033"
+              className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+              Series
+            </label>
+            <input
+              type="text"
+              value={formData.series}
+              onChange={(e) =>
+                setFormData({ ...formData, series: e.target.value })
+              }
+              placeholder="เช่น Series A, Series B"
               className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
             />
           </div>

@@ -99,9 +99,37 @@ export interface Product {
   description?: string;
   barcode: string;
   category?: string;
+  series?: string; // Series ของสินค้า
   imageUrl?: string;
+
+  // Employee-added product tracking
+  status?: ProductStatus; // สถานะสินค้า
+  isUserCreated?: boolean; // พนักงานเพิ่มหรือไม่
+  createdBy?: string; // userId ที่เพิ่ม
+  createdByName?: string; // ชื่อผู้เพิ่ม
+  verifiedBy?: string; // userId ที่ยืนยัน
+  verifiedByName?: string; // ชื่อผู้ยืนยัน
+  verifiedAt?: Timestamp; // เวลาที่ยืนยัน
+  rejectionReason?: string; // เหตุผลที่ปฏิเสธ (ถ้ามี)
+
   createdAt: Timestamp;
   updatedAt?: Timestamp;
+}
+
+export type ProductStatus =
+  | "active" // สินค้าปกติ (จาก admin หรือยืนยันแล้ว)
+  | "pending_verification" // รอตรวจสอบจากคลัง
+  | "verified" // ยืนยันแล้ว - พบในคลัง
+  | "rejected"; // ปฏิเสธ - ไม่พบในคลัง
+
+// ==================== Skipped Product ====================
+
+export interface SkippedProduct {
+  id: string;
+  userId: string;
+  productId: string;
+  reason: string;
+  skippedAt: Timestamp;
 }
 
 // ==================== User Assignment ====================
@@ -213,10 +241,11 @@ export interface CountingHistory {
 
 // ==================== UI Types ====================
 
-export interface ProductWithAssignment extends Product {
+export interface ProductWithAssignment extends Omit<Product, "status"> {
   productId?: string; // SK-C-250 (field in Firestore document)
   assignment?: UserAssignment;
-  status: AssignmentStatus;
+  assignmentStatus: AssignmentStatus; // Renamed to avoid conflict with Product.status
+  status?: AssignmentStatus; // Keep for backward compatibility
   beforeCountQty?: number;
   currentCountQty?: number;
   variance?: number;

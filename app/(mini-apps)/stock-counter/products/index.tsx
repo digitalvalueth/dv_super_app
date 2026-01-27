@@ -1,3 +1,4 @@
+import { db } from "@/config/firebase";
 import { subscribeToProductsWithAssignments } from "@/services/product.service";
 import { useAuthStore } from "@/stores/auth.store";
 import { useProductStore } from "@/stores/product.store";
@@ -6,9 +7,11 @@ import { ProductWithAssignment } from "@/types";
 import { Ionicons } from "@expo/vector-icons";
 import { Image } from "expo-image";
 import { router } from "expo-router";
+import { addDoc, collection, serverTimestamp } from "firebase/firestore";
 import { useEffect, useState } from "react";
 import {
   ActivityIndicator,
+  Alert,
   FlatList,
   ScrollView,
   StyleSheet,
@@ -88,6 +91,39 @@ export default function HomeScreen() {
     setRefreshing(true);
     // Realtime listener will automatically update
     setTimeout(() => setRefreshing(false), 500);
+  };
+
+  // ฟังก์ชันข้ามสินค้า
+  const handleSkipProduct = async (product: ProductWithAssignment) => {
+    Alert.alert(
+      "ข้ามสินค้านี้?",
+      `คุณต้องการข้ามการนับ "${product.name}" ใช่หรือไม่?`,
+      [
+        { text: "ยกเลิก", style: "cancel" },
+        {
+          text: "ข้าม",
+          style: "destructive",
+          onPress: async () => {
+            try {
+              await addDoc(collection(db, "skippedProducts"), {
+                userId: user?.uid,
+                userName: user?.name,
+                productId: product.productId || product.sku,
+                productName: product.name,
+                branchId: user?.branchId,
+                companyId: user?.companyId,
+                reason: "user_skipped",
+                skippedAt: serverTimestamp(),
+              });
+              Alert.alert("สำเร็จ", "ข้ามสินค้าแล้ว");
+            } catch (error) {
+              console.error("Error skipping product:", error);
+              Alert.alert("เกิดข้อผิดพลาด", "ไม่สามารถข้ามสินค้าได้");
+            }
+          },
+        },
+      ],
+    );
   };
 
   const handleProductPress = (product: ProductWithAssignment) => {
@@ -230,7 +266,7 @@ export default function HomeScreen() {
       <View style={styles.listProductInfo}>
         <View style={styles.listProductHeader}>
           <Text style={styles.productSKU} numberOfLines={1}>
-            {item.sku}
+            {item.barcode || item.sku}
           </Text>
           <Text
             style={[
@@ -283,6 +319,16 @@ export default function HomeScreen() {
         </View>
       </View>
 
+      {/* Skip Button */}
+      {item.status !== "completed" && (
+        <TouchableOpacity
+          style={styles.skipButton}
+          onPress={() => handleSkipProduct(item)}
+        >
+          <Ionicons name="close-circle" size={20} color="#f59e0b" />
+        </TouchableOpacity>
+      )}
+
       <Ionicons name="chevron-forward" size={20} color={colors.textSecondary} />
     </TouchableOpacity>
   );
@@ -331,7 +377,7 @@ export default function HomeScreen() {
       {/* Product Info */}
       <View style={styles.productInfo}>
         <Text style={styles.productSKU} numberOfLines={1}>
-          {item.sku}
+          {item.barcode || item.sku}
         </Text>
 
         <Text
@@ -531,6 +577,16 @@ export default function HomeScreen() {
           ) : null
         }
       />
+
+      {/* Floating Add Button */}
+      <TouchableOpacity
+        style={[styles.floatingButton, { backgroundColor: colors.primary }]}
+        onPress={() =>
+          router.push("/(mini-apps)/stock-counter/products/add-product")
+        }
+      >
+        <Ionicons name="add" size={28} color="#fff" />
+      </TouchableOpacity>
     </View>
   );
 }
@@ -794,5 +850,24 @@ const styles = StyleSheet.create({
     flex: 1,
     fontSize: 13,
     lineHeight: 20,
+  },
+  floatingButton: {
+    position: "absolute",
+    bottom: 100,
+    right: 20,
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    justifyContent: "center",
+    alignItems: "center",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 4,
+    elevation: 5,
+  },
+  skipButton: {
+    padding: 8,
+    marginRight: 4,
   },
 });

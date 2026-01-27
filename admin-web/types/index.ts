@@ -80,14 +80,33 @@ export interface Product {
   companyId: string;
   branchId?: string;
   name: string;
+  sku?: string; // For backward compatibility
   description?: string;
   barcode: string;
   category?: string;
+  series?: string;
   beforeCount?: number;
   imageUrl?: string;
+
+  // Employee-added product tracking
+  status?: ProductStatus;
+  isUserCreated?: boolean;
+  createdBy?: string;
+  createdByName?: string;
+  verifiedBy?: string;
+  verifiedByName?: string;
+  verifiedAt?: Date;
+  rejectionReason?: string;
+
   createdAt?: Date;
   updatedAt?: Date;
 }
+
+export type ProductStatus =
+  | "active"
+  | "pending_verification"
+  | "verified"
+  | "rejected";
 
 // Assignment (งานที่มอบหมายให้พนักงานนับ)
 export interface Assignment {
@@ -151,6 +170,11 @@ export interface CountingSession {
   deviceInfo?: string;
   appVersion?: string;
   hasBarcodeScan?: boolean;
+  location?: {
+    address?: string;
+    latitude?: number;
+    longitude?: number;
+  };
 
   createdAt?: Date;
   reviewedAt?: Date;
