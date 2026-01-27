@@ -1,3 +1,4 @@
+import { trackAppUsage } from "@/services/app-usage.service";
 import { getTodayCheckIn } from "@/services/checkin.service";
 import { useAuthStore } from "@/stores/auth.store";
 import { useCheckInStore } from "@/stores/checkin.store";
@@ -52,8 +53,9 @@ export default function CheckInIndex() {
   }, [user?.uid, setTodayCheckIn, setTodayCheckOut, setLoading]);
 
   useEffect(() => {
+    trackAppUsage("check-in", user?.uid);
     loadTodayStatus();
-  }, [loadTodayStatus]);
+  }, [loadTodayStatus, user?.uid]);
 
   const handleRefresh = useCallback(async () => {
     setRefreshing(true);

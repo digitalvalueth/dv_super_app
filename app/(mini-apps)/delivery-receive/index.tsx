@@ -1,3 +1,4 @@
+import { trackAppUsage } from "@/services/app-usage.service";
 import { useAuthStore } from "@/stores/auth.store";
 import { useDeliveryStore } from "@/stores/delivery.store";
 import { useTheme } from "@/stores/theme.store";
@@ -42,10 +43,11 @@ export default function DeliveryReceiveIndex() {
   }, [user?.branchId, loadPendingShipments]);
 
   useEffect(() => {
+    trackAppUsage("delivery-receive", user?.uid);
     loadData();
     // Don't call reset in cleanup - it causes navigation issues
     // Reset should only be called explicitly when user completes an action
-  }, [loadData]);
+  }, [loadData, user?.uid]);
 
   const handleRefresh = useCallback(async () => {
     setRefreshing(true);

@@ -1,3 +1,5 @@
+import { trackAppUsage } from "@/services/app-usage.service";
+import { useAuthStore } from "@/stores/auth.store";
 import { useTheme } from "@/stores/theme.store";
 import { Ionicons } from "@expo/vector-icons";
 import { router, useLocalSearchParams } from "expo-router";
@@ -43,6 +45,7 @@ export const useViewMode = () => useContext(ViewModeContext);
 
 export default function StockCounterIndex() {
   const { colors, isDark } = useTheme();
+  const user = useAuthStore((state) => state.user);
   const { tab } = useLocalSearchParams<{ tab?: string }>();
   const [activeTab, setActiveTab] = useState<TabKey>("products");
   const [viewMode, setViewMode] = useState<ViewMode>("grid");
@@ -52,6 +55,11 @@ export default function StockCounterIndex() {
   const hasInitializedTab = useRef(false);
   const menuAnimation = useRef(new Animated.Value(0)).current;
   const backdropAnimation = useRef(new Animated.Value(0)).current;
+
+  // Track app usage when component mounts
+  useEffect(() => {
+    trackAppUsage("stock-counter", user?.uid);
+  }, [user?.uid]);
 
   const handleTabPress = (tab: TabKey, index: number) => {
     setActiveTab(tab);

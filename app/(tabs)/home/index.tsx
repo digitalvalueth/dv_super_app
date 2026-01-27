@@ -1,10 +1,10 @@
 "use client";
 
 import { db } from "@/config/firebase";
+import { getRecentAppIds, trackAppUsage } from "@/services/app-usage.service";
 import { useAuthStore } from "@/stores/auth.store";
 import { useTheme } from "@/stores/theme.store";
 import { Ionicons } from "@expo/vector-icons";
-import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Image } from "expo-image";
 import { LinearGradient } from "expo-linear-gradient";
 import { router, useFocusEffect } from "expo-router";
@@ -149,15 +149,11 @@ export default function HomeScreen() {
   );
   const [recentApps, setRecentApps] = useState<MiniApp[]>([]);
 
-  // Storage key for recent apps
-  const RECENT_APPS_KEY = `recent_apps_${user?.uid || "guest"}`;
-
   // Load recent apps from storage
   const loadRecentApps = useCallback(async () => {
     try {
-      const stored = await AsyncStorage.getItem(RECENT_APPS_KEY);
-      if (stored) {
-        const recentIds: string[] = JSON.parse(stored);
+      const recentIds = await getRecentAppIds(user?.uid);
+      if (recentIds.length > 0) {
         // Map ids back to MiniApp objects, filter out comingSoon
         const apps = recentIds
           .map((id) => MINI_APPS.find((app) => app.id === id))
@@ -172,25 +168,11 @@ export default function HomeScreen() {
       console.error("Error loading recent apps:", error);
       setRecentApps(MINI_APPS.filter((app) => !app.comingSoon).slice(0, 4));
     }
-  }, [RECENT_APPS_KEY]);
+  }, [user?.uid]);
 
   // Save app usage to storage
   const saveAppUsage = async (appId: string) => {
-    try {
-      const stored = await AsyncStorage.getItem(RECENT_APPS_KEY);
-      let recentIds: string[] = stored ? JSON.parse(stored) : [];
-
-      // Remove if already exists, add to front
-      recentIds = recentIds.filter((id) => id !== appId);
-      recentIds.unshift(appId);
-
-      // Keep only last 10
-      recentIds = recentIds.slice(0, 10);
-
-      await AsyncStorage.setItem(RECENT_APPS_KEY, JSON.stringify(recentIds));
-    } catch (error) {
-      console.error("Error saving app usage:", error);
-    }
+    await trackAppUsage(appId, user?.uid);
   };
 
   // Reload recent apps when screen comes into focus
