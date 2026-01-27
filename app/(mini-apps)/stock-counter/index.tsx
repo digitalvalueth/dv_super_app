@@ -1,6 +1,6 @@
 import { useTheme } from "@/stores/theme.store";
 import { Ionicons } from "@expo/vector-icons";
-import { router } from "expo-router";
+import { router, useLocalSearchParams } from "expo-router";
 import { createContext, useContext, useEffect, useRef, useState } from "react";
 import {
   Animated,
@@ -43,11 +43,13 @@ export const useViewMode = () => useContext(ViewModeContext);
 
 export default function StockCounterIndex() {
   const { colors, isDark } = useTheme();
+  const { tab } = useLocalSearchParams<{ tab?: string }>();
   const [activeTab, setActiveTab] = useState<TabKey>("products");
   const [viewMode, setViewMode] = useState<ViewMode>("grid");
   const [showMenu, setShowMenu] = useState(false);
   const scrollViewRef = useRef<ScrollView>(null);
   const scrollX = useRef(new Animated.Value(0)).current;
+  const hasInitializedTab = useRef(false);
   const menuAnimation = useRef(new Animated.Value(0)).current;
   const backdropAnimation = useRef(new Animated.Value(0)).current;
 
@@ -148,6 +150,24 @@ export default function StockCounterIndex() {
       return () => clearTimeout(timer);
     }
   }, [showMenu]);
+
+  // Handle tab parameter from navigation
+  useEffect(() => {
+    if (tab && !hasInitializedTab.current) {
+      const tabIndex = TABS.findIndex((t) => t.key === tab);
+      if (tabIndex !== -1) {
+        hasInitializedTab.current = true;
+        setActiveTab(tab as TabKey);
+        // Delay scroll to ensure layout is ready
+        setTimeout(() => {
+          scrollViewRef.current?.scrollTo({
+            x: SCREEN_WIDTH * tabIndex,
+            animated: false,
+          });
+        }, 100);
+      }
+    }
+  }, [tab]);
 
   return (
     <ViewModeContext.Provider value={{ viewMode, setViewMode }}>

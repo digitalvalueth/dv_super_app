@@ -85,7 +85,7 @@ const ALL_MINI_APPS: MiniApp[] = [
     icon: "time-outline",
     color: "#0EA5E9",
     bgColor: "#F0F9FF",
-    route: "/(mini-apps)/stock-counter/history",
+    route: "/(mini-apps)/stock-counter?tab=history",
     category: "inventory",
   },
   {

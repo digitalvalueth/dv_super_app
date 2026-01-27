@@ -24,7 +24,6 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
 
 // Fix Firebase Storage URL encoding
 const fixFirebaseStorageUrl = (url: string): string => {
@@ -347,24 +346,7 @@ export default function HistoryScreen() {
   ].filter((section) => section.data.length > 0);
 
   return (
-    <SafeAreaView
-      style={[styles.container, { backgroundColor: colors.background }]}
-      edges={["top"]}
-    >
-      {/* Navigation Header */}
-      <View style={[styles.navHeader, { borderBottomColor: colors.border }]}>
-        <TouchableOpacity
-          style={styles.backButton}
-          onPress={() => router.push("/(tabs)/home")}
-        >
-          <Ionicons name="home-outline" size={24} color={colors.text} />
-        </TouchableOpacity>
-        <Text style={[styles.navTitle, { color: colors.text }]}>
-          ประวัติการนับ
-        </Text>
-        <View style={styles.backButton} />
-      </View>
-
+    <View style={[styles.container, { backgroundColor: colors.background }]}>
       <SectionList
         sections={sections}
         keyExtractor={(item) => item.id}
@@ -391,31 +373,13 @@ export default function HistoryScreen() {
         }
         stickySectionHeadersEnabled={true}
       />
-    </SafeAreaView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-  },
-  navHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    borderBottomWidth: 1,
-  },
-  backButton: {
-    width: 40,
-    height: 40,
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  navTitle: {
-    fontSize: 18,
-    fontWeight: "700",
   },
   columnHeader: {
     flexDirection: "row",
