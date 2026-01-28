@@ -1,4 +1,5 @@
 import { db } from "@/config/firebase";
+import { usePaginationState } from "@/hooks/usePaginatedQuery";
 import { subscribeToProductsWithAssignments } from "@/services/product.service";
 import { useAuthStore } from "@/stores/auth.store";
 import { useProductStore } from "@/stores/product.store";
@@ -43,11 +44,14 @@ export default function HomeScreen() {
   const user = useAuthStore((state) => state.user);
   const { products, setProducts, setLoading, loading } = useProductStore();
   const { colors } = useTheme();
-  const { viewMode } = useViewMode(); // ใช้จาก context
+  const { viewMode } = useViewMode();
   const [refreshing, setRefreshing] = useState(false);
   const [filter, setFilter] = useState<
     "all" | "pending" | "in_progress" | "completed"
   >("all");
+
+  // Pagination for better performance
+  const pagination = usePaginationState<ProductWithAssignment>(20);
 
   // Calculate counts for filter badges
   const counts = {
@@ -69,6 +73,7 @@ export default function HomeScreen() {
       (productsData) => {
         console.log(`✅ Products updated: ${productsData.length} items`);
         setProducts(productsData);
+        pagination.setData(productsData); // Update pagination
         setLoading(false);
         setRefreshing(false);
       },
@@ -191,12 +196,20 @@ export default function HomeScreen() {
     }
   };
 
-  const filteredProducts = products.filter((product) => {
+  // Filter products first, then paginate
+  const filteredProducts = pagination.data.filter((product) => {
     if (filter === "all") return true;
     if (filter === "pending")
       return !product.status || product.status === "pending";
     return product.status === filter;
   });
+
+  // Handle load more for infinite scroll
+  const handleLoadMore = () => {
+    if (pagination.hasMore) {
+      pagination.loadMore();
+    }
+  };
 
   const filters = [
     {
@@ -553,6 +566,20 @@ export default function HomeScreen() {
         }
         refreshing={refreshing}
         onRefresh={handleRefresh}
+        onEndReached={handleLoadMore}
+        onEndReachedThreshold={0.5}
+        ListFooterComponent={
+          pagination.hasMore && filteredProducts.length > 0 ? (
+            <View style={styles.loadMoreContainer}>
+              <ActivityIndicator size="small" color={colors.primary} />
+              <Text
+                style={[styles.loadMoreText, { color: colors.textSecondary }]}
+              >
+                กำลังโหลดเพิ่มเติม...
+              </Text>
+            </View>
+          ) : null
+        }
         ListEmptyComponent={
           !loading ? (
             <View style={styles.centered}>
@@ -869,5 +896,15 @@ const styles = StyleSheet.create({
   skipButton: {
     padding: 8,
     marginRight: 4,
+  },
+  loadMoreContainer: {
+    flexDirection: "row",
+    justifyContent: "center",
+    alignItems: "center",
+    paddingVertical: 20,
+    gap: 8,
+  },
+  loadMoreText: {
+    fontSize: 14,
   },
 });

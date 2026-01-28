@@ -1,4 +1,5 @@
 import { db, storage } from "@/config/firebase";
+import { compressProductImage } from "@/services/image.service";
 import { CountingHistory, CountingSession } from "@/types";
 import {
   addDoc,
@@ -20,17 +21,23 @@ import { getDownloadURL, ref, uploadBytes } from "firebase/storage";
 export const uploadCountingImage = async (
   userId: string,
   sessionId: string,
-  imageUri: string
+  imageUri: string,
 ): Promise<string> => {
   try {
-    // Convert image URI to blob
-    const response = await fetch(imageUri);
+    // Compress image before upload (reduces ~50% size)
+    const compressed = await compressProductImage(imageUri);
+    console.log(
+      `📸 Compressed image: ${compressed.width}x${compressed.height}`,
+    );
+
+    // Convert compressed image URI to blob
+    const response = await fetch(compressed.uri);
     const blob = await response.blob();
 
     // Create storage reference
     const storageRef = ref(
       storage,
-      `counting/${userId}/${sessionId}/${Date.now()}.jpg`
+      `counting/${userId}/${sessionId}/${Date.now()}.jpg`,
     );
 
     // Upload image
@@ -50,7 +57,7 @@ export const uploadCountingImage = async (
  * Create a new counting session
  */
 export const createCountingSession = async (
-  data: Omit<CountingSession, "id" | "createdAt" | "updatedAt">
+  data: Omit<CountingSession, "id" | "createdAt" | "updatedAt">,
 ): Promise<string> => {
   try {
     const sessionsRef = collection(db, "countingSessions");
@@ -70,7 +77,7 @@ export const createCountingSession = async (
         data.assignmentId,
         "completed",
         Timestamp.now(),
-        data.productId // Pass productId to track which product is completed
+        data.productId, // Pass productId to track which product is completed
       );
     }
 
@@ -99,7 +106,7 @@ export const updateAssignmentStatus = async (
   assignmentId: string,
   status: "pending" | "in_progress" | "completed",
   countedAt?: Timestamp,
-  productId?: string
+  productId?: string,
 ): Promise<void> => {
   try {
     const assignmentRef = doc(db, "assignments", assignmentId);
@@ -119,7 +126,7 @@ export const updateAssignmentStatus = async (
 
         // Remove from inProgressProductIds since it's now completed
         const updatedInProgressIds = inProgressProductIds.filter(
-          (id: string) => id !== productId
+          (id: string) => id !== productId,
         );
 
         await updateDoc(assignmentRef, {
@@ -167,7 +174,7 @@ export const updateAssignmentStatus = async (
  * Get counting session by ID
  */
 export const getCountingSession = async (
-  sessionId: string
+  sessionId: string,
 ): Promise<CountingSession | null> => {
   try {
     const sessionDoc = await getDoc(doc(db, "countingSessions", sessionId));
@@ -188,7 +195,7 @@ export const getCountingSession = async (
  */
 export const getUserCountingHistory = async (
   userId: string,
-  limitCount: number = 50
+  limitCount: number = 50,
 ): Promise<CountingHistory[]> => {
   try {
     const historyRef = collection(db, `users/${userId}/countingHistory`);
@@ -209,7 +216,7 @@ export const getUserCountingHistory = async (
 const addToCountingHistory = async (
   userId: string,
   sessionId: string,
-  historyData: CountingHistory
+  historyData: CountingHistory,
 ): Promise<void> => {
   const historyRef = doc(db, `users/${userId}/countingHistory`, sessionId);
 
@@ -219,7 +226,7 @@ const addToCountingHistory = async (
     // If document doesn't exist, create it
     await addDoc(
       collection(db, `users/${userId}/countingHistory`),
-      historyData as any
+      historyData as any,
     );
   }
 };
@@ -229,7 +236,7 @@ const addToCountingHistory = async (
  */
 export const getProductCountingSessions = async (
   productId: string,
-  limitCount: number = 10
+  limitCount: number = 10,
 ): Promise<CountingSession[]> => {
   try {
     const sessionsRef = collection(db, "countingSessions");
@@ -241,7 +248,7 @@ export const getProductCountingSessions = async (
 
     // Sort in JavaScript instead of Firestore (no index needed)
     const sessions = snapshot.docs.map(
-      (doc) => ({ id: doc.id, ...doc.data() } as CountingSession)
+      (doc) => ({ id: doc.id, ...doc.data() }) as CountingSession,
     );
 
     // Sort by createdAt descending

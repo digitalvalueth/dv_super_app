@@ -1,4 +1,5 @@
 import { db, storage } from "@/config/firebase";
+import { compressProductImage } from "@/services/image.service";
 import { useAuthStore } from "@/stores/auth.store";
 import { useTheme } from "@/stores/theme.store";
 import { Ionicons } from "@expo/vector-icons";
@@ -75,7 +76,13 @@ export default function AddProductScreen() {
 
       // Upload image if exists
       if (imageUri) {
-        const response = await fetch(imageUri);
+        // Compress image before upload (reduces ~50% size)
+        const compressed = await compressProductImage(imageUri);
+        console.log(
+          `📸 Compressed product image: ${compressed.width}x${compressed.height}`,
+        );
+
+        const response = await fetch(compressed.uri);
         const blob = await response.blob();
 
         const timestamp = Date.now();

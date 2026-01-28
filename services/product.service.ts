@@ -143,6 +143,7 @@ export const getProductsWithAssignments = async (
               createdAt: productData.createdAt?.toDate() || new Date(),
               updatedAt: productData.updatedAt?.toDate() || new Date(),
               status: "pending", // Default status
+              assignmentStatus: assignment.status || "pending",
               beforeCountQty: productData.beforeCount || 0,
               // Include assignment info
               assignment: {
@@ -204,6 +205,7 @@ export const searchProducts = async (
 
 /**
  * Setup realtime listener for products with assignments
+ * OPTIMIZED: Uses batch queries instead of individual product queries
  * Returns unsubscribe function
  */
 export const subscribeToProductsWithAssignments = (
@@ -229,67 +231,98 @@ export const subscribeToProductsWithAssignments = (
 
       const products: ProductWithAssignment[] = [];
 
-      // Process all assignments
+      // Collect all product IDs and their assignment info
+      const productAssignmentMap = new Map<
+        string,
+        {
+          assignmentId: string;
+          userId: string;
+          isCompleted: boolean;
+          isInProgress: boolean;
+        }
+      >();
+
       for (const assignmentDoc of snapshot.docs) {
         const assignment = assignmentDoc.data();
-        const assignmentId = assignmentDoc.id; // Get assignment document ID
+        const assignmentId = assignmentDoc.id;
         const productIds = assignment.productIds || [];
         const completedProductIds = assignment.completedProductIds || [];
         const inProgressProductIds = assignment.inProgressProductIds || [];
 
-        // Get all products for this assignment
         for (const productId of productIds) {
-          try {
-            const productsRef = collection(db, "products");
-            const productQuery = query(
-              productsRef,
-              where("productId", "==", productId),
+          productAssignmentMap.set(productId, {
+            assignmentId,
+            userId: assignment.userId,
+            isCompleted: completedProductIds.includes(productId),
+            isInProgress: inProgressProductIds.includes(productId),
+          });
+        }
+      }
+
+      // OPTIMIZED: Batch fetch products (max 30 per batch due to Firestore 'in' limit)
+      const allProductIds = Array.from(productAssignmentMap.keys());
+      const batchSize = 30;
+      const batches = [];
+
+      for (let i = 0; i < allProductIds.length; i += batchSize) {
+        batches.push(allProductIds.slice(i, i + batchSize));
+      }
+
+      console.log(
+        `📦 Fetching ${allProductIds.length} products in ${batches.length} batch(es)`,
+      );
+
+      for (const batch of batches) {
+        try {
+          const productsRef = collection(db, "products");
+          const productQuery = query(
+            productsRef,
+            where("productId", "in", batch),
+          );
+          const productSnapshot = await getDocs(productQuery);
+
+          for (const productDoc of productSnapshot.docs) {
+            const productData = productDoc.data();
+            const assignmentInfo = productAssignmentMap.get(
+              productData.productId,
             );
-            const productSnapshot = await getDocs(productQuery);
 
-            if (!productSnapshot.empty) {
-              const productDoc = productSnapshot.docs[0];
-              const productData = productDoc.data();
+            if (!assignmentInfo) continue;
 
-              // Check if this product is completed or in_progress
-              const isCompleted = completedProductIds.includes(productId);
-              const isInProgress = inProgressProductIds.includes(productId);
-
-              // Determine status
-              let status: "pending" | "in_progress" | "completed" = "pending";
-              if (isCompleted) {
-                status = "completed";
-              } else if (isInProgress) {
-                status = "in_progress";
-              }
-
-              products.push({
-                id: productDoc.id,
-                productId: productData.productId,
-                name: productData.name,
-                sku: productData.productId,
-                barcode: productData.barcode,
-                description: productData.description,
-                category: productData.category,
-                companyId: productData.companyId,
-                branchId: productData.branchId,
-                imageUrl: productData.imageUrl,
-                createdAt: productData.createdAt?.toDate() || new Date(),
-                updatedAt: productData.updatedAt?.toDate() || new Date(),
-                status: status,
-                beforeCountQty: productData.beforeCount || 0,
-                // Include assignment info
-                assignment: {
-                  id: assignmentId,
-                  userId: assignment.userId,
-                  productId: productData.productId,
-                  status: status,
-                } as any,
-              });
+            // Determine status
+            let status: "pending" | "in_progress" | "completed" = "pending";
+            if (assignmentInfo.isCompleted) {
+              status = "completed";
+            } else if (assignmentInfo.isInProgress) {
+              status = "in_progress";
             }
-          } catch (error) {
-            console.error(`❌ Error fetching product ${productId}:`, error);
+
+            products.push({
+              id: productDoc.id,
+              productId: productData.productId,
+              name: productData.name,
+              sku: productData.productId,
+              barcode: productData.barcode,
+              description: productData.description,
+              category: productData.category,
+              companyId: productData.companyId,
+              branchId: productData.branchId,
+              imageUrl: productData.imageUrl || productData.imageURL,
+              createdAt: productData.createdAt?.toDate() || new Date(),
+              updatedAt: productData.updatedAt?.toDate() || new Date(),
+              status: status,
+              assignmentStatus: status,
+              beforeCountQty: productData.beforeCount || 0,
+              assignment: {
+                id: assignmentInfo.assignmentId,
+                userId: assignmentInfo.userId,
+                productId: productData.productId,
+                status: status,
+              } as any,
+            });
           }
+        } catch (error) {
+          console.error(`❌ Error fetching product batch:`, error);
         }
       }
 

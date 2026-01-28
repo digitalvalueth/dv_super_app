@@ -2,6 +2,12 @@
 
 import { db } from "@/config/firebase";
 import { getRecentAppIds, trackAppUsage } from "@/services/app-usage.service";
+import {
+  CacheKeys,
+  CacheTTL,
+  getOrFetch,
+  removeCache,
+} from "@/services/cache.service";
 import { useAuthStore } from "@/stores/auth.store";
 import { useTheme } from "@/stores/theme.store";
 import { Ionicons } from "@expo/vector-icons";
@@ -182,99 +188,119 @@ export default function HomeScreen() {
     }, [loadRecentApps]),
   );
 
-  const fetchDashboardData = useCallback(async () => {
-    if (!user?.companyId) {
-      setLoading(false);
-      return;
-    }
+  const fetchDashboardData = useCallback(
+    async (forceRefresh = false) => {
+      if (!user?.companyId || !user?.branchId) {
+        setLoading(false);
+        return;
+      }
 
-    try {
-      const companyId = user.companyId;
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
+      try {
+        const branchId = user.branchId;
+        const cacheKey = CacheKeys.dashboardStats(branchId);
 
-      // Fetch counting sessions
-      const sessionsQuery = query(
-        collection(db, "countingSessions"),
-        where("companyId", "==", companyId),
-        orderBy("createdAt", "desc"),
-        limit(50),
-      );
-      const sessionsSnapshot = await getDocs(sessionsQuery);
+        // Use cache with 5 minute TTL
+        const cachedStats = await getOrFetch(
+          cacheKey,
+          async () => {
+            const today = new Date();
+            today.setHours(0, 0, 0, 0);
 
-      let totalCounted = 0;
-      let completedToday = 0;
-      let pendingReview = 0;
-      let totalDiscrepancy = 0;
-      const activities: RecentActivity[] = [];
+            // Fetch counting sessions - OPTIMIZED: filter by branchId
+            const sessionsQuery = query(
+              collection(db, "countingSessions"),
+              where("branchId", "==", branchId),
+              orderBy("createdAt", "desc"),
+              limit(30),
+            );
+            const sessionsSnapshot = await getDocs(sessionsQuery);
 
-      sessionsSnapshot.forEach((doc) => {
-        const data = doc.data();
-        const createdAt = data.createdAt?.toDate();
+            let totalCounted = 0;
+            let completedToday = 0;
+            let pendingReview = 0;
+            let totalDiscrepancy = 0;
+            const activities: RecentActivity[] = [];
 
-        totalCounted++;
+            sessionsSnapshot.forEach((doc) => {
+              const data = doc.data();
+              const createdAt = data.createdAt?.toDate();
 
-        // Check if completed today
-        if (createdAt && createdAt >= today) {
-          if (data.status === "completed" || data.status === "approved") {
-            completedToday++;
-          }
-        }
+              totalCounted++;
 
-        // Pending review
-        if (data.status === "pending-review" || data.status === "pending") {
-          pendingReview++;
-        }
+              if (createdAt && createdAt >= today) {
+                if (data.status === "completed" || data.status === "approved") {
+                  completedToday++;
+                }
+              }
 
-        // Total discrepancy
-        totalDiscrepancy += Math.abs(data.discrepancy || 0);
+              if (
+                data.status === "pending-review" ||
+                data.status === "pending"
+              ) {
+                pendingReview++;
+              }
 
-        // Recent activities (first 5)
-        if (activities.length < 5) {
-          activities.push({
-            id: doc.id,
-            productName: data.productName || "ไม่ระบุ",
-            branchName: data.branchName || "ไม่ระบุ",
-            status: data.status,
-            finalCount: data.finalCount || 0,
-            discrepancy: data.discrepancy || 0,
-            createdAt: createdAt || new Date(),
-          });
-        }
-      });
+              totalDiscrepancy += Math.abs(data.discrepancy || 0);
 
-      // Fetch total products
-      const productsQuery = query(
-        collection(db, "products"),
-        where("companyId", "==", companyId),
-      );
-      const productsSnapshot = await getDocs(productsQuery);
+              if (activities.length < 5) {
+                activities.push({
+                  id: doc.id,
+                  productName: data.productName || "ไม่ระบุ",
+                  branchName: data.branchName || "ไม่ระบุ",
+                  status: data.status,
+                  finalCount: data.finalCount || 0,
+                  discrepancy: data.discrepancy || 0,
+                  createdAt: createdAt || new Date(),
+                });
+              }
+            });
 
-      setStats({
-        totalCounted,
-        completedToday,
-        pendingReview,
-        totalProducts: productsSnapshot.size,
-        discrepancy: totalDiscrepancy,
-      });
+            // Fetch total products - OPTIMIZED: filter by branchId
+            const productsQuery = query(
+              collection(db, "products"),
+              where("branchId", "==", branchId),
+            );
+            const productsSnapshot = await getDocs(productsQuery);
 
-      setRecentActivities(activities);
-    } catch (error) {
-      console.error("Error fetching dashboard data:", error);
-    } finally {
-      setLoading(false);
-      setRefreshing(false);
-    }
-  }, [user?.companyId]);
+            return {
+              stats: {
+                totalCounted,
+                completedToday,
+                pendingReview,
+                totalProducts: productsSnapshot.size,
+                discrepancy: totalDiscrepancy,
+              },
+              activities,
+            };
+          },
+          CacheTTL.MEDIUM,
+          forceRefresh,
+        );
+
+        setStats(cachedStats.stats);
+        setRecentActivities(cachedStats.activities);
+      } catch (error) {
+        console.error("Error fetching dashboard data:", error);
+      } finally {
+        setLoading(false);
+        setRefreshing(false);
+      }
+    },
+    [user?.companyId, user?.branchId],
+  );
 
   useEffect(() => {
-    fetchDashboardData();
+    fetchDashboardData(false);
   }, [fetchDashboardData]);
 
   const onRefresh = useCallback(() => {
     setRefreshing(true);
-    fetchDashboardData();
-  }, [fetchDashboardData]);
+    // Force refresh - bypass cache
+    if (user?.branchId) {
+      removeCache(CacheKeys.dashboardStats(user.branchId));
+    }
+    fetchDashboardData(true);
+  }, [fetchDashboardData, user?.branchId]);
 
   const greeting = () => {
     const hour = new Date().getHours();
@@ -348,7 +374,7 @@ export default function HomeScreen() {
         <View style={styles.headerRight}>
           <TouchableOpacity
             style={[styles.headerButton, { backgroundColor: colors.card }]}
-            onPress={() => router.push("/(tabs)/profile" as any)}
+            onPress={() => router.push("/(mini-apps)/stock-counter?tab=inbox")}
           >
             <Ionicons
               name="notifications-outline"

@@ -1,4 +1,5 @@
 import { db, storage } from "@/config/firebase";
+import { compressProductImage } from "@/services/image.service";
 import {
   DeliveryReceive,
   Shipment,
@@ -170,8 +171,14 @@ export const uploadDeliveryImage = async (
   imageUri: string,
 ): Promise<string> => {
   try {
-    // Convert image URI to blob
-    const response = await fetch(imageUri);
+    // Compress image before upload (reduces ~50% size)
+    const compressed = await compressProductImage(imageUri);
+    console.log(
+      `📸 Compressed delivery image: ${compressed.width}x${compressed.height}`,
+    );
+
+    // Convert compressed image URI to blob
+    const response = await fetch(compressed.uri);
     const blob = await response.blob();
 
     // Create storage reference

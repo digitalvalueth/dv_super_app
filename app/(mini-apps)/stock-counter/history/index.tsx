@@ -1,4 +1,5 @@
 import { db } from "@/config/firebase";
+import { usePaginationState } from "@/hooks/usePaginatedQuery";
 import { useAuthStore } from "@/stores/auth.store";
 import { useTheme } from "@/stores/theme.store";
 import { CountingSession } from "@/types";
@@ -87,6 +88,9 @@ export default function HistoryScreen() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
+  // Pagination for better performance (20 items per page)
+  const pagination = usePaginationState<CountingSession>(20);
+
   useEffect(() => {
     if (!user?.uid || !user?.companyId || !user?.branchId) {
       setLoading(false);
@@ -97,8 +101,7 @@ export default function HistoryScreen() {
     const q = query(
       collection(db, "countingSessions"),
       where("userId", "==", user.uid),
-      where("companyId", "==", user.companyId),
-      where("branchId", "==", user.branchId),
+      where("branchId", "==", user.branchId), // Use branchId only for better performance
       where("status", "==", "completed"),
       orderBy("createdAt", "desc"),
     );
@@ -113,6 +116,7 @@ export default function HistoryScreen() {
 
         console.log(`✅ History updated: ${sessionsData.length} sessions`);
         setSessions(sessionsData);
+        pagination.setData(sessionsData); // Update pagination
         setLoading(false);
         setRefreshing(false);
       },
@@ -127,7 +131,8 @@ export default function HistoryScreen() {
       console.log("🚧 Cleaning up history listener");
       unsubscribe();
     };
-  }, [user?.uid, user?.companyId, user?.branchId]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user?.uid, user?.branchId]); // Removed companyId dependency
 
   const handleRefresh = () => {
     setRefreshing(true);
@@ -336,7 +341,8 @@ export default function HistoryScreen() {
     );
   }
 
-  const groupedSessions = groupSessionsByTime(sessions);
+  // Use paginated data for display
+  const groupedSessions = groupSessionsByTime(pagination.data);
   const sections = [
     { title: "วันนี้", data: groupedSessions.today },
     { title: "เมื่อวาน", data: groupedSessions.yesterday },
@@ -344,6 +350,13 @@ export default function HistoryScreen() {
     { title: "เดือนนี้", data: groupedSessions.thisMonth },
     { title: "เก่ากว่านี้", data: groupedSessions.older },
   ].filter((section) => section.data.length > 0);
+
+  // Handle load more
+  const handleLoadMore = () => {
+    if (pagination.hasMore) {
+      pagination.loadMore();
+    }
+  };
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
@@ -372,6 +385,20 @@ export default function HistoryScreen() {
           />
         }
         stickySectionHeadersEnabled={true}
+        onEndReached={handleLoadMore}
+        onEndReachedThreshold={0.5}
+        ListFooterComponent={
+          pagination.hasMore && pagination.data.length > 0 ? (
+            <View style={styles.loadMoreContainer}>
+              <ActivityIndicator size="small" color={colors.primary} />
+              <Text
+                style={[styles.loadMoreText, { color: colors.textSecondary }]}
+              >
+                กำลังโหลดเพิ่มเติม...
+              </Text>
+            </View>
+          ) : null
+        }
       />
     </View>
   );
@@ -539,5 +566,15 @@ const styles = StyleSheet.create({
   varianceText: {
     fontSize: 13,
     fontWeight: "700",
+  },
+  loadMoreContainer: {
+    flexDirection: "row",
+    justifyContent: "center",
+    alignItems: "center",
+    paddingVertical: 20,
+    gap: 8,
+  },
+  loadMoreText: {
+    fontSize: 14,
   },
 });
