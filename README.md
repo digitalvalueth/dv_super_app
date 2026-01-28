@@ -1,4 +1,4 @@
-# Super Fitt - AI Product Counting App 📦🤖
+# FITT BSA - AI Product Counting App 📦🤖
 
 ระบบนับสินค้าหน้าร้านด้วย AI สำหรับบริษัท พิธานไลฟ์ จำกัด
 
@@ -280,7 +280,7 @@ npm run dev  # เปิดที่ http://localhost:3001
 
 ## 🤝 Contributing
 
-โปรเจกต์นี้เป็น private repository สำหรับ Super Fitt เท่านั้น
+โปรเจกต์นี้เป็น private repository สำหรับ FITT BSA เท่านั้น
 
 ---
 
@@ -297,7 +297,7 @@ npm run dev  # เปิดที่ http://localhost:3001
 
 ## 📄 License
 
-**Private** - For Super Fitt Internal Use Only  
+**Private** - For FITT BSA Internal Use Only  
 © 2026 Digital Value Co., Ltd.
 
 ---

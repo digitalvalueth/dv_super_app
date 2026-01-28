@@ -1,6 +1,6 @@
-# Super Fitt Admin Dashboard 🎯
+# FITT BSA Admin Dashboard 🎯
 
-ระบบจัดการ Admin Web Dashboard สำหรับ Super Fitt - AI Product Counting System
+ระบบจัดการ Admin Web Dashboard สำหรับ FITT BSA - AI Product Counting System
 
 ## 🌟 Features
 
@@ -131,7 +131,7 @@ admin-web/
 
 ## 📄 License
 
-**Private** - For Super Fitt Internal Use Only  
+**Private** - For FITT BSA Internal Use Only  
 © 2026 Digital Value Co., Ltd.
 
 ---

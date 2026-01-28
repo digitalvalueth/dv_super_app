@@ -367,9 +367,7 @@ export default function HomeScreen() {
             style={styles.logo}
             contentFit="contain"
           />
-          <Text style={[styles.appName, { color: colors.text }]}>
-            Super Fitt
-          </Text>
+          <Text style={[styles.appName, { color: colors.text }]}>FITT BSA</Text>
         </View>
         <View style={styles.headerRight}>
           <TouchableOpacity

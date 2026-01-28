@@ -8,7 +8,7 @@ import "./globals.css";
 const inter = Inter({ subsets: ["latin"] });
 
 export const metadata: Metadata = {
-  title: "Super Fitt Admin - AI Product Counting",
+  title: "FITT BSA Admin - AI Product Counting",
   description: "Admin dashboard for managing product counting and inventory",
 };
 

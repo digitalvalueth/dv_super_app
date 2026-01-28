@@ -172,7 +172,7 @@ export default function DashboardPage() {
           แดชบอร์ด
         </h1>
         <p className="text-gray-600 dark:text-gray-400 mt-1">
-          ภาพรวมระบบนับสินค้า Super Fitt
+          ภาพรวมระบบนับสินค้า FITT BSA
         </p>
       </div>
 

@@ -4,8 +4,8 @@ import { Resend } from "resend";
 // Email configuration
 const RESEND_API_KEY = process.env.RESEND_API_KEY;
 const FROM_EMAIL = "digitalvalue@resend.dev"; //process.env.FROM_EMAIL || "onboarding@resend.dev"; // Use resend.dev for testing
-const APP_NAME = "Super Fitt";
-const APP_URL = process.env.NEXT_PUBLIC_APP_URL || "https://app.superfitt.com";
+const APP_NAME = "FITT BSA";
+const APP_URL = process.env.NEXT_PUBLIC_APP_URL || "https://app.fittbsa.com";
 
 // Initialize Resend
 const resend = RESEND_API_KEY ? new Resend(RESEND_API_KEY) : null;
