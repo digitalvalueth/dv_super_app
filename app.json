@@ -10,7 +10,7 @@
     "newArchEnabled": true,
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.itswatthachai.fittbsa",
+      "bundleIdentifier": "com.digitalvalue.fittbsa",
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false,
         "NSCameraUsageDescription": "ใช้กล้องเพื่อถ่ายรูปสินค้าสำหรับนับจำนวน",
@@ -34,7 +34,7 @@
       },
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false,
-      "package": "com.itswatthachai.fittbsa",
+      "package": "com.digitalvalue.fittbsa",
       "permissions": [
         "android.permission.CAMERA",
         "android.permission.READ_EXTERNAL_STORAGE",
