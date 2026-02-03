@@ -1,4 +1,5 @@
 import { db, storage } from "@/config/firebase";
+import { compressProductImage } from "@/services/image.service";
 import { CountingHistory, CountingSession } from "@/types";
 import {
   addDoc,
@@ -20,17 +21,23 @@ import { getDownloadURL, ref, uploadBytes } from "firebase/storage";
 export const uploadCountingImage = async (
   userId: string,
   sessionId: string,
-  imageUri: string
+  imageUri: string,
 ): Promise<string> => {
   try {
-    // Convert image URI to blob
-    const response = await fetch(imageUri);
+    // Compress image before upload (reduces ~50% size)
+    const compressed = await compressProductImage(imageUri);
+    console.log(
+      `📸 Compressed image: ${compressed.width}x${compressed.height}`,
+    );
+
+    // Convert compressed image URI to blob
+    const response = await fetch(compressed.uri);
     const blob = await response.blob();
 
     // Create storage reference
     const storageRef = ref(
       storage,
-      `counting/${userId}/${sessionId}/${Date.now()}.jpg`
+      `counting/${userId}/${sessionId}/${Date.now()}.jpg`,
     );
 
     // Upload image
@@ -50,7 +57,7 @@ export const uploadCountingImage = async (
  * Create a new counting session
  */
 export const createCountingSession = async (
-  data: Omit<CountingSession, "id" | "createdAt" | "updatedAt">
+  data: Omit<CountingSession, "id" | "createdAt" | "updatedAt">,
 ): Promise<string> => {
   try {
     const sessionsRef = collection(db, "countingSessions");
@@ -63,12 +70,16 @@ export const createCountingSession = async (
 
     const docRef = await addDoc(sessionsRef, newSession);
 
-    // Update assignment status
-    await updateAssignmentStatus(
-      data.assignmentId,
-      "completed",
-      Timestamp.now()
-    );
+    // Update assignment - only mark as completed if session status is completed
+    // If status is "pending" (draft), don't mark as completed yet
+    if (data.status === "completed") {
+      await updateAssignmentStatus(
+        data.assignmentId,
+        "completed",
+        Timestamp.now(),
+        data.productId, // Pass productId to track which product is completed
+      );
+    }
 
     // Add to user's counting history
     await addToCountingHistory(data.userId, docRef.id, {
@@ -89,21 +100,70 @@ export const createCountingSession = async (
 };
 
 /**
- * Update assignment status
+ * Update assignment status - add productId to completedProductIds or inProgressProductIds array
  */
 export const updateAssignmentStatus = async (
   assignmentId: string,
   status: "pending" | "in_progress" | "completed",
-  countedAt?: Timestamp
+  countedAt?: Timestamp,
+  productId?: string,
 ): Promise<void> => {
   try {
-    const assignmentRef = doc(db, "userAssignments", assignmentId);
+    const assignmentRef = doc(db, "assignments", assignmentId);
 
-    await updateDoc(assignmentRef, {
-      status,
-      ...(countedAt && { countedAt }),
-      updatedAt: Timestamp.now(),
-    });
+    // If completed and productId provided, add to completedProductIds array
+    if (status === "completed" && productId) {
+      const assignmentDoc = await getDoc(assignmentRef);
+      if (assignmentDoc.exists()) {
+        const currentData = assignmentDoc.data();
+        const completedProductIds = currentData.completedProductIds || [];
+        const inProgressProductIds = currentData.inProgressProductIds || [];
+
+        // Add productId if not already in array
+        if (!completedProductIds.includes(productId)) {
+          completedProductIds.push(productId);
+        }
+
+        // Remove from inProgressProductIds since it's now completed
+        const updatedInProgressIds = inProgressProductIds.filter(
+          (id: string) => id !== productId,
+        );
+
+        await updateDoc(assignmentRef, {
+          completedProductIds,
+          inProgressProductIds: updatedInProgressIds,
+          ...(countedAt && { countedAt }),
+          updatedAt: Timestamp.now(),
+        });
+      }
+    } else if (status === "in_progress" && productId) {
+      // Add to inProgressProductIds array
+      const assignmentDoc = await getDoc(assignmentRef);
+      if (assignmentDoc.exists()) {
+        const currentData = assignmentDoc.data();
+        const inProgressProductIds = currentData.inProgressProductIds || [];
+        const completedProductIds = currentData.completedProductIds || [];
+
+        // Only add if not already completed and not already in progress
+        if (
+          !completedProductIds.includes(productId) &&
+          !inProgressProductIds.includes(productId)
+        ) {
+          inProgressProductIds.push(productId);
+
+          await updateDoc(assignmentRef, {
+            inProgressProductIds,
+            updatedAt: Timestamp.now(),
+          });
+        }
+      }
+    } else {
+      await updateDoc(assignmentRef, {
+        status,
+        ...(countedAt && { countedAt }),
+        updatedAt: Timestamp.now(),
+      });
+    }
   } catch (error) {
     console.error("Error updating assignment status:", error);
     throw error;
@@ -114,7 +174,7 @@ export const updateAssignmentStatus = async (
  * Get counting session by ID
  */
 export const getCountingSession = async (
-  sessionId: string
+  sessionId: string,
 ): Promise<CountingSession | null> => {
   try {
     const sessionDoc = await getDoc(doc(db, "countingSessions", sessionId));
@@ -135,7 +195,7 @@ export const getCountingSession = async (
  */
 export const getUserCountingHistory = async (
   userId: string,
-  limitCount: number = 50
+  limitCount: number = 50,
 ): Promise<CountingHistory[]> => {
   try {
     const historyRef = collection(db, `users/${userId}/countingHistory`);
@@ -156,7 +216,7 @@ export const getUserCountingHistory = async (
 const addToCountingHistory = async (
   userId: string,
   sessionId: string,
-  historyData: CountingHistory
+  historyData: CountingHistory,
 ): Promise<void> => {
   const historyRef = doc(db, `users/${userId}/countingHistory`, sessionId);
 
@@ -166,7 +226,7 @@ const addToCountingHistory = async (
     // If document doesn't exist, create it
     await addDoc(
       collection(db, `users/${userId}/countingHistory`),
-      historyData as any
+      historyData as any,
     );
   }
 };
@@ -176,21 +236,29 @@ const addToCountingHistory = async (
  */
 export const getProductCountingSessions = async (
   productId: string,
-  limitCount: number = 10
+  limitCount: number = 10,
 ): Promise<CountingSession[]> => {
   try {
     const sessionsRef = collection(db, "countingSessions");
-    const q = query(
-      sessionsRef,
-      where("productId", "==", productId),
-      orderBy("createdAt", "desc")
-    );
+
+    // Query without orderBy to avoid needing composite index
+    const q = query(sessionsRef, where("productId", "==", productId));
 
     const snapshot = await getDocs(q);
 
-    return snapshot.docs.map(
-      (doc) => ({ id: doc.id, ...doc.data() } as CountingSession)
+    // Sort in JavaScript instead of Firestore (no index needed)
+    const sessions = snapshot.docs.map(
+      (doc) => ({ id: doc.id, ...doc.data() }) as CountingSession,
     );
+
+    // Sort by createdAt descending
+    sessions.sort((a, b) => {
+      const dateA = a.createdAt?.toDate?.() || new Date(0);
+      const dateB = b.createdAt?.toDate?.() || new Date(0);
+      return dateB.getTime() - dateA.getTime();
+    });
+
+    return sessions;
   } catch (error) {
     console.error("Error getting product sessions:", error);
     throw error;

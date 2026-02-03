@@ -1,4 +1,4 @@
-# Super Fitt - AI Product Counting App 📦🤖
+# FITT BSA - AI Product Counting App 📦🤖
 
 ระบบนับสินค้าหน้าร้านด้วย AI สำหรับบริษัท พิธานไลฟ์ จำกัด
 
@@ -79,32 +79,41 @@ npx expo start --web
 
 ```
 super-fitt/
-├── app/
-│   ├── (auth)/              # 🔐 Authentication
-│   │   ├── login.tsx        # Login with Google
+├── app/                         # 📱 Mobile App (React Native + Expo)
+│   ├── (auth)/                  # 🔐 Authentication
+│   │   ├── login.tsx            # Login with Google
 │   │   └── _layout.tsx
-│   ├── (app)/               # 📱 Main App
-│   │   ├── index.tsx        # Product list (home)
-│   │   ├── camera.tsx       # Camera screen
-│   │   ├── preview.tsx      # Photo preview
-│   │   ├── result.tsx       # AI result
-│   │   ├── history.tsx      # Counting history
-│   │   ├── profile.tsx      # User profile
-│   │   └── _layout.tsx      # Tab navigation
-│   └── _layout.tsx          # Root layout
+│   ├── (app)/                   # 📱 Main App
+│   │   ├── index.tsx            # Product list (home)
+│   │   ├── camera.tsx           # Camera screen
+│   │   ├── preview.tsx          # Photo preview
+│   │   ├── result.tsx           # AI result
+│   │   ├── history.tsx          # Counting history
+│   │   ├── profile.tsx          # User profile
+│   │   └── _layout.tsx          # Tab navigation
+│   └── _layout.tsx              # Root layout
+├── admin-web/                   # 💻 Admin Web Dashboard (Next.js)
+│   ├── app/
+│   │   ├── dashboard/           # แดชบอร์ด, รายงาน, จัดการข้อมูล
+│   │   ├── login/               # หน้า Login
+│   │   └── layout.tsx
+│   ├── components/              # React components
+│   ├── lib/                     # Firebase config
+│   ├── stores/                  # Zustand stores
+│   └── types/                   # TypeScript types
 ├── config/
-│   └── firebase.ts          # 🔥 Firebase config
+│   └── firebase.ts              # 🔥 Firebase config
 ├── services/
-│   ├── auth.service.ts      # Authentication
-│   ├── product.service.ts   # Products & assignments
-│   ├── counting.service.ts  # Counting sessions
-│   └── gemini.service.ts    # 🤖 AI counting
+│   ├── auth.service.ts          # Authentication
+│   ├── product.service.ts       # Products & assignments
+│   ├── counting.service.ts      # Counting sessions
+│   └── gemini.service.ts        # 🤖 AI counting
 ├── stores/
-│   ├── auth.store.ts        # Auth state
-│   ├── product.store.ts     # Product state
-│   └── counting.store.ts    # Counting state
+│   ├── auth.store.ts            # Auth state
+│   ├── product.store.ts         # Product state
+│   └── counting.store.ts        # Counting state
 ├── types/
-│   └── index.ts             # TypeScript types
+│   └── index.ts                 # TypeScript types
 └── components/
     └── ...
 ```
@@ -142,7 +151,35 @@ super-fitt/
 
 ---
 
+## 💻 Admin Web Dashboard
+
+มี **Web Admin Dashboard** สำหรับจัดการระบบ:
+
+### ฟีเจอร์:
+
+- ✅ แดชบอร์ดภาพรวม (สถิติ, ของหาย, รอตรวจสอบ)
+- ✅ รายงานของหาย (Top พนักงาน, สาขา, สินค้า + Charts)
+- ✅ จัดการข้อมูลการนับ (อนุมัติ/ปฏิเสธ)
+- ✅ เชิญผู้ใช้เข้าบริษัท
+- ✅ ควบคุมสิทธิ์ตาม Role (Admin/Manager)
+
+### เริ่มต้นใช้งาน:
+
+```bash
+cd admin-web
+npm install
+cp .env.local.example .env.local
+# แก้ไข .env.local
+npm run dev  # เปิดที่ http://localhost:3001
+```
+
+**📖 ดูรายละเอียดเต็มใน [admin-web/README.md](./admin-web/README.md)**
+
+---
+
 ## 🛠️ Tech Stack
+
+### Mobile App
 
 | Layer          | Technology                          |
 | -------------- | ----------------------------------- |
@@ -153,6 +190,18 @@ super-fitt/
 | **State**      | Zustand                             |
 | **Navigation** | Expo Router (File-based)            |
 | **Forms**      | React Hook Form + Zod               |
+
+### Web Admin Dashboard
+
+| Layer         | Technology                 |
+| ------------- | -------------------------- |
+| **Framework** | Next.js 15 (App Router)    |
+| **Language**  | TypeScript                 |
+| **Styling**   | Tailwind CSS               |
+| **Backend**   | Firebase (Firestore, Auth) |
+| **State**     | Zustand                    |
+| **Charts**    | Recharts                   |
+| **Icons**     | Lucide React               |
 
 ---
 
@@ -180,11 +229,16 @@ super-fitt/
 
 ### Phase 3 - Admin
 
-- [ ] Web dashboard
-- [ ] Employee management
-- [ ] Product management
-- [ ] Analytics & reports
+- [x] Web dashboard (Next.js)
+- [x] Dashboard with statistics
+- [x] Reports & Analytics
+- [x] Counting data management
+- [x] Invitation system
+- [ ] Employee management (CRUD)
+- [ ] Product management (CRUD)
+- [ ] Branch management (CRUD)
 - [ ] Export Excel/PDF
+- [ ] Real-time notifications
 
 ---
 
@@ -226,7 +280,7 @@ super-fitt/
 
 ## 🤝 Contributing
 
-โปรเจกต์นี้เป็น private repository สำหรับ Super Fitt เท่านั้น
+โปรเจกต์นี้เป็น private repository สำหรับ FITT BSA เท่านั้น
 
 ---
 
@@ -243,7 +297,7 @@ super-fitt/
 
 ## 📄 License
 
-**Private** - For Super Fitt Internal Use Only  
+**Private** - For FITT BSA Internal Use Only  
 © 2026 Digital Value Co., Ltd.
 
 ---

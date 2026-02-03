@@ -20,7 +20,7 @@ WebBrowser.maybeCompleteAuthSession();
  * Process Google Auth with Firebase (for native Google Sign-In)
  */
 export const processGoogleAuth = async (
-  idToken: string
+  idToken: string,
 ): Promise<User | null> => {
   try {
     console.log("🔥 Creating Firebase credential...");
@@ -73,7 +73,7 @@ export const processGoogleAuth = async (
     } catch (firestoreError: any) {
       console.warn(
         "⚠️ Firestore error (offline?), using Firebase Auth data:",
-        firestoreError.message
+        firestoreError.message,
       );
 
       // Fallback: return user from Firebase Auth only
@@ -90,7 +90,23 @@ export const processGoogleAuth = async (
     }
   } catch (error: any) {
     console.error("❌ Error processing Google Auth:", error);
-    throw new Error(error.message || "Failed to authenticate with Firebase");
+    console.error("❌ Error Code:", error.code);
+    console.error("❌ Error Message:", error.message);
+    console.error("❌ Error Details:", JSON.stringify(error, null, 2));
+
+    // แสดง error แบบละเอียดตาม Firebase error codes
+    let friendlyMessage = error.message;
+    if (error.code === "auth/invalid-credential") {
+      friendlyMessage =
+        "DEVELOPER_ERROR: Invalid OAuth credentials. Check SHA-1 fingerprint and Client IDs in Firebase Console.";
+    } else if (error.code === "auth/account-exists-with-different-credential") {
+      friendlyMessage =
+        "This email is already associated with a different sign-in method.";
+    } else if (error.code === "auth/operation-not-allowed") {
+      friendlyMessage = "Google Sign-In is not enabled in Firebase Console.";
+    }
+
+    throw new Error(friendlyMessage || "Failed to authenticate with Firebase");
   }
 };
 
@@ -102,7 +118,7 @@ export const processGoogleAuth = async (
  */
 const createAccessRequest = async (
   userId: string,
-  userEmail: string
+  userEmail: string,
 ): Promise<void> => {
   try {
     const accessRequest = {
@@ -238,7 +254,7 @@ export const getCurrentUser = async (): Promise<User | null> => {
  * Listen to auth state changes
  */
 export const onAuthStateChange = (
-  callback: (user: FirebaseUser | null) => void
+  callback: (user: FirebaseUser | null) => void,
 ) => {
   return onAuthStateChanged(auth, callback);
 };

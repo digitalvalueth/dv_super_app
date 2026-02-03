@@ -5,8 +5,10 @@ import {
   doc,
   getDoc,
   getDocs,
+  onSnapshot,
   orderBy,
   query,
+  Unsubscribe,
   where,
 } from "firebase/firestore";
 
@@ -30,7 +32,7 @@ export const getProducts = async (companyId: string): Promise<Product[]> => {
  * Get single product by ID
  */
 export const getProductById = async (
-  productId: string
+  productId: string,
 ): Promise<Product | null> => {
   try {
     const productDoc = await getDoc(doc(db, "products", productId));
@@ -50,7 +52,7 @@ export const getProductById = async (
  * Get user's assigned products (monthly counting list)
  */
 export const getUserAssignedProducts = async (
-  userId: string
+  userId: string,
 ): Promise<UserAssignment[]> => {
   try {
     const assignmentsRef = collection(db, "userAssignments");
@@ -58,7 +60,7 @@ export const getUserAssignedProducts = async (
       assignmentsRef,
       where("userId", "==", userId),
       orderBy("status", "asc"), // pending first
-      orderBy("dueDate", "asc")
+      orderBy("dueDate", "asc"),
     );
 
     const snapshot = await getDocs(q);
@@ -74,7 +76,7 @@ export const getUserAssignedProducts = async (
  * Get products with assignment status (combined data for UI)
  */
 export const getProductsWithAssignments = async (
-  userId: string
+  userId: string,
 ): Promise<ProductWithAssignment[]> => {
   try {
     console.log("🔍 Fetching assignments for user:", userId);
@@ -96,11 +98,12 @@ export const getProductsWithAssignments = async (
     // For each assignment, get the assigned products
     for (const assignmentDoc of assignmentSnapshot.docs) {
       const assignment = assignmentDoc.data();
+      const assignmentId = assignmentDoc.id; // Get assignment document ID
       const productIds = assignment.productIds || [];
 
       console.log(
         `📦 Processing ${productIds.length} products from assignment:`,
-        assignment.assignmentId
+        assignmentId,
       );
 
       // Get all products
@@ -110,13 +113,20 @@ export const getProductsWithAssignments = async (
           const productsRef = collection(db, "products");
           const productQuery = query(
             productsRef,
-            where("productId", "==", productId)
+            where("productId", "==", productId),
           );
           const productSnapshot = await getDocs(productQuery);
 
           if (!productSnapshot.empty) {
             const productDoc = productSnapshot.docs[0];
             const productData = productDoc.data();
+
+            // Debug: Log image fields
+            console.log(`🖼️ Product ${productData.productId} image fields:`, {
+              imageUrl: productData.imageUrl,
+              imageURL: productData.imageURL,
+              combined: productData.imageUrl || productData.imageURL,
+            });
 
             products.push({
               id: productDoc.id, // Document ID
@@ -128,11 +138,20 @@ export const getProductsWithAssignments = async (
               category: productData.category,
               companyId: productData.companyId,
               branchId: productData.branchId,
-              imageUrl: productData.imageUrl,
+              // Support both imageUrl and imageURL for backward compatibility
+              imageUrl: productData.imageUrl || productData.imageURL,
               createdAt: productData.createdAt?.toDate() || new Date(),
               updatedAt: productData.updatedAt?.toDate() || new Date(),
               status: "pending", // Default status
+              assignmentStatus: assignment.status || "pending",
               beforeCountQty: productData.beforeCount || 0,
+              // Include assignment info
+              assignment: {
+                id: assignmentId,
+                userId: assignment.userId,
+                productId: productData.productId,
+                status: assignment.status || "pending",
+              } as any,
             });
           } else {
             console.log(`⚠️ Product not found: ${productId}`);
@@ -156,13 +175,13 @@ export const getProductsWithAssignments = async (
  */
 export const searchProducts = async (
   companyId: string,
-  searchTerm: string
+  searchTerm: string,
 ): Promise<Product[]> => {
   try {
     const productsRef = collection(db, "products");
     const q = query(
       productsRef,
-      where("companyId", "==", companyId)
+      where("companyId", "==", companyId),
       // Note: Firestore doesn't support full-text search
       // You'll need to implement this client-side or use Algolia
     );
@@ -176,10 +195,145 @@ export const searchProducts = async (
       (p) =>
         p.name.toLowerCase().includes(term) ||
         p.sku.toLowerCase().includes(term) ||
-        p.barcode.includes(term)
+        p.barcode.includes(term),
     );
   } catch (error) {
     console.error("Error searching products:", error);
     throw error;
   }
+};
+
+/**
+ * Setup realtime listener for products with assignments
+ * OPTIMIZED: Uses batch queries instead of individual product queries
+ * Returns unsubscribe function
+ */
+export const subscribeToProductsWithAssignments = (
+  userId: string,
+  onUpdate: (products: ProductWithAssignment[]) => void,
+  onError?: (error: Error) => void,
+): Unsubscribe => {
+  console.log("🔔 Setting up realtime products listener for user:", userId);
+
+  const assignmentsRef = collection(db, "assignments");
+  const q = query(assignmentsRef, where("userId", "==", userId));
+
+  const unsubscribe = onSnapshot(
+    q,
+    async (snapshot) => {
+      console.log(`📋 Assignments updated: ${snapshot.size} items`);
+
+      if (snapshot.empty) {
+        console.log("⚠️ No assignments found");
+        onUpdate([]);
+        return;
+      }
+
+      const products: ProductWithAssignment[] = [];
+
+      // Collect all product IDs and their assignment info
+      const productAssignmentMap = new Map<
+        string,
+        {
+          assignmentId: string;
+          userId: string;
+          isCompleted: boolean;
+          isInProgress: boolean;
+        }
+      >();
+
+      for (const assignmentDoc of snapshot.docs) {
+        const assignment = assignmentDoc.data();
+        const assignmentId = assignmentDoc.id;
+        const productIds = assignment.productIds || [];
+        const completedProductIds = assignment.completedProductIds || [];
+        const inProgressProductIds = assignment.inProgressProductIds || [];
+
+        for (const productId of productIds) {
+          productAssignmentMap.set(productId, {
+            assignmentId,
+            userId: assignment.userId,
+            isCompleted: completedProductIds.includes(productId),
+            isInProgress: inProgressProductIds.includes(productId),
+          });
+        }
+      }
+
+      // OPTIMIZED: Batch fetch products (max 30 per batch due to Firestore 'in' limit)
+      const allProductIds = Array.from(productAssignmentMap.keys());
+      const batchSize = 30;
+      const batches = [];
+
+      for (let i = 0; i < allProductIds.length; i += batchSize) {
+        batches.push(allProductIds.slice(i, i + batchSize));
+      }
+
+      console.log(
+        `📦 Fetching ${allProductIds.length} products in ${batches.length} batch(es)`,
+      );
+
+      for (const batch of batches) {
+        try {
+          const productsRef = collection(db, "products");
+          const productQuery = query(
+            productsRef,
+            where("productId", "in", batch),
+          );
+          const productSnapshot = await getDocs(productQuery);
+
+          for (const productDoc of productSnapshot.docs) {
+            const productData = productDoc.data();
+            const assignmentInfo = productAssignmentMap.get(
+              productData.productId,
+            );
+
+            if (!assignmentInfo) continue;
+
+            // Determine status
+            let status: "pending" | "in_progress" | "completed" = "pending";
+            if (assignmentInfo.isCompleted) {
+              status = "completed";
+            } else if (assignmentInfo.isInProgress) {
+              status = "in_progress";
+            }
+
+            products.push({
+              id: productDoc.id,
+              productId: productData.productId,
+              name: productData.name,
+              sku: productData.productId,
+              barcode: productData.barcode,
+              description: productData.description,
+              category: productData.category,
+              companyId: productData.companyId,
+              branchId: productData.branchId,
+              imageUrl: productData.imageUrl || productData.imageURL,
+              createdAt: productData.createdAt?.toDate() || new Date(),
+              updatedAt: productData.updatedAt?.toDate() || new Date(),
+              status: status,
+              assignmentStatus: status,
+              beforeCountQty: productData.beforeCount || 0,
+              assignment: {
+                id: assignmentInfo.assignmentId,
+                userId: assignmentInfo.userId,
+                productId: productData.productId,
+                status: status,
+              } as any,
+            });
+          }
+        } catch (error) {
+          console.error(`❌ Error fetching product batch:`, error);
+        }
+      }
+
+      console.log(`✅ Loaded ${products.length} products with assignments`);
+      onUpdate(products);
+    },
+    (error) => {
+      console.error("❌ Error in products listener:", error);
+      if (onError) onError(error);
+    },
+  );
+
+  return unsubscribe;
 };

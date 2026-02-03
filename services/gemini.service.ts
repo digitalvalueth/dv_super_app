@@ -16,27 +16,39 @@ export const countBarcodesInImage = async (
   try {
     const startTime = Date.now();
 
+    // Validate base64
+    if (!imageBase64 || imageBase64.length < 100) {
+      throw new Error(
+        "Invalid image data - please try capturing the image again"
+      );
+    }
+
     const model = genAI.getGenerativeModel({
       model: "gemini-2.5-flash",
     });
 
-    const prompt = `You are a barcode detection expert. Look at this image and count ALL visible barcodes.
+    const prompt = `You are a product counting expert for inventory management. Your job is to count the NUMBER OF PRODUCT UNITS (physical items) in this image.
 
-Instructions:
-1. Count every barcode you can see (EAN-13, UPC, Code 128, QR codes, etc.)
-2. Include partially visible barcodes
-3. Count barcodes that are stacked or overlapping
-4. Be thorough and accurate
+IMPORTANT RULES:
+1. Count PHYSICAL PRODUCT UNITS (packages, boxes, bottles, bags, etc.)
+2. Each individual product package = 1 unit
+3. DO NOT count barcodes - count actual products
+4. If you see 3 identical packages, count = 3
+5. If you see 1 package with multiple barcodes, count = 1
+6. Count only the main products, ignore background items
 
-IMPORTANT: Return ONLY a single number representing the total count.
-Do not include any other text, explanation, or formatting.
-If no barcodes are visible, return 0.
+Examples:
+- 3 bottles of shampoo = 3
+- 1 box with barcode = 1
+- 5 packets of snacks = 5
+- 1 product photographed from multiple angles = 1
 
-Examples of valid responses:
-5
-12
-0
-23`;
+Look at the image carefully and count the product units.
+
+RETURN ONLY A SINGLE NUMBER.
+No text, no explanation, just the number.
+
+If unclear or no products visible, return 0.`;
 
     const result = await model.generateContent([
       prompt,
@@ -55,11 +67,9 @@ Examples of valid responses:
     const count = parseInt(text, 10) || 0;
     const processingTime = Date.now() - startTime;
 
-    console.log(`🔍 Gemini barcode count: ${count} (${processingTime}ms)`);
-
     return { count, processingTime };
   } catch (error) {
-    console.error("Error counting barcodes with Gemini:", error);
+    console.error("Error counting products with Gemini:", error);
     throw error;
   }
 };

@@ -61,13 +61,13 @@ export default function OnboardingScreen() {
         } else {
           // Save onboarding completed
           await AsyncStorage.setItem("onboarding_completed", "true");
-          router.replace("/(tabs)/products");
+          router.replace("/(tabs)/home");
         }
       } else {
         // User denied permission, show alert
         Alert.alert(
           "ต้องการสิทธิ์นี้",
-          `แอปต้องการสิทธิ์${steps[currentStep].title}เพื่อใช้งานอย่างเต็มรูปแบบ`
+          `แอปต้องการสิทธิ์${steps[currentStep].title}เพื่อใช้งานอย่างเต็มรูปแบบ`,
         );
       }
     } finally {
@@ -77,7 +77,7 @@ export default function OnboardingScreen() {
 
   const handleSkip = async () => {
     await AsyncStorage.setItem("onboarding_completed", "true");
-    router.replace("/(tabs)/products");
+    router.replace("/(tabs)/home");
   };
 
   const currentStepData = steps[currentStep];
@@ -203,8 +203,8 @@ export default function OnboardingScreen() {
             {isLoading
               ? "กำลังตรวจสอบ..."
               : currentStep === steps.length - 1
-              ? "เริ่มใช้งาน"
-              : "อนุญาต"}
+                ? "เริ่มใช้งาน"
+                : "อนุญาต"}
           </Text>
           {!isLoading && (
             <Ionicons name="arrow-forward" size={20} color="#fff" />

@@ -18,15 +18,17 @@ export default function TabLayout() {
     return <Redirect href="/(login)" />;
   }
 
-  // If user doesn't have company/branch assigned, redirect to pending approval
+  // Allow users without company/branch to enter tabs
+  // They will see a message to check notifications for invitations
   if (!loading && user && (!user.companyId || !user.branchId)) {
-    console.log("🚀 TabLayout - Redirecting to /pending-approval");
-    return <Redirect href="/pending-approval" />;
+    console.log("📍 TabLayout - User without company/branch, allowing access");
   }
 
   console.log("✅ TabLayout - Showing tabs");
 
-  const bgColor = Platform.OS === "android" ? colors.card : null;
+  // iOS: Use transparent background with blur effect
+  // Android: Use solid background color
+  const bgColor = Platform.OS === "android" ? colors.card : undefined;
   const indicatorBgColor =
     Platform.OS === "android" ? colors.border : undefined;
   const foregroundColor = Platform.OS === "android" ? colors.text : undefined;
@@ -35,26 +37,29 @@ export default function TabLayout() {
     <NativeTabs
       backgroundColor={bgColor}
       indicatorColor={indicatorBgColor}
+      // Enable glass effect on iOS 26+ (systemDefault adapts to light/dark mode)
+      blurEffect={Platform.OS === "ios" ? "systemDefault" : undefined}
+      // Keep consistent appearance when scrolling
       disableTransparentOnScrollEdge={false}
       iconColor={foregroundColor}
       labelStyle={{
         color: foregroundColor,
       }}
     >
-      <NativeTabs.Trigger name="products">
-        <Label>สินค้า</Label>
+      <NativeTabs.Trigger name="home">
+        <Label>หน้าแรก</Label>
         {Platform.OS === "ios" ? (
-          <Icon sf="cube" />
+          <Icon sf="house" />
         ) : (
-          <Ionicons name="cube-outline" size={24} color={foregroundColor} />
+          <Ionicons name="home-outline" size={24} color={foregroundColor} />
         )}
       </NativeTabs.Trigger>
-      <NativeTabs.Trigger name="history">
-        <Label>ประวัติ</Label>
+      <NativeTabs.Trigger name="services">
+        <Label>บริการ</Label>
         {Platform.OS === "ios" ? (
-          <Icon sf="clock" />
+          <Icon sf="square.grid.2x2" />
         ) : (
-          <Ionicons name="time-outline" size={24} color={foregroundColor} />
+          <Ionicons name="apps-outline" size={24} color={foregroundColor} />
         )}
       </NativeTabs.Trigger>
       <NativeTabs.Trigger name="settings">

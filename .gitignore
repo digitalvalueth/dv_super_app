@@ -35,6 +35,11 @@ yarn-error.*
 .env*
 .env
 .env.*
+
+# Firebase config files (EAS handles these)
+google-services.json
+GoogleService-Info.plist
+
 # typescript
 *.tsbuildinfo
 
@@ -43,3 +48,7 @@ app-example
 # generated native folders
 /ios
 /android
+
+
+# temp folder
+/demo_1

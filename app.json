@@ -1,16 +1,16 @@
 {
   "expo": {
-    "name": "super-fitt",
-    "slug": "super-fitt",
+    "name": "FITT BSA",
+    "slug": "fitt-bsa",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
-    "scheme": "superfitt",
+    "scheme": "fittbsa",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.itswatthachai.superfitt",
+      "bundleIdentifier": "com.digitalvalue.fittbsa",
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false,
         "NSCameraUsageDescription": "ใช้กล้องเพื่อถ่ายรูปสินค้าสำหรับนับจำนวน",
@@ -19,7 +19,7 @@
         "CFBundleURLTypes": [
           {
             "CFBundleURLSchemes": [
-              "com.googleusercontent.apps.1095128507689-8hprqq9d073m5ckief3r7riav9vg7oi0"
+              "com.googleusercontent.apps.1095128507689-ha6nlvo9t0dooacrks93su4ht30mtqnb"
             ]
           }
         ]
@@ -34,13 +34,14 @@
       },
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false,
-      "package": "com.itswatthachai.superfitt",
+      "package": "com.digitalvalue.fittbsa",
       "permissions": [
-        "CAMERA",
-        "READ_EXTERNAL_STORAGE",
-        "WRITE_EXTERNAL_STORAGE",
-        "ACCESS_FINE_LOCATION",
-        "ACCESS_COARSE_LOCATION"
+        "android.permission.CAMERA",
+        "android.permission.READ_EXTERNAL_STORAGE",
+        "android.permission.WRITE_EXTERNAL_STORAGE",
+        "android.permission.ACCESS_FINE_LOCATION",
+        "android.permission.ACCESS_COARSE_LOCATION",
+        "android.permission.RECORD_AUDIO"
       ]
     },
     "web": {
@@ -88,8 +89,9 @@
     "extra": {
       "router": {},
       "eas": {
-        "projectId": "7a4f9a1c-3c6d-40d0-9682-23e79ee45337"
+        "projectId": "fc7bbd1e-59a8-4f4c-abe7-4ae3a73df297"
       }
-    }
+    },
+    "owner": "digitalvalue"
   }
 }

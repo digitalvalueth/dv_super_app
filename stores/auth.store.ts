@@ -1,5 +1,7 @@
+import { db } from "@/config/firebase";
 import { getCurrentUser, onAuthStateChange } from "@/services/auth.service";
 import { User } from "@/types";
+import { doc, onSnapshot } from "firebase/firestore";
 import { create } from "zustand";
 
 interface AuthState {
@@ -12,7 +14,7 @@ interface AuthState {
   setLoading: (loading: boolean) => void;
   setError: (error: string | null) => void;
   clearError: () => void;
-  initialize: () => Promise<void>;
+  initialize: () => void;
   logout: () => void;
 }
 
@@ -29,24 +31,52 @@ export const useAuthStore = create<AuthState>((set) => ({
 
   clearError: () => set({ error: null }),
 
-  initialize: async () => {
+  initialize: () => {
     set({ loading: true });
 
     try {
+      let userUnsubscribe: (() => void) | null = null;
+
       // Listen to auth state changes
-      const unsubscribe = onAuthStateChange(async (firebaseUser) => {
+      onAuthStateChange(async (firebaseUser) => {
         if (firebaseUser) {
-          console.log("🔐 User authenticated, fetching user data...");
-          const userData = await getCurrentUser();
-          set({ user: userData, loading: false });
+          console.log("🔐 User authenticated, setting up realtime listener...");
+
+          // Setup realtime listener for user document
+          const userDocRef = doc(db, "users", firebaseUser.uid);
+          userUnsubscribe = onSnapshot(
+            userDocRef,
+            (docSnapshot) => {
+              if (docSnapshot.exists()) {
+                const userData = docSnapshot.data() as User;
+                console.log("✅ User data updated:", userData.email);
+                set({ user: userData, loading: false });
+              } else {
+                console.log("⚠️ User document doesn't exist");
+                set({ user: null, loading: false });
+              }
+            },
+            (error) => {
+              console.error("❌ Error in user listener:", error);
+              // Fallback to single fetch
+              getCurrentUser().then((userData) => {
+                set({ user: userData, loading: false });
+              });
+            }
+          );
         } else {
           console.log("🔓 No authenticated user");
+          // Cleanup user listener if exists
+          if (userUnsubscribe) {
+            userUnsubscribe();
+            userUnsubscribe = null;
+          }
           set({ user: null, loading: false });
         }
       });
 
-      // Return unsubscribe function for cleanup
-      return unsubscribe;
+      // Cleanup function (not returned, handled by store itself)
+      // Store will call authUnsubscribe and userUnsubscribe when needed
     } catch (error: any) {
       console.error("❌ Auth initialization error:", error);
       set({ error: error.message, user: null, loading: false });
