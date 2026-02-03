@@ -88,6 +88,10 @@ export default function LoginScreen() {
       }
     } catch (error: any) {
       console.error("❌ Google Sign-In Error:", error);
+      console.error("❌ Error Code:", error.code);
+      console.error("❌ Error Message:", error.message);
+      console.error("❌ Error Stack:", error.stack);
+      console.error("❌ Full Error Object:", JSON.stringify(error, null, 2));
 
       if (error.code === "SIGN_IN_CANCELLED") {
         console.log("ℹ️ User cancelled sign-in");
@@ -96,8 +100,22 @@ export default function LoginScreen() {
       } else if (error.code === "PLAY_SERVICES_NOT_AVAILABLE") {
         alert("Google Play Services ไม่พร้อมใช้งาน");
       } else {
+        // แสดง error แบบละเอียด
+        const errorDetails =
+          `
+🚨 Google Sign-In Failed
+
+` +
+          `❌ Error Code: ${error.code || "N/A"}\n` +
+          `❌ Message: ${error.message || "Unknown error"}\n\n` +
+          `📱 Config Check:\n` +
+          `iOS Client: ${GOOGLE_IOS_CLIENT_ID ? "✅" : "❌"}\n` +
+          `Android Client: ${GOOGLE_ANDROID_CLIENT_ID ? "✅" : "❌"}\n` +
+          `Web Client: ${GOOGLE_WEB_CLIENT_ID ? "✅" : "❌"}\n\n` +
+          `💡 Tip: Check console logs for details`;
+
         setError(error.message || "Failed to sign in");
-        alert("เข้าสู่ระบบไม่สำเร็จ: " + error.message);
+        alert(errorDetails);
       }
     } finally {
       setIsLoading(false);
