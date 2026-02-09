@@ -1,10 +1,13 @@
+import { Ionicons } from "@expo/vector-icons";
 import {
   DarkTheme,
   DefaultTheme,
   ThemeProvider,
 } from "@react-navigation/native";
+import { useFonts } from "expo-font";
 import * as Notifications from "expo-notifications";
 import { Stack, useRouter } from "expo-router";
+import * as SplashScreen from "expo-splash-screen";
 import { StatusBar } from "expo-status-bar";
 import { useCallback, useEffect, useRef } from "react";
 import "react-native-reanimated";
@@ -17,6 +20,9 @@ import {
 } from "@/services/push-notification.service";
 import { useAuthStore } from "@/stores/auth.store";
 
+// Prevent auto-hiding splash screen
+SplashScreen.preventAutoHideAsync();
+
 export default function RootLayout() {
   const colorScheme = useColorScheme();
   const router = useRouter();
@@ -24,6 +30,17 @@ export default function RootLayout() {
   const loading = useAuthStore((state) => state.loading);
   const user = useAuthStore((state) => state.user);
   const responseListener = useRef<Notifications.Subscription | null>(null);
+
+  // Load fonts
+  const [fontsLoaded] = useFonts({
+    ...Ionicons.font,
+  });
+
+  useEffect(() => {
+    if (fontsLoaded) {
+      SplashScreen.hideAsync();
+    }
+  }, [fontsLoaded]);
 
   useEffect(() => {
     // Initialize auth state
@@ -70,8 +87,8 @@ export default function RootLayout() {
     }
   }, [user?.uid, handleNotificationTap]);
 
-  // Show loading screen while initializing
-  if (loading) {
+  // Show loading screen while initializing or loading fonts
+  if (loading || !fontsLoaded) {
     return null; // or return a loading component
   }
 

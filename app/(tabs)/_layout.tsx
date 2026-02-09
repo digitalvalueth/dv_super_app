@@ -1,6 +1,5 @@
 import { useAuthStore } from "@/stores/auth.store";
 import { useTheme } from "@/stores/theme.store";
-import { Ionicons } from "@expo/vector-icons";
 import { Redirect } from "expo-router";
 import { Icon, Label, NativeTabs } from "expo-router/unstable-native-tabs";
 import { Platform } from "react-native";
@@ -47,28 +46,16 @@ export default function TabLayout() {
       }}
     >
       <NativeTabs.Trigger name="home">
+        <Icon sf="house" />
         <Label>หน้าแรก</Label>
-        {Platform.OS === "ios" ? (
-          <Icon sf="house" />
-        ) : (
-          <Ionicons name="home-outline" size={24} color={foregroundColor} />
-        )}
       </NativeTabs.Trigger>
       <NativeTabs.Trigger name="services">
+        <Icon sf="square.grid.2x2" />
         <Label>บริการ</Label>
-        {Platform.OS === "ios" ? (
-          <Icon sf="square.grid.2x2" />
-        ) : (
-          <Ionicons name="apps-outline" size={24} color={foregroundColor} />
-        )}
       </NativeTabs.Trigger>
       <NativeTabs.Trigger name="settings">
+        <Icon sf="person" />
         <Label>โปรไฟล์</Label>
-        {Platform.OS === "ios" ? (
-          <Icon sf="person" />
-        ) : (
-          <Ionicons name="person-outline" size={24} color={foregroundColor} />
-        )}
       </NativeTabs.Trigger>
     </NativeTabs>
   );
