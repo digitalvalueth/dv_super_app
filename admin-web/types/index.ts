@@ -19,6 +19,8 @@ export interface User {
   branchCode?: string;
   branchName?: string;
   managedBranchIds?: string[]; // For managers who control multiple branches
+  supervisorId?: string; // ID of supervisor (for employees)
+  supervisorName?: string; // Name of supervisor
   phoneNumber?: string;
   photoURL?: string;
   status?: "pending" | "active" | "inactive" | "suspended";

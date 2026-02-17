@@ -26,9 +26,10 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
       } else if (
         userData.role !== "admin" &&
         userData.role !== "manager" &&
-        userData.role !== "super_admin"
+        userData.role !== "super_admin" &&
+        userData.role !== "supervisor"
       ) {
-        // มี userData แต่ role ไม่ใช่ admin/manager/super_admin → ไป unauthorized
+        // มี userData แต่ role ไม่ใช่ admin/manager/super_admin/supervisor → ไป unauthorized
         console.log(
           "AuthGuard: Redirecting to unauthorized, role:",
           userData.role,
@@ -69,7 +70,8 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
     !userData ||
     (userData.role !== "admin" &&
       userData.role !== "manager" &&
-      userData.role !== "super_admin")
+      userData.role !== "super_admin" &&
+      userData.role !== "supervisor")
   ) {
     return null;
   }

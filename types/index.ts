@@ -13,6 +13,8 @@ export interface User {
   branchCode?: string;
   branchName?: string;
   role?: UserRole; // Optional until admin assigns
+  supervisorId?: string; // ID of supervisor (for employees)
+  supervisorName?: string; // Name of supervisor
   photoURL?: string;
   createdAt: Timestamp;
   updatedAt: Timestamp;

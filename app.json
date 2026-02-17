@@ -11,6 +11,10 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.digitalvalue.fittbsa",
+      "associatedDomains": [
+        "applinks:fittbsa.com",
+        "applinks:admin.fittbsa.com"
+      ],
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false,
         "NSCameraUsageDescription": "ใช้กล้องเพื่อถ่ายรูปสินค้าสำหรับนับจำนวน",
@@ -19,11 +23,13 @@
         "CFBundleURLTypes": [
           {
             "CFBundleURLSchemes": [
-              "com.googleusercontent.apps.1095128507689-ha6nlvo9t0dooacrks93su4ht30mtqnb"
+              "com.googleusercontent.apps.1095128507689-ha6nlvo9t0dooacrks93su4ht30mtqnb",
+              "fittbsa"
             ]
           }
         ]
-      }
+      },
+      "appleTeamId": "X66E4729UG"
     },
     "android": {
       "adaptiveIcon": {
@@ -35,6 +41,25 @@
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false,
       "package": "com.digitalvalue.fittbsa",
+      "intentFilters": [
+        {
+          "action": "VIEW",
+          "autoVerify": true,
+          "data": [
+            {
+              "scheme": "https",
+              "host": "fittbsa.com",
+              "pathPrefix": "/invitation"
+            },
+            {
+              "scheme": "https",
+              "host": "admin.fittbsa.com",
+              "pathPrefix": "/invitation"
+            }
+          ],
+          "category": ["BROWSABLE", "DEFAULT"]
+        }
+      ],
       "permissions": [
         "android.permission.CAMERA",
         "android.permission.READ_EXTERNAL_STORAGE",

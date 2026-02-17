@@ -23,14 +23,30 @@ import { useState } from "react";
 
 const navigation = [
   { name: "แดชบอร์ด", href: "/dashboard", icon: LayoutDashboard },
-  { name: "ผู้ใช้งาน", href: "/dashboard/users", icon: Users },
+  {
+    name: "Supervisor Dashboard",
+    href: "/dashboard/supervisor",
+    icon: Shield,
+    supervisorOnly: true, // เฉพาะ Supervisor
+  },
+  {
+    name: "ผู้ใช้งาน",
+    href: "/dashboard/users",
+    icon: Users,
+    hideForSupervisor: true,
+  },
   {
     name: "บริษัท",
     href: "/dashboard/companies",
     icon: Factory,
     superAdminOnly: true, // เฉพาะ Super Admin
   },
-  { name: "สาขา", href: "/dashboard/branches", icon: Building2 },
+  {
+    name: "สาขา",
+    href: "/dashboard/branches",
+    icon: Building2,
+    hideForSupervisor: true,
+  },
   {
     name: "Manager",
     href: "/dashboard/managers",
@@ -41,9 +57,19 @@ const navigation = [
   { name: "ข้อมูลการนับ", href: "/dashboard/counting", icon: ClipboardList },
   { name: "เช็คชื่อพนักงาน", href: "/dashboard/attendance", icon: Clock },
   { name: "รับสินค้า", href: "/dashboard/delivery", icon: Truck },
-  { name: "ค่าคอมมิชชั่น", href: "/dashboard/commission", icon: DollarSign },
+  {
+    name: "ค่าคอมมิชชั่น",
+    href: "/dashboard/commission",
+    icon: DollarSign,
+    hideForSupervisor: true,
+  },
   { name: "รายงาน", href: "/dashboard/reports", icon: BarChart3 },
-  { name: "เชิญผู้ใช้", href: "/dashboard/invitations", icon: Mail },
+  {
+    name: "เชิญผู้ใช้",
+    href: "/dashboard/invitations",
+    icon: Mail,
+    hideForSupervisor: true,
+  },
 ];
 
 export function Sidebar() {
@@ -56,6 +82,8 @@ export function Sidebar() {
   // Check if user is admin or super admin
   const isAdminOrAbove =
     userData?.role === "admin" || userData?.role === "super_admin";
+  // Check if user is supervisor
+  const isSupervisor = userData?.role === "supervisor";
 
   // Filter navigation based on user role
   const filteredNavigation = navigation.filter((item) => {
@@ -64,6 +92,12 @@ export function Sidebar() {
     }
     if (item.adminOnly) {
       return isAdminOrAbove;
+    }
+    if (item.supervisorOnly) {
+      return isSupervisor;
+    }
+    if (item.hideForSupervisor && isSupervisor) {
+      return false;
     }
     return true;
   });

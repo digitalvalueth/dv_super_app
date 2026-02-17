@@ -248,7 +248,7 @@ export default function ProfileScreen() {
           icon: "information-circle",
           label: "เกี่ยวกับ",
           onPress: () =>
-            Alert.alert("Super Fitt", "Version 1.0.0\n\n© 2026 Super Fitt"),
+            Alert.alert("FITT BSA", "Version 1.0.0\n\n© 2026 FITT BSA"),
         },
       ],
     },
@@ -461,7 +461,7 @@ export default function ProfileScreen() {
 
         <View style={styles.footer}>
           <Text style={[styles.footerText, { color: colors.textSecondary }]}>
-            Super Fitt v1.0.0
+            FITT BSA v1.0.0
           </Text>
         </View>
       </ScrollView>

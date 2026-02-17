@@ -1,0 +1,15 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // ==================== DEVELOPMENT RULES - FULLY OPEN ====================
+    // ⚠️ WARNING: These rules are for DEVELOPMENT only
+    // DO NOT use these rules in PRODUCTION
+    // Allows ALL operations without authentication for seeding and testing
+    
+    // Allow everyone to read/write everything (no authentication required)
+    match /{document=**} {
+      allow read, write: if true;
+    }
+  }
+}
