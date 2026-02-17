@@ -37,17 +37,26 @@ steps:
       - "--build-arg"
       - "FROM_EMAIL=${_FROM_EMAIL}"
       - "-t"
-      - "asia-southeast1-docker.pkg.dev/$PROJECT_ID/fittbsa/admin-web-dev:latest"
+      - "gcr.io/$PROJECT_ID/admin-web-dev:$COMMIT_SHA"
+      - "-t"
+      - "gcr.io/$PROJECT_ID/admin-web-dev:latest"
       - "-f"
       - "Dockerfile"
       - "."
 
   # ==================== PUSH IMAGE ====================
   - name: "gcr.io/cloud-builders/docker"
+    id: "push-sandbox-sha"
+    args:
+      - "push"
+      - "gcr.io/$PROJECT_ID/admin-web-dev:$COMMIT_SHA"
+    waitFor: ["build-sandbox"]
+
+  - name: "gcr.io/cloud-builders/docker"
     id: "push-sandbox-latest"
     args:
       - "push"
-      - "asia-southeast1-docker.pkg.dev/$PROJECT_ID/fittbsa/admin-web-dev:latest"
+      - "gcr.io/$PROJECT_ID/admin-web-dev:latest"
     waitFor: ["build-sandbox"]
 
   # ==================== DEPLOY TO CLOUD RUN ====================
@@ -59,7 +68,7 @@ steps:
       - "deploy"
       - "fittbsa-admin-web-dev"
       - "--image"
-      - "asia-southeast1-docker.pkg.dev/$PROJECT_ID/fittbsa/admin-web-dev:latest"
+      - "gcr.io/$PROJECT_ID/admin-web-dev:$COMMIT_SHA"
       - "--region"
       - "asia-southeast1"
       - "--platform"
@@ -83,8 +92,8 @@ steps:
 
 # ==================== IMAGES ====================
 images:
-  - "asia-southeast1-docker.pkg.dev/$PROJECT_ID/fittbsa/admin-web-dev:$COMMIT_SHA"
-  - "asia-southeast1-docker.pkg.dev/$PROJECT_ID/fittbsa/admin-web-dev:latest"
+  - "gcr.io/$PROJECT_ID/admin-web-dev:$COMMIT_SHA"
+  - "gcr.io/$PROJECT_ID/admin-web-dev:latest"
 
 # ==================== BUILD OPTIONS ====================
 options:
