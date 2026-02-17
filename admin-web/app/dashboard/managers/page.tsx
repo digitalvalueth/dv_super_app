@@ -70,7 +70,7 @@ export default function ManagersPage() {
       branchesSnapshot.forEach((doc) => {
         branchesData.push({
           id: doc.id,
-          ...doc.data(),
+          ...(doc.data() as any),
         } as Branch);
       });
       setBranches(branchesData);

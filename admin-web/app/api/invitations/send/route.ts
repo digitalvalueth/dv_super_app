@@ -1,7 +1,7 @@
-import { adminAuth, adminDb } from "@/lib/firebase-admin";
 import { sendInvitationEmail } from "@/lib/email";
-import { NextRequest, NextResponse } from "next/server";
+import { adminAuth, adminDb } from "@/lib/firebase-admin";
 import crypto from "crypto";
+import { NextRequest, NextResponse } from "next/server";
 
 /**
  * POST /api/invitations/send
@@ -132,7 +132,8 @@ export async function POST(request: NextRequest) {
       branchId: branchId || null,
       branchName: branchName,
       branchCode: branchCode,
-      supervisorId: senderData.role === "supervisor" ? senderSnapshot.docs[0].id : null,
+      supervisorId:
+        senderData.role === "supervisor" ? senderSnapshot.docs[0].id : null,
       supervisorName: senderData.role === "supervisor" ? senderData.name : null,
       token: invitationToken,
       status: "pending",

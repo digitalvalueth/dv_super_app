@@ -103,7 +103,7 @@ export default function BranchesPage() {
 
       const branchesData: BranchWithStats[] = [];
       branchesSnapshot.forEach((doc) => {
-        const data = doc.data();
+        const data = doc.data() as any;
         branchesData.push({
           id: doc.id,
           companyId: data.companyId,
@@ -120,7 +120,7 @@ export default function BranchesPage() {
 
       const branchUserCount: Record<string, number> = {};
       usersSnapshot.forEach((doc) => {
-        const data = doc.data();
+        const data = doc.data() as any;
         const branchId = data.branchId;
         if (branchId) {
           branchUserCount[branchId] = (branchUserCount[branchId] || 0) + 1;

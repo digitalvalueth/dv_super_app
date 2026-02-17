@@ -86,7 +86,7 @@ export default function PendingProductsPage() {
       });
 
       snapshot.forEach((doc) => {
-        const data = doc.data();
+        const data = doc.data() as any;
         productsData.push({
           id: doc.id,
           productId: data.productId,

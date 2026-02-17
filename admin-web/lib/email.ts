@@ -24,7 +24,6 @@ export async function sendInvitationEmail(data: InvitationEmailData) {
   } = data;
 
   const roleText = role === "employee" ? "พนักงาน" : "ผู้จัดการ";
-  const branchText = branchName ? `สาขา ${branchName}` : "";
 
   try {
     await resend.emails.send({

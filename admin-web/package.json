@@ -10,6 +10,7 @@
     "migrate:fix-image-urls": "npx tsx scripts/fix-image-url-encoding.ts"
   },
   "dependencies": {
+    "date-fns": "^4.1.0",
     "dotenv": "^17.2.3",
     "exceljs": "^4.4.0",
     "jspdf": "^4.0.0",

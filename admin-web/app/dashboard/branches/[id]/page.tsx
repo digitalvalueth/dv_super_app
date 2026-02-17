@@ -141,7 +141,7 @@ export default function BranchDetailPage() {
 
       const usersData: UserWithAssignments[] = [];
       usersSnapshot.forEach((docSnap) => {
-        const data = docSnap.data();
+        const data = docSnap.data() as any;
         usersData.push({
           id: docSnap.id,
           uid: data.uid,
@@ -166,7 +166,7 @@ export default function BranchDetailPage() {
 
       const assignmentsMap = new Map<string, Assignment[]>();
       assignmentsSnapshot.forEach((docSnap) => {
-        const data = docSnap.data();
+        const data = docSnap.data() as any;
         const userId = data.userId;
         if (userId) {
           const existing = assignmentsMap.get(userId) || [];
@@ -208,7 +208,7 @@ export default function BranchDetailPage() {
       const productsSnapshot = await getDocs(productsQuery);
       const productsData: Product[] = [];
       productsSnapshot.forEach((docSnap) => {
-        const data = docSnap.data();
+        const data = docSnap.data() as any;
         productsData.push({
           id: docSnap.id,
           productId: data.productId || data.sku || "",

@@ -11,10 +11,7 @@ export async function POST(request: NextRequest) {
     const { token, uid } = body;
 
     if (!token) {
-      return NextResponse.json(
-        { error: "Token is required" },
-        { status: 400 },
-      );
+      return NextResponse.json({ error: "Token is required" }, { status: 400 });
     }
 
     if (!uid) {
@@ -65,7 +62,9 @@ export async function POST(request: NextRequest) {
       const authUser = await adminAuth.getUser(uid);
 
       // Verify email matches
-      if (authUser.email?.toLowerCase() !== invitationData.email.toLowerCase()) {
+      if (
+        authUser.email?.toLowerCase() !== invitationData.email.toLowerCase()
+      ) {
         return NextResponse.json(
           { error: "Email does not match invitation" },
           { status: 403 },

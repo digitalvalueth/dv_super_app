@@ -107,7 +107,7 @@ export default function UsersPage() {
       const usersData: User[] = [];
 
       usersSnapshot.forEach((doc) => {
-        const data = doc.data();
+        const data = doc.data() as any;
 
         usersData.push({
           id: doc.id,
@@ -134,7 +134,7 @@ export default function UsersPage() {
         const companiesSnapshot = await getDocs(collection(db, "companies"));
         const companiesData: Company[] = [];
         companiesSnapshot.forEach((doc) => {
-          const data = doc.data();
+          const data = doc.data() as any;
           companiesData.push({
             id: doc.id,
             name: data.name,
@@ -148,7 +148,7 @@ export default function UsersPage() {
       const branchesSnapshot = await getDocs(branchesQuery);
       const branchesData: Branch[] = [];
       branchesSnapshot.forEach((doc) => {
-        const data = doc.data();
+        const data = doc.data() as any;
         branchesData.push({
           id: doc.id,
           companyId: data.companyId,

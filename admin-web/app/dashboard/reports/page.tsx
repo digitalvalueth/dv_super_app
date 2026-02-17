@@ -53,7 +53,7 @@ export default function ReportsPage() {
 
         const sessions: CountingSession[] = [];
         sessionsSnapshot.forEach((doc) => {
-          const data = doc.data();
+          const data = doc.data() as any;
           sessions.push({
             id: doc.id,
             userId: data.userId,

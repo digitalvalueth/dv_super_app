@@ -88,6 +88,33 @@ export default function RootLayout() {
     }
   }, [user?.uid, handleNotificationTap]);
 
+  // Handle deep link callback
+  const handleDeepLink = useCallback(
+    (url: string) => {
+      console.log("🔗 Deep link received:", url);
+
+      // Parse URL
+      const { hostname, path, queryParams } = Linking.parse(url);
+
+      // Handle invitation link
+      if (path === "invitation" || hostname === "invitation") {
+        const token = queryParams?.token;
+        if (token) {
+          console.log("📧 Invitation token:", token);
+          // User is already authenticated from web
+          // Just navigate to appropriate screen
+          if (user) {
+            router.push("/(tabs)" as any);
+          } else {
+            // If not logged in, go to login with invitation token
+            router.push(`/(login)?invitation=${token}` as any);
+          }
+        }
+      }
+    },
+    [user, router],
+  );
+
   // Handle deep links (invitation links)
   useEffect(() => {
     // Handle initial URL (when app is opened from a link)
@@ -108,33 +135,7 @@ export default function RootLayout() {
     return () => {
       subscription.remove();
     };
-  }, []);
-
-  const handleDeepLink = useCallback(
-    (url: string) => {
-      console.log("🔗 Deep link received:", url);
-
-      // Parse URL
-      const { hostname, path, queryParams } = Linking.parse(url);
-
-      // Handle invitation link
-      if (path === "invitation" || hostname === "invitation") {
-        const token = queryParams?.token;
-        if (token) {
-          console.log("📧 Invitation token:", token);
-          // User is already authenticated from web
-          // Just navigate to appropriate screen
-          if (user) {
-            router.push("/(tabs)/");
-          } else {
-            // If not logged in, go to login with invitation token
-            router.push(`/(login)?invitation=${token}`);
-          }
-        }
-      }
-    },
-    [user, router],
-  );
+  }, [handleDeepLink]);
 
   // Show loading screen while initializing or loading fonts
   if (loading || !fontsLoaded) {

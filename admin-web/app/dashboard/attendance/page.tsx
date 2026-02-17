@@ -97,7 +97,7 @@ export default function AttendancePage() {
 
       const checkInsData: CheckIn[] = [];
       checkInsSnapshot.forEach((doc) => {
-        const data = doc.data();
+        const data = doc.data() as any;
         checkInsData.push({
           id: doc.id,
           userId: data.userId,

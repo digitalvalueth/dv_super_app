@@ -62,7 +62,7 @@ export default function CountingPage() {
 
       const sessionsData: CountingSession[] = [];
       sessionsSnapshot.forEach((doc) => {
-        const data = doc.data();
+        const data = doc.data() as any;
         sessionsData.push({
           id: doc.id,
           userId: data.userId,
