@@ -1,0 +1,20 @@
+{
+  "applinks": {
+    "apps": [],
+    "details": [
+      {
+        "appID": "X66E4729UG.com.digitalvalue.fittbsa",
+        "paths": [
+          "/invitation/*",
+          "/onboarding",
+          "/login"
+        ]
+      }
+    ]
+  },
+  "webcredentials": {
+    "apps": [
+      "X66E4729UG.com.digitalvalue.fittbsa"
+    ]
+  }
+}

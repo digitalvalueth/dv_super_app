@@ -110,7 +110,7 @@ export default function ProductsPage() {
       const categoriesSet = new Set<string>();
 
       productsSnapshot.forEach((doc) => {
-        const data = doc.data();
+        const data = doc.data() as any;
         if (data.category) categoriesSet.add(data.category);
 
         productsData.push({
@@ -137,7 +137,7 @@ export default function ProductsPage() {
         const companiesSnapshot = await getDocs(collection(db, "companies"));
         const companiesData: Company[] = [];
         companiesSnapshot.forEach((doc) => {
-          const data = doc.data();
+          const data = doc.data() as any;
           companiesData.push({
             id: doc.id,
             name: data.name || "",
@@ -151,7 +151,7 @@ export default function ProductsPage() {
       const branchesSnapshot = await getDocs(branchesQuery);
       const branchesData: Branch[] = [];
       branchesSnapshot.forEach((doc) => {
-        const data = doc.data();
+        const data = doc.data() as any;
         branchesData.push({
           id: doc.id,
           companyId: data.companyId,
@@ -422,7 +422,7 @@ export default function ProductsPage() {
 
       // For each employee, create or update assignment
       for (const userDoc of usersSnapshot.docs) {
-        const user = userDoc.data();
+        const user = userDoc.data() as any;
         const userId = userDoc.id;
         const userBranchId = user.branchId;
         const userCompanyId = user.companyId;

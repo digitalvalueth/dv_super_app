@@ -41,19 +41,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           if (userDoc.exists()) {
             const data = userDoc.data();
 
-            // Auto-activate admin/manager ถ้า status ยังเป็น pending
+            // Auto-activate admin/manager/super_admin ถ้า status ยังเป็น pending
             if (
-              (data.role === "admin" || data.role === "manager") &&
+              (data.role === "admin" ||
+                data.role === "manager" ||
+                data.role === "super_admin") &&
               data.status === "pending"
             ) {
-              console.log("Auto-activating admin/manager user...");
+              console.log("Auto-activating admin/manager/super_admin user...");
               await setDoc(
                 userDocRef,
                 {
                   status: "active",
                   updatedAt: serverTimestamp(),
                 },
-                { merge: true }
+                { merge: true },
               );
             }
 
@@ -120,7 +122,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                     osName,
                     osVersion: "N/A",
                   },
-                }
+                },
               );
             } catch (logError) {
               console.error("Error creating login log:", logError);
@@ -188,7 +190,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                     osName,
                     osVersion: "N/A",
                   },
-                }
+                },
               );
             } catch (logError) {
               console.error("Error creating login log:", logError);

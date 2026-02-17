@@ -151,7 +151,7 @@ export default function LoginScreen() {
         </View>
 
         {/* App Name */}
-        <Text style={[styles.title, { color: colors.text }]}>Super Fitt</Text>
+        <Text style={[styles.title, { color: colors.text }]}>FITT BSA</Text>
         <Text style={[styles.subtitle, { color: colors.textSecondary }]}>
           ระบบนับสินค้าด้วย AI
         </Text>

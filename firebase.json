@@ -1,0 +1,12 @@
+{
+  "firestore": [
+    {
+      "rules": "firestore.rules",
+      "database": "fittsuperapp-dev"
+    },
+    {
+      "rules": "firestore.rules",
+      "database": "fittsuperapp-prod"
+    }
+  ]
+}

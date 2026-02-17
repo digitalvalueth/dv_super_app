@@ -126,7 +126,7 @@ export default function CommissionPage() {
       const sessions: CountingSession[] = [];
 
       sessionsSnapshot.forEach((docSnapshot) => {
-        const data = docSnapshot.data();
+        const data = docSnapshot.data() as any;
         sessions.push({
           id: docSnapshot.id,
           userId: data.userId,

@@ -151,7 +151,7 @@ export default function DeliveryPage() {
       const productsData: Product[] = [];
 
       snapshot.forEach((doc) => {
-        const data = doc.data();
+        const data = doc.data() as any;
         productsData.push({
           id: doc.id,
           name: data.name,
@@ -186,7 +186,7 @@ export default function DeliveryPage() {
       const branchesData: { id: string; name: string }[] = [];
 
       snapshot.forEach((doc) => {
-        const data = doc.data();
+        const data = doc.data() as any;
         branchesData.push({
           id: doc.id,
           name: data.name,
@@ -232,7 +232,7 @@ export default function DeliveryPage() {
       const shipmentsData: Shipment[] = [];
 
       shipmentsSnapshot.forEach((doc) => {
-        const data = doc.data();
+        const data = doc.data() as any;
         shipmentsData.push({
           id: doc.id,
           trackingNumber: data.trackingNumber,
@@ -275,7 +275,7 @@ export default function DeliveryPage() {
       const receivesData: DeliveryReceive[] = [];
 
       receivesSnapshot.forEach((doc) => {
-        const data = doc.data();
+        const data = doc.data() as any;
         // Filter by company if needed
         if (companyId && data.branchId) {
           // We can check branch belongs to company, but for now just include all

@@ -68,7 +68,7 @@ export default function StockComparisonPage() {
       >();
 
       sessionsSnapshot.forEach((doc) => {
-        const data = doc.data();
+        const data = doc.data() as any;
         const productId = data.productId;
         const existing = productCountMap.get(productId);
         const createdAt = data.createdAt?.toDate();

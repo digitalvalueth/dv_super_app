@@ -164,7 +164,29 @@ You can update your profile information directly in the App.
 
 ### 3. Deletion
 
-You can request deletion of your account and associated data by contacting us at privacy@digitalvalue.co.th.
+You can request deletion of your account and associated data. For detailed instructions, visit:
+
+**🗑️ Account Deletion Guide**: https://digitalvalueth.github.io/dv_super_app/data-deletion.html
+
+Or email us directly at: privacy@digitalvalue.co.th
+
+**Deletion Process:**
+
+1. Send an email to privacy@digitalvalue.co.th with your name and registered email
+2. We will verify your identity (within 3 business days)
+3. Your account will be deactivated (within 7 days)
+4. All personal data will be permanently deleted (within 30 days)
+5. Data removed from backups (within 90 days)
+
+**What Gets Deleted:**
+
+- Account information (name, email, profile photo)
+- All attendance records
+- All stock counting records
+- All photos and location data
+- App usage data
+
+**Note:** Some data may be retained for legal compliance or employer record-keeping requirements.
 
 ### 4. Data Portability
 

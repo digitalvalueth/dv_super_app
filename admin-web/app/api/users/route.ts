@@ -15,8 +15,9 @@ if (!getApps().length) {
   });
 }
 
-const db = getFirestore();
-const databaseId = process.env.NEXT_PUBLIC_FIRESTORE_DATABASE_ID || "(default)";
+// Get Firestore instance (using default database for now)
+const firestore = getFirestore();
+const db = firestore;
 
 // GET: ดึงรายการ users ทั้งหมด
 export async function GET(request: Request) {
@@ -27,7 +28,7 @@ export async function GET(request: Request) {
     if (!companyId) {
       return NextResponse.json(
         { error: "companyId is required" },
-        { status: 400 }
+        { status: 400 },
       );
     }
 
@@ -47,7 +48,7 @@ export async function GET(request: Request) {
     console.error("Error fetching users:", error);
     return NextResponse.json(
       { error: "Failed to fetch users", details: error.message },
-      { status: 500 }
+      { status: 500 },
     );
   }
 }
@@ -61,7 +62,7 @@ export async function POST(request: Request) {
     if (!email || !displayName || !role || !companyId) {
       return NextResponse.json(
         { error: "Missing required fields" },
-        { status: 400 }
+        { status: 400 },
       );
     }
 
@@ -87,7 +88,7 @@ export async function POST(request: Request) {
     console.error("Error creating user:", error);
     return NextResponse.json(
       { error: "Failed to create user", details: error.message },
-      { status: 500 }
+      { status: 500 },
     );
   }
 }
@@ -101,7 +102,7 @@ export async function PUT(request: Request) {
     if (!userId) {
       return NextResponse.json(
         { error: "userId is required" },
-        { status: 400 }
+        { status: 400 },
       );
     }
 
@@ -119,7 +120,7 @@ export async function PUT(request: Request) {
     console.error("Error updating user:", error);
     return NextResponse.json(
       { error: "Failed to update user", details: error.message },
-      { status: 500 }
+      { status: 500 },
     );
   }
 }
@@ -133,7 +134,7 @@ export async function DELETE(request: Request) {
     if (!userId) {
       return NextResponse.json(
         { error: "userId is required" },
-        { status: 400 }
+        { status: 400 },
       );
     }
 
@@ -147,7 +148,7 @@ export async function DELETE(request: Request) {
     console.error("Error deleting user:", error);
     return NextResponse.json(
       { error: "Failed to delete user", details: error.message },
-      { status: 500 }
+      { status: 500 },
     );
   }
 }

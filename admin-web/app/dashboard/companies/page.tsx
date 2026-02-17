@@ -82,14 +82,14 @@ export default function CompaniesPage() {
 
       // Count branches per company
       branchesSnapshot.forEach((doc) => {
-        const data = doc.data();
+        const data = doc.data() as any;
         const companyId = data.companyId;
         branchCountMap.set(companyId, (branchCountMap.get(companyId) || 0) + 1);
       });
 
       // Count users per company
       usersSnapshot.forEach((doc) => {
-        const data = doc.data();
+        const data = doc.data() as any;
         const companyId = data.companyId;
         if (companyId) {
           userCountMap.set(companyId, (userCountMap.get(companyId) || 0) + 1);
@@ -97,7 +97,7 @@ export default function CompaniesPage() {
       });
 
       companiesSnapshot.forEach((doc) => {
-        const data = doc.data();
+        const data = doc.data() as any;
         companiesData.push({
           id: doc.id,
           name: data.name || "",

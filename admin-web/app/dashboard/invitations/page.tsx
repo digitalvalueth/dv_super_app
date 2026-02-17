@@ -64,7 +64,7 @@ export default function InvitationsPage() {
 
       const invitationsData: Invitation[] = [];
       invitationsSnapshot.forEach((doc) => {
-        const data = doc.data();
+        const data = doc.data() as any;
         invitationsData.push({
           id: doc.id,
           email: data.email,
@@ -90,7 +90,7 @@ export default function InvitationsPage() {
 
       const branchesData: Branch[] = [];
       branchesSnapshot.forEach((doc) => {
-        const data = doc.data();
+        const data = doc.data() as any;
         branchesData.push({
           id: doc.id,
           companyId: data.companyId,

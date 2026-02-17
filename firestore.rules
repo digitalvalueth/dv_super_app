@@ -1,0 +1,359 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // ==================== HELPER FUNCTIONS ====================
+    
+    // Check if user is authenticated
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    
+    // Check if user document exists
+    function userDocumentExists() {
+      return exists(/databases/$(database)/documents/users/$(request.auth.uid));
+    }
+    
+    // Get user data from users collection (returns null if document doesn't exist)
+    function getUserData() {
+      return userDocumentExists() ? 
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data : 
+        null;
+    }
+    
+    // Check if user has specific role
+    function hasRole(role) {
+      return isAuthenticated() && userDocumentExists() && getUserData().role == role;
+    }
+    
+    // Check if user has any of the specified roles
+    function hasAnyRole(roles) {
+      return isAuthenticated() && userDocumentExists() && getUserData().role in roles;
+    }
+    
+    // Check if user is super admin
+    function isSuperAdmin() {
+      return hasRole('super_admin');
+    }
+    
+    // Check if user is admin (company owner)
+    function isAdmin() {
+      return hasRole('admin');
+    }
+    
+    // Check if user is manager
+    function isManager() {
+      return hasRole('manager');
+    }
+    
+    // Check if user is supervisor
+    function isSupervisor() {
+      return hasRole('supervisor');
+    }
+    
+    // Check if user belongs to the same company
+    function isSameCompany(companyId) {
+      return isAuthenticated() && userDocumentExists() && getUserData().companyId == companyId;
+    }
+    
+    // Check if user belongs to the same branch
+    function isSameBranch(branchId) {
+      return isAuthenticated() && userDocumentExists() && getUserData().branchId == branchId;
+    }
+    
+    // Check if user can manage users (admin or super_admin)
+    function canManageUsers() {
+      return isSuperAdmin() || isAdmin();
+    }
+    
+    // Check if user is supervisor of the target user
+    function isSupervisorOf(targetUserId) {
+      return isAuthenticated() && 
+             userDocumentExists() && 
+             exists(/databases/$(database)/documents/users/$(targetUserId)) &&
+             get(/databases/$(database)/documents/users/$(targetUserId)).data.supervisorId == request.auth.uid;
+    }
+    
+    // Check if user can access resource based on role hierarchy
+    function canAccessCompanyResource(resourceCompanyId) {
+      return isSuperAdmin() || (isAuthenticated() && userDocumentExists() && getUserData().companyId == resourceCompanyId);
+    }
+    
+    // ==================== USERS COLLECTION ====================
+    match /users/{userId} {
+      // Anyone authenticated can read their own profile
+      allow read: if isAuthenticated() && request.auth.uid == userId;
+      
+      // Super admin can read all users
+      allow read: if isSuperAdmin();
+      
+      // Admin can read users in their company
+      allow read: if isAdmin() && isSameCompany(resource.data.companyId);
+      
+      // Supervisor can read their supervised employees
+      allow read: if isSupervisor() && isSupervisorOf(userId);
+      
+      // Users can create their own profile on first login
+      allow create: if isAuthenticated() && request.auth.uid == userId;
+      
+      // Users can update their own profile (limited fields)
+      allow update: if isAuthenticated() && 
+                      request.auth.uid == userId && 
+                      !request.resource.data.diff(resource.data).affectedKeys().hasAny(['role', 'companyId', 'branchId', 'status']);
+      
+      // Super admin can create/update/delete any user
+      allow create, update, delete: if isSuperAdmin();
+      
+      // Admin can create/update/delete users in their company
+      allow create, update, delete: if isAdmin() && 
+                                       isSameCompany(request.resource.data.companyId);
+      
+      // ==================== LOGIN LOGS SUBCOLLECTION ====================
+      match /login_logs/{logId} {
+        // Users can read their own login logs
+        allow read: if isAuthenticated() && request.auth.uid == userId;
+        
+        // Users can create their own login logs
+        allow create: if isAuthenticated() && request.auth.uid == userId;
+        
+        // Admin can read login logs of users in their company
+        allow read: if isAdmin() && isSameCompany(get(/databases/$(database)/documents/users/$(userId)).data.companyId);
+        
+        // Super admin can read all login logs
+        allow read: if isSuperAdmin();
+      }
+    }
+    
+    // ==================== COMPANIES COLLECTION ====================
+    match /companies/{companyId} {
+      // Authenticated users can read their company
+      allow read: if isAuthenticated() && isSameCompany(companyId);
+      
+      // Super admin can read all companies
+      allow read: if isSuperAdmin();
+      
+      // Super admin can create/update/delete companies
+      allow create, update, delete: if isSuperAdmin();
+      
+      // Admin can update their own company (limited fields)
+      allow update: if isAdmin() && 
+                      isSameCompany(companyId) &&
+                      !request.resource.data.diff(resource.data).affectedKeys().hasAny(['ownerId', 'status', 'subscription']);
+    }
+    
+    // ==================== BRANCHES COLLECTION ====================
+    match /branches/{branchId} {
+      // Users can read branches in their company
+      allow read: if isAuthenticated() && isSameCompany(resource.data.companyId);
+      
+      // Super admin can read all branches
+      allow read: if isSuperAdmin();
+      
+      // Super admin can create/update/delete branches
+      allow create, update, delete: if isSuperAdmin();
+      
+      // Admin can manage branches in their company
+      allow create, update, delete: if isAdmin() && 
+                                       isSameCompany(request.resource.data.companyId);
+    }
+    
+    // ==================== PRODUCTS COLLECTION ====================
+    match /products/{productId} {
+      // Users can read products in their company
+      allow read: if isAuthenticated() && isSameCompany(resource.data.companyId);
+      
+      // Super admin can read all products
+      allow read: if isSuperAdmin();
+      
+      // Super admin, admin, and manager can create/update products
+      allow create, update: if (isSuperAdmin() || 
+                                (isAdmin() && isSameCompany(request.resource.data.companyId)) ||
+                                (isManager() && isSameCompany(request.resource.data.companyId)));
+      
+      // Only super admin and admin can delete products
+      allow delete: if isSuperAdmin() || 
+                      (isAdmin() && isSameCompany(resource.data.companyId));
+    }
+    
+    // ==================== COUNTING SESSIONS COLLECTION ====================
+    match /counting_sessions/{sessionId} {
+      // Users can read counting sessions in their company
+      allow read: if isAuthenticated() && isSameCompany(resource.data.companyId);
+      
+      // Super admin can read all sessions
+      allow read: if isSuperAdmin();
+      
+      // Authenticated users can create counting sessions
+      allow create: if isAuthenticated() && 
+                      isSameCompany(request.resource.data.companyId) &&
+                      request.resource.data.userId == request.auth.uid;
+      
+      // Users can update their own sessions
+      allow update: if isAuthenticated() && 
+                      resource.data.userId == request.auth.uid;
+      
+      // Manager, admin, and super admin can update any session in their company
+      allow update: if hasAnyRole(['manager', 'admin', 'super_admin']) && 
+                      isSameCompany(resource.data.companyId);
+      
+      // Only admin and super admin can delete sessions
+      allow delete: if isSuperAdmin() || 
+                      (isAdmin() && isSameCompany(resource.data.companyId));
+    }
+    
+    // ==================== DELIVERY RECORDS COLLECTION ====================
+    match /delivery_records/{recordId} {
+      // Users can read delivery records in their company
+      allow read: if isAuthenticated() && isSameCompany(resource.data.companyId);
+      
+      // Super admin can read all records
+      allow read: if isSuperAdmin();
+      
+      // Authenticated users can create delivery records
+      allow create: if isAuthenticated() && 
+                      isSameCompany(request.resource.data.companyId) &&
+                      request.resource.data.userId == request.auth.uid;
+      
+      // Users can update their own records
+      allow update: if isAuthenticated() && 
+                      resource.data.userId == request.auth.uid;
+      
+      // Manager, admin, and super admin can update any record in their company
+      allow update: if hasAnyRole(['manager', 'admin', 'super_admin']) && 
+                      isSameCompany(resource.data.companyId);
+      
+      // Only admin and super admin can delete records
+      allow delete: if isSuperAdmin() || 
+                      (isAdmin() && isSameCompany(resource.data.companyId));
+    }
+    
+    // ==================== CHECKINS COLLECTION ====================
+    match /checkins/{checkinId} {
+      // Users can read checkins in their company
+      allow read: if isAuthenticated() && isSameCompany(resource.data.companyId);
+      
+      // Super admin can read all checkins
+      allow read: if isSuperAdmin();
+      
+      // Authenticated users can create checkins
+      allow create: if isAuthenticated() && 
+                      isSameCompany(request.resource.data.companyId) &&
+                      request.resource.data.userId == request.auth.uid;
+      
+      // Users can update their own checkins
+      allow update: if isAuthenticated() && 
+                      resource.data.userId == request.auth.uid;
+      
+      // Manager, admin, and super admin can update any checkin in their company
+      allow update: if hasAnyRole(['manager', 'admin', 'super_admin']) && 
+                      isSameCompany(resource.data.companyId);
+    }
+    
+    // ==================== NOTIFICATIONS COLLECTION ====================
+    match /notifications/{notificationId} {
+      // Users can read their own notifications
+      allow read: if isAuthenticated() && resource.data.userId == request.auth.uid;
+      
+      // Super admin can read all notifications
+      allow read: if isSuperAdmin();
+      
+      // System can create notifications
+      allow create: if isAuthenticated();
+      
+      // Users can update their own notifications (e.g., mark as read)
+      allow update: if isAuthenticated() && resource.data.userId == request.auth.uid;
+      
+      // Users can delete their own notifications
+      allow delete: if isAuthenticated() && resource.data.userId == request.auth.uid;
+    }
+    
+    // ==================== ACCESS REQUESTS COLLECTION ====================
+    match /access_requests/{requestId} {
+      // Anyone can create access requests (for registration)
+      allow create: if request.resource.data.status == 'pending';
+      
+      // Users can read their own access requests
+      allow read: if request.auth != null && resource.data.email == request.auth.token.email;
+      
+      // Admin and super admin can read access requests for their company
+      allow read: if hasAnyRole(['admin', 'super_admin']) && 
+                    isSameCompany(resource.data.companyId);
+      
+      // Admin and super admin can update/delete access requests
+      allow update, delete: if hasAnyRole(['admin', 'super_admin']) && 
+                              isSameCompany(resource.data.companyId);
+    }
+    
+    // ==================== INVITATIONS COLLECTION ====================
+    match /invitations/{invitationId} {
+      // Anyone can read invitations with email verification
+      allow read: if request.auth != null && resource.data.email == request.auth.token.email;
+      
+      // Admin and super admin can read invitations for their company
+      allow read: if hasAnyRole(['admin', 'super_admin']) && 
+                    isSameCompany(resource.data.companyId);
+      
+      // Admin can create invitations for their company
+      allow create: if isAdmin() && 
+                      isSameCompany(request.resource.data.companyId);
+      
+      // Super admin can create any invitation
+      allow create: if isSuperAdmin();
+      
+      // Admin and super admin can update/delete invitations
+      allow update, delete: if hasAnyRole(['admin', 'super_admin']) && 
+                              isSameCompany(resource.data.companyId);
+    }
+    
+    // ==================== APP USAGE COLLECTION ====================
+    match /app_usage/{usageId} {
+      // Users can read their own usage data
+      allow read: if isAuthenticated() && resource.data.userId == request.auth.uid;
+      
+      // Admin can read usage data for their company
+      allow read: if isAdmin() && isSameCompany(resource.data.companyId);
+      
+      // Super admin can read all usage data
+      allow read: if isSuperAdmin();
+      
+      // Users can create their own usage records
+      allow create: if isAuthenticated() && request.resource.data.userId == request.auth.uid;
+    }
+    
+    // ==================== WATSON EXCEL VALIDATOR COLLECTIONS ====================
+    // Watson collections - Allow authenticated access
+    match /watson_current_pricelist/{document=**} {
+      allow read, write: if isAuthenticated();
+    }
+    match /watson_price_import_history/{document=**} {
+      allow read, write: if isAuthenticated();
+    }
+    match /watson_invoice_uploads/{document=**} {
+      allow read, write: if isAuthenticated();
+    }
+    match /watson_activity_logs_full/{document=**} {
+      allow read, write: if isAuthenticated();
+    }
+    match /watson_promotion_data/{document=**} {
+      allow read, write: if isAuthenticated();
+    }
+    match /watson_exports/{document=**} {
+      allow read, write: if isAuthenticated();
+    }
+    match /watson_pricelists/{document=**} {
+      allow read, write: if isAuthenticated();
+    }
+    match /watson_activity_logs/{document=**} {
+      allow read, write: if isAuthenticated();
+    }
+    match /watson_api_keys/{document=**} {
+      allow read, write: if isAuthenticated();
+    }
+    
+    // ==================== DEFAULT DENY ====================
+    // Deny all other access by default
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

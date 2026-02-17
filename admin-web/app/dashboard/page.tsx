@@ -14,19 +14,29 @@ import {
   TrendingUp,
   Users,
 } from "lucide-react";
+import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 
 export default function DashboardPage() {
   const { userData } = useAuthStore();
+  const router = useRouter();
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [loading, setLoading] = useState(true);
 
   console.log("Dashboard - userData:", userData);
   console.log("Dashboard - loading:", loading);
 
+  // Redirect supervisor to their specific dashboard
+  useEffect(() => {
+    if (userData?.role === "supervisor") {
+      router.push("/dashboard/supervisor");
+    }
+  }, [userData, router]);
+
   useEffect(() => {
     console.log("Dashboard - useEffect triggered", { userData });
     if (!userData) return;
+    if (userData.role === "supervisor") return; // Skip loading for supervisors
 
     const fetchDashboardData = async () => {
       try {
@@ -80,7 +90,7 @@ export default function DashboardPage() {
         const sessions: CountingSession[] = [];
 
         sessionsSnapshot.forEach((doc) => {
-          const data = doc.data();
+          const data = doc.data() as any;
           const session: CountingSession = {
             id: doc.id,
             userId: data.userId,
