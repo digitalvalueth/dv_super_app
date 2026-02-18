@@ -94,25 +94,28 @@ export default function RootLayout() {
       console.log("🔗 Deep link received:", url);
 
       // Parse URL
-      const { hostname, path, queryParams } = Linking.parse(url);
+      const parsed = Linking.parse(url);
+      const pathParts = (parsed.path || "").replace(/^\//, "").split("/");
 
-      // Handle invitation link
-      if (path === "invitation" || hostname === "invitation") {
-        const token = queryParams?.token;
-        if (token) {
-          console.log("📧 Invitation token:", token);
-          // User is already authenticated from web
-          // Just navigate to appropriate screen
-          if (user) {
-            router.push("/(tabs)" as any);
-          } else {
-            // If not logged in, go to login with invitation token
-            router.push(`/(login)?invitation=${token}` as any);
-          }
-        }
+      // Match: fittbsa://invitation/TOKEN or https://.../invitation/TOKEN
+      if (pathParts[0] === "invitation" && pathParts[1]) {
+        const token = pathParts[1];
+        console.log("📧 Invitation token (path):", token);
+        router.push(`/invitation/${token}` as any);
+        return;
+      }
+
+      // Match: fittbsa://invitation?token=TOKEN (legacy/fallback)
+      const tokenParam = parsed.queryParams?.token;
+      if (
+        (pathParts[0] === "invitation" || parsed.hostname === "invitation") &&
+        tokenParam
+      ) {
+        console.log("📧 Invitation token (query):", tokenParam);
+        router.push(`/invitation/${tokenParam}` as any);
       }
     },
-    [user, router],
+    [router],
   );
 
   // Handle deep links (invitation links)
@@ -155,6 +158,10 @@ export default function RootLayout() {
         <Stack.Screen name="(mini-apps)" />
         <Stack.Screen name="onboarding" />
         <Stack.Screen name="pending-approval" />
+        <Stack.Screen
+          name="invitation/[token]"
+          options={{ presentation: "modal", headerShown: false }}
+        />
       </Stack>
       <StatusBar style="auto" />
     </ThemeProvider>

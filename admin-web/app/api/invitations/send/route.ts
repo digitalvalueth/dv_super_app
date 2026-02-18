@@ -23,17 +23,35 @@ export async function POST(request: NextRequest) {
 
     // Get sender data
     const db = adminDb;
-    const senderSnapshot = await db
-      .collection("users")
-      .where("uid", "==", senderUid)
-      .limit(1)
-      .get();
 
-    if (senderSnapshot.empty) {
-      return NextResponse.json({ error: "Sender not found" }, { status: 404 });
+    // Use UID as document ID (O(1) lookup)
+    let senderDoc = await db.collection("users").doc(senderUid).get();
+
+    // Fallback: check old documents with random IDs
+    if (!senderDoc.exists) {
+      const senderSnapshot = await db
+        .collection("users")
+        .where("uid", "==", senderUid)
+        .limit(1)
+        .get();
+
+      if (senderSnapshot.empty) {
+        return NextResponse.json(
+          { error: "Sender not found" },
+          { status: 404 },
+        );
+      }
+
+      senderDoc = senderSnapshot.docs[0];
     }
 
-    const senderData = senderSnapshot.docs[0].data();
+    const senderData = senderDoc.data();
+    if (!senderData) {
+      return NextResponse.json(
+        { error: "Sender data not found" },
+        { status: 404 },
+      );
+    }
 
     // Check if sender has permission (supervisor, manager, or admin)
     if (
@@ -49,7 +67,14 @@ export async function POST(request: NextRequest) {
 
     // Get request body
     const body = await request.json();
-    const { email, name, role, branchId } = body;
+    const {
+      email,
+      name,
+      role,
+      branchId,
+      managedBranchIds,
+      companyId: bodyCompanyId,
+    } = body;
 
     if (!email || !name || !role) {
       return NextResponse.json(
@@ -87,26 +112,30 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Get company data
-    const companyId = senderData.companyId;
-    const companySnapshot = await db
-      .collection("companies")
-      .doc(companyId)
-      .get();
+    // Derive companyId: super_admin has no companyId, so use bodyCompanyId (derived from branch on frontend)
+    const effectiveCompanyId = senderData.companyId || bodyCompanyId || "";
 
-    if (!companySnapshot.exists) {
-      return NextResponse.json({ error: "Company not found" }, { status: 404 });
+    // Get company data
+    let companyName = "";
+    if (effectiveCompanyId) {
+      const companySnapshot = await db
+        .collection("companies")
+        .doc(effectiveCompanyId)
+        .get();
+      if (companySnapshot.exists) {
+        companyName = companySnapshot.data()?.name || "";
+      }
     }
 
-    const companyData = companySnapshot.data();
-
-    // Get branch data if branchId provided
+    // Get branch data
+    const effectiveBranchId = branchId || (managedBranchIds?.[0] ?? null);
     let branchName = "";
     let branchCode = "";
-    if (branchId) {
+    let branchNames: string[] = [];
+    if (effectiveBranchId) {
       const branchSnapshot = await db
         .collection("branches")
-        .doc(branchId)
+        .doc(effectiveBranchId)
         .get();
 
       if (branchSnapshot.exists) {
@@ -116,6 +145,19 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    // Look up all managed branch names for supervisor/manager
+    if (managedBranchIds && managedBranchIds.length > 0) {
+      const branchLookups = await Promise.all(
+        managedBranchIds.map((id: string) =>
+          db.collection("branches").doc(id).get(),
+        ),
+      );
+      branchNames = branchLookups
+        .filter((snap) => snap.exists)
+        .map((snap) => snap.data()?.name || "")
+        .filter(Boolean);
+    }
+
     // Generate secure token
     const invitationToken = crypto.randomBytes(32).toString("hex");
 
@@ -123,17 +165,15 @@ export async function POST(request: NextRequest) {
     const expiresAt = new Date();
     expiresAt.setDate(expiresAt.getDate() + 7); // 7 days expiry
 
-    const invitationData = {
+    const invitationData: Record<string, any> = {
       email: email.toLowerCase().trim(),
       name: name.trim(),
       role: role,
-      companyId: companyId,
-      companyName: companyData?.name || "",
-      branchId: branchId || null,
+      companyId: effectiveCompanyId,
+      companyName: companyName,
       branchName: branchName,
       branchCode: branchCode,
-      supervisorId:
-        senderData.role === "supervisor" ? senderSnapshot.docs[0].id : null,
+      supervisorId: senderData.role === "supervisor" ? senderDoc.id : null,
       supervisorName: senderData.role === "supervisor" ? senderData.name : null,
       token: invitationToken,
       status: "pending",
@@ -141,7 +181,16 @@ export async function POST(request: NextRequest) {
       createdAt: new Date(),
       createdBy: senderUid,
       createdByName: senderData.name,
+      invitedBy: senderUid,
+      invitedByName: senderData.name,
     };
+
+    // Role-specific branch fields
+    if (role === "employee") {
+      invitationData.branchId = branchId || null;
+    } else {
+      invitationData.managedBranchIds = managedBranchIds || [];
+    }
 
     const invitationRef = await db
       .collection("invitations")
@@ -155,8 +204,9 @@ export async function POST(request: NextRequest) {
       await sendInvitationEmail({
         to: email.toLowerCase().trim(),
         name: name.trim(),
-        companyName: companyData?.name || "",
+        companyName: companyName,
         branchName: branchName,
+        branchNames: branchNames.length > 0 ? branchNames : undefined,
         role: role,
         invitationLink: invitationLink,
         senderName: senderData.name || senderData.email,

@@ -5,13 +5,12 @@ import { useAuthStore } from "@/stores/auth.store";
 import { Branch, Invitation } from "@/types";
 import { format } from "date-fns";
 import { th } from "date-fns/locale";
+import { getAuth } from "firebase/auth";
 import {
-  addDoc,
   collection,
   doc,
   getDocs,
   query,
-  serverTimestamp,
   updateDoc,
   where,
 } from "firebase/firestore";
@@ -25,10 +24,13 @@ export default function InvitationsPage() {
   const [branches, setBranches] = useState<Branch[]>([]);
   const [loading, setLoading] = useState(true);
   const [showInviteForm, setShowInviteForm] = useState(false);
+  const [showBulkInviteForm, setShowBulkInviteForm] = useState(false);
+  const [bulkEmails, setBulkEmails] = useState("");
   const [formData, setFormData] = useState({
     email: "",
-    role: "employee" as "manager" | "employee",
+    role: "employee" as "manager" | "supervisor" | "employee",
     branchId: "",
+    branchIds: [] as string[],
   });
 
   useEffect(() => {
@@ -72,6 +74,7 @@ export default function InvitationsPage() {
           companyName: data.companyName,
           role: data.role,
           branchId: data.branchId,
+          managedBranchIds: data.managedBranchIds || [],
           invitedBy: data.invitedBy,
           invitedByName: data.invitedByName,
           status: data.status,
@@ -88,17 +91,24 @@ export default function InvitationsPage() {
       // Fetch branches
       const branchesSnapshot = await getDocs(branchesQuery);
 
-      const branchesData: Branch[] = [];
+      const branchesMap = new Map<string, Branch>();
       branchesSnapshot.forEach((doc) => {
         const data = doc.data() as any;
-        branchesData.push({
-          id: doc.id,
-          companyId: data.companyId,
-          name: data.name,
-          address: data.address,
-          createdAt: data.createdAt?.toDate(),
-        });
+        if (!branchesMap.has(doc.id)) {
+          branchesMap.set(doc.id, {
+            id: doc.id,
+            companyId: data.companyId,
+            companyName: data.companyName || "",
+            name:
+              !companyId && data.companyName
+                ? `${data.name} (${data.companyName})`
+                : data.name,
+            address: data.address,
+            createdAt: data.createdAt?.toDate(),
+          });
+        }
       });
+      const branchesData: Branch[] = Array.from(branchesMap.values());
 
       setBranches(branchesData);
     } catch (error) {
@@ -114,42 +124,66 @@ export default function InvitationsPage() {
 
     if (!userData) return;
 
-    try {
-      const expiresAt = new Date();
-      expiresAt.setDate(expiresAt.getDate() + 7); // Expires in 7 days
+    // Validate branch selection
+    if (formData.role === "employee") {
+      if (!formData.branchId) {
+        toast.error("กรุณาเลือกสาขาสำหรับพนักงาน");
+        return;
+      }
+    } else {
+      // supervisor or manager
+      if (formData.branchIds.length === 0) {
+        toast.error("กรุณาเลือกอย่างน้อย 1 สาขา");
+        return;
+      }
+    }
 
-      // Get company name
-      const companyDoc = await getDocs(
-        query(
-          collection(db, "companies"),
-          where("__name__", "==", userData.companyId),
-        ),
-      );
-      let companyName = "บริษัท";
-      if (!companyDoc.empty) {
-        companyName = companyDoc.docs[0].data().name;
+    try {
+      // Derive companyId from selected branch (supports super admin with no companyId)
+      const selectedBranchId =
+        formData.role === "employee"
+          ? formData.branchId
+          : formData.branchIds[0];
+      const selectedBranch = branches.find((b) => b.id === selectedBranchId);
+      const effectiveCompanyId =
+        userData.companyId || selectedBranch?.companyId || "";
+
+      const idToken = await getAuth().currentUser?.getIdToken();
+      if (!idToken) throw new Error("Not authenticated");
+
+      const body: any = {
+        email: formData.email,
+        name: formData.email.split("@")[0],
+        role: formData.role,
+        companyId: effectiveCompanyId,
+      };
+      if (formData.role === "employee") {
+        body.branchId = formData.branchId;
+      } else {
+        body.managedBranchIds = formData.branchIds;
       }
 
-      await addDoc(collection(db, "invitations"), {
-        email: formData.email,
-        companyId: userData.companyId,
-        companyName,
-        role: formData.role,
-        branchId: formData.branchId || null,
-        invitedBy: userData.id,
-        invitedByName: userData.name,
-        status: "pending",
-        createdAt: serverTimestamp(),
-        expiresAt,
+      const res = await fetch("/api/invitations/send", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${idToken}`,
+        },
+        body: JSON.stringify(body),
       });
 
-      toast.success("ส่งคำเชิญสำเร็จ");
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.error || "ส่งคำเชิญไม่สำเร็จ");
+      }
+
+      toast.success("ส่งคำเชิญและอีเมลสำเร็จ");
       setShowInviteForm(false);
-      setFormData({ email: "", role: "employee", branchId: "" });
+      setFormData({ email: "", role: "employee", branchId: "", branchIds: [] });
       fetchData();
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error sending invitation:", error);
-      toast.error("ส่งคำเชิญไม่สำเร็จ");
+      toast.error(error.message || "ส่งคำเชิญไม่สำเร็จ");
     }
   };
 
@@ -166,6 +200,112 @@ export default function InvitationsPage() {
     } catch (error) {
       console.error("Error canceling invitation:", error);
       toast.error("ยกเลิกคำเชิญไม่สำเร็จ");
+    }
+  };
+
+  const handleBulkInvitation = async (e: React.FormEvent) => {
+    e.preventDefault();
+
+    if (!userData) return;
+
+    // Validate branch selection
+    if (formData.role === "employee") {
+      if (!formData.branchId) {
+        toast.error("กรุณาเลือกสาขาสำหรับพนักงาน");
+        return;
+      }
+    } else {
+      if (formData.branchIds.length === 0) {
+        toast.error("กรุณาเลือกอย่างน้อย 1 สาขา");
+        return;
+      }
+    }
+
+    // Parse emails from textarea (one per line, comma-separated, or space-separated)
+    const emailList = bulkEmails
+      .split(/[\n,\s]+/)
+      .map((email) => email.trim().toLowerCase())
+      .filter((email) => email && email.includes("@"));
+
+    if (emailList.length === 0) {
+      toast.error("กรุณากรอกอีเมลอย่างน้อย 1 อีเมล");
+      return;
+    }
+
+    try {
+      // Derive companyId from selected branch (supports super admin with no companyId)
+      const selectedBranchId =
+        formData.role === "employee"
+          ? formData.branchId
+          : formData.branchIds[0];
+      const selectedBranch = branches.find((b) => b.id === selectedBranchId);
+      const effectiveCompanyId =
+        userData.companyId || selectedBranch?.companyId || "";
+
+      const idToken = await getAuth().currentUser?.getIdToken();
+      if (!idToken) throw new Error("Not authenticated");
+
+      let successCount = 0;
+      let skipCount = 0;
+      let errorCount = 0;
+
+      toast.loading(`กำลังส่งคำเชิญ ${emailList.length} อีเมล...`);
+
+      for (const email of emailList) {
+        try {
+          const body: any = {
+            email,
+            name: email.split("@")[0],
+            role: formData.role,
+            companyId: effectiveCompanyId,
+          };
+          if (formData.role === "employee") {
+            body.branchId = formData.branchId;
+          } else {
+            body.managedBranchIds = formData.branchIds;
+          }
+
+          const res = await fetch("/api/invitations/send", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${idToken}`,
+            },
+            body: JSON.stringify(body),
+          });
+
+          if (res.status === 409) {
+            // Already exists (user or pending invitation)
+            skipCount++;
+          } else if (!res.ok) {
+            errorCount++;
+          } else {
+            successCount++;
+          }
+        } catch (error) {
+          console.error(`Error sending invitation to ${email}:`, error);
+          errorCount++;
+        }
+      }
+
+      toast.dismiss();
+
+      if (successCount > 0) {
+        toast.success(
+          `ส่งคำเชิญสำเร็จ ${successCount} อีเมล${skipCount > 0 ? ` (ข้าม ${skipCount} อีเมลที่มีอยู่แล้ว)` : ""}${errorCount > 0 ? ` (ล้มเหลว ${errorCount})` : ""}`,
+        );
+      } else {
+        toast.warning(`ไม่มีอีเมลใหม่ที่จะส่ง (ข้าม ${skipCount} อีเมล)`);
+      }
+
+      setShowBulkInviteForm(false);
+      setBulkEmails("");
+      setFormData({ email: "", role: "employee", branchId: "", branchIds: [] });
+      fetchData();
+    } catch (error) {
+      console.error("Error sending bulk invitations:", error);
+      toast.dismiss();
+      toast.error("เกิดข้อผิดพลาดในการส่งคำเชิญ");
     }
   };
 
@@ -193,13 +333,22 @@ export default function InvitationsPage() {
             เชิญพนักงานเข้าร่วมบริษัท
           </p>
         </div>
-        <button
-          onClick={() => setShowInviteForm(true)}
-          className="flex items-center gap-2 bg-blue-600 text-white px-6 py-3 rounded-lg font-semibold hover:bg-blue-700 transition"
-        >
-          <Plus className="w-5 h-5" />
-          ส่งคำเชิญใหม่
-        </button>
+        <div className="flex gap-3">
+          <button
+            onClick={() => setShowBulkInviteForm(true)}
+            className="flex items-center gap-2 bg-purple-600 text-white px-6 py-3 rounded-lg font-semibold hover:bg-purple-700 transition"
+          >
+            <Plus className="w-5 h-5" />
+            ส่งคำเชิญแบบกลุ่ม
+          </button>
+          <button
+            onClick={() => setShowInviteForm(true)}
+            className="flex items-center gap-2 bg-blue-600 text-white px-6 py-3 rounded-lg font-semibold hover:bg-blue-700 transition"
+          >
+            <Plus className="w-5 h-5" />
+            ส่งคำเชิญใหม่
+          </button>
+        </div>
       </div>
 
       {/* Invite Form Modal */}
@@ -235,35 +384,97 @@ export default function InvitationsPage() {
                   onChange={(e) =>
                     setFormData({
                       ...formData,
-                      role: e.target.value as "manager" | "employee",
+                      role: e.target.value as
+                        | "manager"
+                        | "supervisor"
+                        | "employee",
                     })
                   }
                   className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 >
                   <option value="employee">พนักงาน</option>
+                  <option value="supervisor">ผู้ดูแลสาขา</option>
                   <option value="manager">ผู้จัดการสาขา</option>
                 </select>
               </div>
 
-              <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                  สาขา (ถ้ามี)
-                </label>
-                <select
-                  value={formData.branchId}
-                  onChange={(e) =>
-                    setFormData({ ...formData, branchId: e.target.value })
-                  }
-                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                >
-                  <option value="">-- ไม่ระบุสาขา --</option>
-                  {branches.map((branch) => (
-                    <option key={branch.id} value={branch.id}>
-                      {branch.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
+              {/* Branch Selection */}
+              {formData.role === "employee" ? (
+                // Single branch for employee
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                    สาขา <span className="text-red-500">*</span>
+                  </label>
+                  <select
+                    value={formData.branchId}
+                    onChange={(e) =>
+                      setFormData({ ...formData, branchId: e.target.value })
+                    }
+                    required
+                    className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  >
+                    <option value="">-- เลือกสาขา --</option>
+                    {branches.map((branch) => (
+                      <option key={branch.id} value={branch.id}>
+                        {branch.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              ) : (
+                // Multiple branches for supervisor/manager
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                    สาขาที่ดูแล <span className="text-red-500">*</span>
+                    <span className="text-xs text-gray-500 ml-2">
+                      (เลือกได้มากกว่า 1)
+                    </span>
+                  </label>
+                  <div className="border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 max-h-48 overflow-y-auto p-2">
+                    {branches.length === 0 ? (
+                      <p className="text-sm text-gray-500 dark:text-gray-400 p-2">
+                        ไม่มีสาขา
+                      </p>
+                    ) : (
+                      branches.map((branch) => (
+                        <label
+                          key={branch.id}
+                          className="flex items-center px-3 py-2 hover:bg-gray-50 dark:hover:bg-gray-600 rounded cursor-pointer"
+                        >
+                          <input
+                            type="checkbox"
+                            checked={formData.branchIds.includes(branch.id)}
+                            onChange={(e) => {
+                              if (e.target.checked) {
+                                setFormData({
+                                  ...formData,
+                                  branchIds: [...formData.branchIds, branch.id],
+                                });
+                              } else {
+                                setFormData({
+                                  ...formData,
+                                  branchIds: formData.branchIds.filter(
+                                    (id) => id !== branch.id,
+                                  ),
+                                });
+                              }
+                            }}
+                            className="w-4 h-4 text-blue-600 rounded focus:ring-2 focus:ring-blue-500"
+                          />
+                          <span className="ml-2 text-sm text-gray-900 dark:text-white">
+                            {branch.name}
+                          </span>
+                        </label>
+                      ))
+                    )}
+                  </div>
+                  {formData.branchIds.length > 0 && (
+                    <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                      เลือกแล้ว {formData.branchIds.length} สาขา
+                    </p>
+                  )}
+                </div>
+              )}
 
               <div className="flex gap-3 mt-6">
                 <button
@@ -275,6 +486,173 @@ export default function InvitationsPage() {
                 <button
                   type="button"
                   onClick={() => setShowInviteForm(false)}
+                  className="flex-1 bg-gray-200 dark:bg-gray-600 text-gray-700 dark:text-gray-200 py-2 rounded-lg font-semibold hover:bg-gray-300 dark:hover:bg-gray-500 transition"
+                >
+                  ยกเลิก
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Bulk Invite Form Modal */}
+      {showBulkInviteForm && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white dark:bg-gray-800 rounded-xl p-6 max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+            <h2 className="text-xl font-bold text-gray-900 dark:text-white mb-6">
+              ส่งคำเชิญแบบกลุ่ม
+            </h2>
+            <form onSubmit={handleBulkInvitation} className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                  รายการอีเมล <span className="text-red-500">*</span>
+                  <span className="text-xs text-gray-500 ml-2">
+                    (ใส่อีเมลทีละบรรทัด คั่นด้วยจุลภาค หรือเว้นวรรค)
+                  </span>
+                </label>
+                <textarea
+                  value={bulkEmails}
+                  onChange={(e) => setBulkEmails(e.target.value)}
+                  required
+                  rows={8}
+                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-purple-500 focus:border-transparent font-mono text-sm"
+                  placeholder="user1@example.com&#10;user2@example.com&#10;user3@example.com, user4@example.com"
+                />
+                {bulkEmails && (
+                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                    พบ{" "}
+                    {
+                      bulkEmails
+                        .split(/[\n,\s]+/)
+                        .filter((e) => e.trim() && e.includes("@")).length
+                    }{" "}
+                    อีเมล
+                  </p>
+                )}
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                  ตำแหน่ง
+                </label>
+                <select
+                  value={formData.role}
+                  onChange={(e) =>
+                    setFormData({
+                      ...formData,
+                      role: e.target.value as
+                        | "manager"
+                        | "supervisor"
+                        | "employee",
+                    })
+                  }
+                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                >
+                  <option value="employee">พนักงาน</option>
+                  <option value="supervisor">ผู้ดูแลสาขา</option>
+                  <option value="manager">ผู้จัดการสาขา</option>
+                </select>
+              </div>
+
+              {/* Branch Selection */}
+              {formData.role === "employee" ? (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                    สาขา <span className="text-red-500">*</span>
+                  </label>
+                  <select
+                    value={formData.branchId}
+                    onChange={(e) =>
+                      setFormData({ ...formData, branchId: e.target.value })
+                    }
+                    required
+                    className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                  >
+                    <option value="">-- เลือกสาขา --</option>
+                    {branches.map((branch) => (
+                      <option key={branch.id} value={branch.id}>
+                        {branch.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              ) : (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                    สาขาที่ดูแล <span className="text-red-500">*</span>
+                    <span className="text-xs text-gray-500 ml-2">
+                      (เลือกได้มากกว่า 1)
+                    </span>
+                  </label>
+                  <div className="border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 max-h-48 overflow-y-auto p-2">
+                    {branches.length === 0 ? (
+                      <p className="text-sm text-gray-500 dark:text-gray-400 p-2">
+                        ไม่มีสาขา
+                      </p>
+                    ) : (
+                      branches.map((branch) => (
+                        <label
+                          key={branch.id}
+                          className="flex items-center px-3 py-2 hover:bg-gray-50 dark:hover:bg-gray-600 rounded cursor-pointer"
+                        >
+                          <input
+                            type="checkbox"
+                            checked={formData.branchIds.includes(branch.id)}
+                            onChange={(e) => {
+                              if (e.target.checked) {
+                                setFormData({
+                                  ...formData,
+                                  branchIds: [...formData.branchIds, branch.id],
+                                });
+                              } else {
+                                setFormData({
+                                  ...formData,
+                                  branchIds: formData.branchIds.filter(
+                                    (id) => id !== branch.id,
+                                  ),
+                                });
+                              }
+                            }}
+                            className="w-4 h-4 text-purple-600 rounded focus:ring-2 focus:ring-purple-500"
+                          />
+                          <span className="ml-2 text-sm text-gray-900 dark:text-white">
+                            {branch.name}
+                          </span>
+                        </label>
+                      ))
+                    )}
+                  </div>
+                  {formData.branchIds.length > 0 && (
+                    <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                      เลือกแล้ว {formData.branchIds.length} สาขา
+                    </p>
+                  )}
+                </div>
+              )}
+
+              <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4 text-sm text-blue-700 dark:text-blue-300">
+                <p className="font-semibold mb-1">💡 หมายเหตุ:</p>
+                <ul className="list-disc list-inside space-y-1">
+                  <li>ระบบจะข้ามอีเมลที่มีอยู่ในระบบแล้ว</li>
+                  <li>ระบบจะข้ามอีเมลที่มีคำเชิญค้างอยู่</li>
+                  <li>อีเมลจะถูกส่งไปพร้อมกัน</li>
+                </ul>
+              </div>
+
+              <div className="flex gap-3 mt-6">
+                <button
+                  type="submit"
+                  className="flex-1 bg-purple-600 text-white py-2 rounded-lg font-semibold hover:bg-purple-700 transition"
+                >
+                  ส่งคำเชิญทั้งหมด
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowBulkInviteForm(false);
+                    setBulkEmails("");
+                  }}
                   className="flex-1 bg-gray-200 dark:bg-gray-600 text-gray-700 dark:text-gray-200 py-2 rounded-lg font-semibold hover:bg-gray-300 dark:hover:bg-gray-500 transition"
                 >
                   ยกเลิก
@@ -333,19 +711,48 @@ export default function InvitationsPage() {
                       className={`px-3 py-1 rounded-full text-xs font-semibold ${
                         invitation.role === "manager"
                           ? "bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-400"
-                          : "bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400"
+                          : invitation.role === "supervisor"
+                            ? "bg-orange-100 text-orange-800 dark:bg-orange-900/30 dark:text-orange-400"
+                            : "bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400"
                       }`}
                     >
                       {invitation.role === "manager"
                         ? "ผู้จัดการสาขา"
-                        : "พนักงาน"}
+                        : invitation.role === "supervisor"
+                          ? "ผู้ดูแลสาขา"
+                          : "พนักงาน"}
                     </span>
                   </td>
                   <td className="px-6 py-4 text-sm text-gray-900 dark:text-gray-100">
-                    {invitation.branchId
-                      ? branches.find((b) => b.id === invitation.branchId)
+                    {invitation.role === "employee" ? (
+                      // Employee: single branch
+                      invitation.branchId ? (
+                        branches.find((b) => b.id === invitation.branchId)
                           ?.name || "-"
-                      : "-"}
+                      ) : (
+                        "-"
+                      )
+                    ) : // Supervisor/Manager: multiple branches
+                    invitation.managedBranchIds &&
+                      invitation.managedBranchIds.length > 0 ? (
+                      <div className="flex flex-wrap gap-1">
+                        {invitation.managedBranchIds.map((branchId) => {
+                          const branch = branches.find(
+                            (b) => b.id === branchId,
+                          );
+                          return branch ? (
+                            <span
+                              key={branchId}
+                              className="px-2 py-1 bg-gray-100 dark:bg-gray-700 rounded text-xs"
+                            >
+                              {branch.name}
+                            </span>
+                          ) : null;
+                        })}
+                      </div>
+                    ) : (
+                      "-"
+                    )}
                   </td>
                   <td className="px-6 py-4 text-sm text-gray-900 dark:text-gray-100">
                     {invitation.invitedByName}

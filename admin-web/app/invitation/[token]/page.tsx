@@ -27,8 +27,18 @@ export default function InvitationPage() {
   const [error, setError] = useState("");
   const [accepting, setAccepting] = useState(false);
 
+  const [showAppBanner, setShowAppBanner] = useState(true);
+
   useEffect(() => {
     if (!token) return;
+
+    // Try to open native app on mobile devices
+    const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+    if (isMobile) {
+      const deepLink = `fittbsa://invitation/${token}`;
+      window.location.href = deepLink;
+      // If app not installed, the redirect does nothing — web page stays visible
+    }
 
     const verifyInvitation = async () => {
       try {
@@ -204,7 +214,38 @@ export default function InvitationPage() {
           <p className="text-blue-100">คุณได้รับเชิญให้เข้าร่วมทีมของเรา</p>
         </div>
 
-        {/* Content */}
+        {/* Open in App Banner */}
+        {showAppBanner && (
+          <div className="mx-6 mt-6 p-4 bg-orange-50 border border-orange-200 rounded-xl flex items-center justify-between gap-3">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 bg-orange-500 rounded-xl flex items-center justify-center shrink-0">
+                <span className="text-white font-black text-sm">FITT</span>
+              </div>
+              <div>
+                <p className="text-sm font-semibold text-orange-900">
+                  มีแอป FITT BSA แล้วใช่ไหม?
+                </p>
+                <p className="text-xs text-orange-600">
+                  เปิดในแอปเพื่อประสบการณ์ที่ดีกว่า
+                </p>
+              </div>
+            </div>
+            <div className="flex gap-2 shrink-0">
+              <a
+                href={`fittbsa://invitation/${token}`}
+                className="px-4 py-2 bg-orange-500 text-white text-sm font-semibold rounded-lg hover:bg-orange-600 transition-colors"
+              >
+                เปิดแอป
+              </a>
+              <button
+                onClick={() => setShowAppBanner(false)}
+                className="px-3 py-2 text-orange-400 text-sm rounded-lg hover:bg-orange-100 transition-colors"
+              >
+                ✕
+              </button>
+            </div>
+          </div>
+        )}
         <div className="px-8 py-8">
           {/* Invitation Details */}
           <div className="mb-8 space-y-4">

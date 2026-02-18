@@ -77,14 +77,11 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Create or update user document
-    const userSnapshot = await db
-      .collection("users")
-      .where("uid", "==", uid)
-      .limit(1)
-      .get();
+    // Create or update user document using UID as document ID
+    // This prevents duplicates and eliminates need for query
+    const userDocRef = db.collection("users").doc(uid);
 
-    const userData = {
+    const userData: any = {
       uid: uid,
       email: invitationData.email,
       name: invitationData.name,
@@ -92,28 +89,36 @@ export async function POST(request: NextRequest) {
       role: invitationData.role,
       companyId: invitationData.companyId,
       companyName: invitationData.companyName,
-      branchId: invitationData.branchId || null,
-      branchName: invitationData.branchName || null,
-      branchCode: invitationData.branchCode || null,
-      supervisorId: invitationData.supervisorId || null,
-      supervisorName: invitationData.supervisorName || null,
       status: "active",
-      createdAt: new Date(),
       updatedAt: new Date(),
     };
 
-    if (userSnapshot.empty) {
-      // Create new user
-      await db.collection("users").add(userData);
+    // Role-specific fields
+    if (invitationData.role === "employee") {
+      // Employee: single branch
+      userData.branchId = invitationData.branchId || null;
+      userData.branchName = invitationData.branchName || null;
+      userData.branchCode = invitationData.branchCode || null;
+      userData.supervisorId = invitationData.supervisorId || null;
+      userData.supervisorName = invitationData.supervisorName || null;
     } else {
+      // Supervisor/Manager: multiple branches
+      userData.managedBranchIds = invitationData.managedBranchIds || [];
+    }
+
+    // Use set with merge to create or update
+    // This is idempotent - safe to call multiple times
+    const existingDoc = await userDocRef.get();
+
+    if (existingDoc.exists) {
       // Update existing user
-      await db
-        .collection("users")
-        .doc(userSnapshot.docs[0].id)
-        .update({
-          ...userData,
-          updatedAt: new Date(),
-        });
+      await userDocRef.update(userData);
+    } else {
+      // Create new user with createdAt
+      await userDocRef.set({
+        ...userData,
+        createdAt: new Date(),
+      });
     }
 
     // Mark invitation as accepted

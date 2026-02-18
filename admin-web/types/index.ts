@@ -193,6 +193,7 @@ export interface Invitation {
   role: "manager" | "staff" | "supervisor" | "employee";
   branchId?: string;
   branchName?: string;
+  managedBranchIds?: string[]; // For supervisor/manager (multiple branches)
   invitedBy: string;
   invitedByName?: string;
   status: "pending" | "accepted" | "expired";
