@@ -22,22 +22,36 @@ export async function GET(request: NextRequest) {
     // Get database (using default for now)
     const db = adminDb;
 
-    // Get supervisor data
-    const supervisorSnapshot = await db
-      .collection("users")
-      .where("uid", "==", supervisorUid)
-      .limit(1)
-      .get();
+    // Get supervisor data using UID as document ID (O(1) lookup)
+    let supervisorDoc = await db.collection("users").doc(supervisorUid).get();
+    let supervisorDocId = supervisorUid;
 
-    if (supervisorSnapshot.empty) {
+    // Fallback: check old documents with random IDs
+    if (!supervisorDoc.exists) {
+      const supervisorSnapshot = await db
+        .collection("users")
+        .where("uid", "==", supervisorUid)
+        .limit(1)
+        .get();
+
+      if (supervisorSnapshot.empty) {
+        return NextResponse.json(
+          { error: "Supervisor not found" },
+          { status: 404 },
+        );
+      }
+
+      supervisorDoc = supervisorSnapshot.docs[0];
+      supervisorDocId = supervisorDoc.id;
+    }
+
+    const supervisorData = supervisorDoc.data();
+    if (!supervisorData) {
       return NextResponse.json(
-        { error: "Supervisor not found" },
+        { error: "Supervisor data not found" },
         { status: 404 },
       );
     }
-
-    const supervisorData = supervisorSnapshot.docs[0].data();
-    const supervisorDocId = supervisorSnapshot.docs[0].id;
 
     // Check if user is actually a supervisor
     if (supervisorData.role !== "supervisor") {

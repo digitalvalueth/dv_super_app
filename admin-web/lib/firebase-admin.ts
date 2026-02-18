@@ -1,5 +1,8 @@
 import * as admin from "firebase-admin";
 
+// Get database ID from environment
+const databaseId = process.env.NEXT_PUBLIC_FIRESTORE_DATABASE_ID || "(default)";
+
 // Initialize Firebase Admin SDK
 if (!admin.apps.length) {
   try {
@@ -9,13 +12,17 @@ if (!admin.apps.length) {
       : undefined;
 
     if (!privateKey || !process.env.FIREBASE_ADMIN_CLIENT_EMAIL) {
-      console.warn(
-        "⚠️ Firebase Admin credentials not found, using Application Default Credentials",
+      console.error(
+        "❌ Firebase Admin credentials not found in .env.local",
+        "\nPlease ensure FIREBASE_ADMIN_CLIENT_EMAIL and FIREBASE_ADMIN_PRIVATE_KEY are set",
       );
       // Fallback to Application Default Credentials (works in Cloud Run)
       admin.initializeApp({
         projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID,
       });
+      console.warn(
+        "⚠️ Using Application Default Credentials - this may fail in local development",
+      );
     } else {
       admin.initializeApp({
         credential: admin.credential.cert({
@@ -25,7 +32,20 @@ if (!admin.apps.length) {
         }),
         projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID,
       });
-      console.log("✅ Firebase Admin initialized with service account");
+      console.log(
+        "✅ Firebase Admin initialized with environment variables from .env.local",
+      );
+    }
+
+    // Configure Firestore with named database if specified
+    const db = admin.firestore();
+    if (databaseId !== "(default)") {
+      db.settings({
+        databaseId: databaseId,
+      });
+      console.log(`📊 Using Firestore database: ${databaseId}`);
+    } else {
+      console.log(`📊 Using default Firestore database`);
     }
   } catch (error) {
     console.error("❌ Error initializing Firebase Admin:", error);

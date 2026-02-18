@@ -22,22 +22,36 @@ export async function GET(request: NextRequest) {
     // Get database (using default for now)
     const db = adminDb;
 
-    // Get supervisor data
-    const supervisorSnapshot = await db
-      .collection("users")
-      .where("uid", "==", supervisorUid)
-      .limit(1)
-      .get();
+    // Get supervisor data using UID as document ID (O(1) lookup)
+    let supervisorDoc = await db.collection("users").doc(supervisorUid).get();
+    let supervisorDocId = supervisorUid;
 
-    if (supervisorSnapshot.empty) {
+    // Fallback: check old documents with random IDs
+    if (!supervisorDoc.exists) {
+      const supervisorSnapshot = await db
+        .collection("users")
+        .where("uid", "==", supervisorUid)
+        .limit(1)
+        .get();
+
+      if (supervisorSnapshot.empty) {
+        return NextResponse.json(
+          { error: "Supervisor not found" },
+          { status: 404 },
+        );
+      }
+
+      supervisorDoc = supervisorSnapshot.docs[0];
+      supervisorDocId = supervisorDoc.id;
+    }
+
+    const supervisorData = supervisorDoc.data();
+    if (!supervisorData) {
       return NextResponse.json(
-        { error: "Supervisor not found" },
+        { error: "Supervisor data not found" },
         { status: 404 },
       );
     }
-
-    const supervisorData = supervisorSnapshot.docs[0].data();
-    const supervisorDocId = supervisorSnapshot.docs[0].id;
 
     // Check if user is actually a supervisor
     if (supervisorData.role !== "supervisor") {
@@ -54,9 +68,15 @@ export async function GET(request: NextRequest) {
       .where("role", "==", "employee")
       .get();
 
-    const employees = employeesSnapshot.docs.map((doc) => {
+    const employeesMap = new Map();
+
+    employeesSnapshot.docs.forEach((doc) => {
       const data = doc.data();
-      return {
+      const email = data.email?.toLowerCase();
+
+      if (!email) return; // Skip if no email
+
+      const employee = {
         id: doc.id,
         uid: data.uid,
         email: data.email,
@@ -72,7 +92,24 @@ export async function GET(request: NextRequest) {
         createdAt: data.createdAt?.toDate?.() || null,
         updatedAt: data.updatedAt?.toDate?.() || null,
       };
+
+      // If email already exists, keep the one with latest updatedAt
+      if (employeesMap.has(email)) {
+        const existing = employeesMap.get(email);
+        const existingDate =
+          existing.updatedAt || existing.createdAt || new Date(0);
+        const newDate = employee.updatedAt || employee.createdAt || new Date(0);
+
+        if (newDate > existingDate) {
+          employeesMap.set(email, employee);
+        }
+      } else {
+        employeesMap.set(email, employee);
+      }
     });
+
+    // Convert map to array
+    const employees = Array.from(employeesMap.values());
 
     // Get branches the supervisor manages
     const branches = supervisorData.managedBranchIds || [];
