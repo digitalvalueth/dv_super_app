@@ -1,4 +1,4 @@
-# ==================== FITT BSA ADMIN WEB - PRODUCTION ====================
+# ==================== FITT BSA PLATFORM WEB - PRODUCTION ====================
 # Deploy to Cloud Run (asia-southeast1 region)
 # Firestore Database: fittsuperapp-prod
 # Environment: Production
@@ -7,7 +7,7 @@ steps:
   # ==================== BUILD ====================
   - name: "gcr.io/cloud-builders/docker"
     id: "build-production"
-    dir: "admin-web"
+    dir: "platform-web"
     args:
       - "build"
       - "--build-arg"
@@ -37,9 +37,9 @@ steps:
       - "--build-arg"
       - "FROM_EMAIL=${_FROM_EMAIL}"
       - "-t"
-      - "gcr.io/$PROJECT_ID/admin-web-prod:$COMMIT_SHA"
+      - "gcr.io/$PROJECT_ID/platform-web-prod:$COMMIT_SHA"
       - "-t"
-      - "gcr.io/$PROJECT_ID/admin-web-prod:latest"
+      - "gcr.io/$PROJECT_ID/platform-web-prod:latest"
       - "-f"
       - "Dockerfile"
       - "."
@@ -49,14 +49,14 @@ steps:
     id: "push-production-sha"
     args:
       - "push"
-      - "gcr.io/$PROJECT_ID/admin-web-prod:$COMMIT_SHA"
+      - "gcr.io/$PROJECT_ID/platform-web-prod:$COMMIT_SHA"
     waitFor: ["build-production"]
 
   - name: "gcr.io/cloud-builders/docker"
     id: "push-production-latest"
     args:
       - "push"
-      - "gcr.io/$PROJECT_ID/admin-web-prod:latest"
+      - "gcr.io/$PROJECT_ID/platform-web-prod:latest"
     waitFor: ["build-production"]
 
   # ==================== DEPLOY TO CLOUD RUN ====================
@@ -66,9 +66,9 @@ steps:
     args:
       - "run"
       - "deploy"
-      - "fittbsa-admin-web-prod"
+      - "fittbsa-platform-web-prod"
       - "--image"
-      - "gcr.io/$PROJECT_ID/admin-web-prod:$COMMIT_SHA"
+      - "gcr.io/$PROJECT_ID/platform-web-prod:$COMMIT_SHA"
       - "--region"
       - "asia-southeast1"
       - "--platform"
@@ -92,13 +92,13 @@ steps:
 
 # ==================== IMAGES ====================
 images:
-  - "gcr.io/$PROJECT_ID/admin-web-prod:$COMMIT_SHA"
-  - "gcr.io/$PROJECT_ID/admin-web-prod:latest"
+  - "gcr.io/$PROJECT_ID/platform-web-prod:$COMMIT_SHA"
+  - "gcr.io/$PROJECT_ID/platform-web-prod:latest"
 
 # ==================== BUILD OPTIONS ====================
 options:
   logging: CLOUD_LOGGING_ONLY
-  machineType: "E2_HIGHCPU_8"
+  machineType: "e2-standard-2"
 
 timeout: "1800s"
 
