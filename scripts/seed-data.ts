@@ -324,7 +324,7 @@ async function seedData() {
     const productsPath = path.join(
       __dirname,
       "..",
-      "admin-web",
+      "platform-web",
       "all_prod_2026.json",
     );
     const products = parseProductsJSON(productsPath);
