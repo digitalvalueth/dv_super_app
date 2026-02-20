@@ -1,0 +1,471 @@
+openapi: 3.1.0
+info:
+  title: Watson Excel Validator API
+  version: 1.3.0
+  description: |
+    API สำหรับดึงข้อมูล export ที่ผ่านการ validate และ confirm แล้ว
+    จาก Watson Excel Validator
+
+servers:
+  - url: https://app.fittbsa.com
+    description: Production
+  - url: https://uat-app.fittbsa.com
+    description: Sandbox
+  - url: http://localhost:3000
+    description: Local
+
+security:
+  - ApiKeyAuth: []
+
+paths:
+  /api/exports:
+    get:
+      summary: List all exports
+      operationId: listExports
+      tags:
+        - Exports
+      parameters:
+        - name: supplier_code
+          in: query
+          description: Filter by supplier code
+          schema:
+            type: string
+          example: "1087212501"
+        - name: status
+          in: query
+          description: Filter by status
+          schema:
+            type: string
+            enum: [draft, confirmed]
+          example: confirmed
+        - name: start_date
+          in: query
+          description: Filter exports created after this date (based on exportedAt)
+          schema:
+            type: string
+            format: date-time
+          example: "2026-02-20T00:00:00Z"
+        - name: end_date
+          in: query
+          description: Filter exports created before this date (based on exportedAt)
+          schema:
+            type: string
+            format: date-time
+          example: "2026-02-20T23:59:59Z"
+        - name: confirmed_start_date
+          in: query
+          description: Filter exports confirmed after this date (based on confirmedAt)
+          schema:
+            type: string
+            format: date-time
+          example: "2026-02-20T00:00:00Z"
+        - name: confirmed_end_date
+          in: query
+          description: Filter exports confirmed before this date (based on confirmedAt)
+          schema:
+            type: string
+            format: date-time
+          example: "2026-02-20T23:59:59Z"
+        - name: limit
+          in: query
+          description: Number of results (default 50, max 100)
+          schema:
+            type: integer
+            default: 50
+            maximum: 100
+          example: 50
+        - name: offset
+          in: query
+          description: Offset for pagination
+          schema:
+            type: integer
+            default: 0
+          example: 0
+      responses:
+        "200":
+          description: List of exports
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/ExportSummary"
+                  meta:
+                    $ref: "#/components/schemas/Meta"
+              example:
+                success: true
+                data:
+                  - id: UTxIl6TNzzf8vyvvHQD2
+                    supplierCode: "1087212501"
+                    supplierName: "1087212501"
+                    reportDate: "26/01/2026 15:07:25"
+                    exportedAt: "2026-02-16T04:11:10.779Z"
+                    status: confirmed
+                    confirmedAt: "2026-02-16T04:45:49.055Z"
+                    rowCount: 12998
+                    passedCount: 12998
+                    lowConfidenceCount: 0
+                    summary:
+                      lowMatchItems: 0
+                      passedItems: 40
+                      notFoundItems: 0
+                meta:
+                  total: 1
+                  limit: 50
+                  offset: 0
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /api/exports/{id}:
+    get:
+      summary: Get export by ID
+      operationId: getExportById
+      tags:
+        - Exports
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Export document ID
+          schema:
+            type: string
+          example: UTxIl6TNzzf8vyvvHQD2
+      responses:
+        "200":
+          description: Export detail including all row data
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    $ref: "#/components/schemas/ExportDetail"
+              example:
+                success: true
+                data:
+                  id: 9HUMsMmviSK8A2pQQxCw
+                  supplierCode: "1087212501"
+                  supplierName: "1087212501 - PHITHANLIFE COMPANY LIMITED"
+                  reportDate: "26/01/2026 15:07:25"
+                  exportedAt: "2026-02-20T04:08:28.891Z"
+                  status: confirmed
+                  confirmedAt: "2026-02-20T04:08:36.290Z"
+                  confirmedBy: null
+                  rowCount: 161
+                  passedCount: 161
+                  lowConfidenceCount: 0
+                  summary:
+                    notFoundItems: 0
+                    passedItems: 29
+                    lowMatchItems: 0
+                  data:
+                    - Supplier: 1087212501
+                      "Supplier Name": "1087212501 - PHITHANLIFE COMPANY LIMITED"
+                      "Invoice No.": 12481811
+                      Currency: THB
+                      Store: "256 - Patong Phuket"
+                      Date: "05-JAN-0026"
+                      "Item Code": 268166
+                      "Item Description": "#PrimaNestBNTotalProtSPF50 30ml(Consign)"
+                      Qty: 1
+                      "GP%": 38
+                      "Total Cost Exclusive VAT": 520.23
+                      QtyBuy1: "1"
+                      PriceBuy1_Invoice_Formula: "520.23"
+                      PriceBuy1_Com_Calculate: "999.00"
+                      QtyPro: "0"
+                      PricePro_Invoice_Formula: ""
+                      PricePro_Com_Calculate: ""
+                      Remark: "buy 1"
+                      FMProductCode: "SK-C-126"
+                      ReportRunDateTime: "26/01/2026 15:07:25"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+    patch:
+      summary: Confirm or unconfirm an export
+      operationId: updateExportStatus
+      tags:
+        - Exports
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Export document ID
+          schema:
+            type: string
+          example: UTxIl6TNzzf8vyvvHQD2
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - action
+              properties:
+                action:
+                  type: string
+                  enum: [confirm, unconfirm]
+                  description: Action to perform
+                confirmedBy:
+                  type: string
+                  nullable: true
+                  description: Name or ID of the person confirming
+              example:
+                action: confirm
+                confirmedBy: "admin@company.com"
+      responses:
+        "200":
+          description: Export status updated successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    type: object
+                    properties:
+                      id:
+                        type: string
+                      status:
+                        type: string
+                        enum: [draft, confirmed]
+                      confirmedAt:
+                        type: string
+                        format: date-time
+                        nullable: true
+                      confirmedBy:
+                        type: string
+                        nullable: true
+                      message:
+                        type: string
+              example:
+                success: true
+                data:
+                  id: UTxIl6TNzzf8vyvvHQD2
+                  status: confirmed
+                  confirmedAt: "2026-02-16T04:45:49.055Z"
+                  confirmedBy: "admin@company.com"
+                  message: "Export confirmed successfully"
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+components:
+  securitySchemes:
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-API-Key
+      description: |
+        **Sandbox:** `wv_sandbox_ATyq62lN6bCPamLGR2PE6Ii4Vcaap0pr`
+        **Production:** `wv_prod_sjKzqLJwaEnbNNBRmGdh4Fbh846kwLEm`
+
+  schemas:
+    ExportSummary:
+      type: object
+      properties:
+        id:
+          type: string
+          description: Unique export ID
+        supplierCode:
+          type: string
+          description: Supplier code
+        supplierName:
+          type: string
+          description: Supplier name
+        reportDate:
+          type: string
+          description: Report date from source file
+        exportedAt:
+          type: string
+          format: date-time
+          description: When the export was created
+        status:
+          type: string
+          enum: [draft, confirmed]
+        confirmedAt:
+          type: string
+          format: date-time
+          nullable: true
+          description: When the export was confirmed (null if draft)
+        rowCount:
+          type: integer
+          description: Total number of rows
+        passedCount:
+          type: integer
+          description: Rows that passed validation
+        lowConfidenceCount:
+          type: integer
+          description: Rows with low match confidence
+        summary:
+          type: object
+          properties:
+            passedItems:
+              type: integer
+            lowMatchItems:
+              type: integer
+            notFoundItems:
+              type: integer
+
+    ExportDetail:
+      allOf:
+        - $ref: "#/components/schemas/ExportSummary"
+        - type: object
+          properties:
+            confirmedBy:
+              type: string
+              nullable: true
+              description: Who confirmed the export
+            data:
+              type: array
+              description: Full array of invoice row data
+              items:
+                $ref: "#/components/schemas/InvoiceRow"
+
+    InvoiceRow:
+      type: object
+      description: A single row from the invoice data
+      properties:
+        Supplier:
+          type: number
+        "Supplier Name":
+          type: string
+        "Invoice No.":
+          type: number
+        Currency:
+          type: string
+        Store:
+          type: string
+        Date:
+          type: string
+        "Item Code":
+          type: number
+        "Item Description":
+          type: string
+        Qty:
+          type: number
+        "GP%":
+          type: number
+        "Total Cost Exclusive VAT":
+          type: number
+        QtyBuy1:
+          type: string
+        PriceBuy1_Invoice_Formula:
+          type: string
+        PriceBuy1_Com_Calculate:
+          type: string
+        QtyPro:
+          type: string
+        PricePro_Invoice_Formula:
+          type: string
+        PricePro_Com_Calculate:
+          type: string
+        Remark:
+          type: string
+        FMProductCode:
+          type: string
+        ReportRunDateTime:
+          type: string
+        "Match Confidence":
+          type: number
+          description: 0-1 confidence score
+        "Calc Log":
+          type: string
+          description: Calculation details/logs
+
+    Meta:
+      type: object
+      properties:
+        total:
+          type: integer
+          description: Total matching records
+        limit:
+          type: integer
+        offset:
+          type: integer
+
+    ErrorResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: false
+        error:
+          type: object
+          properties:
+            error:
+              type: string
+            message:
+              type: string
+            code:
+              type: string
+
+  responses:
+    Unauthorized:
+      description: Missing or invalid API Key
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+          examples:
+            missing_key:
+              summary: Missing API Key
+              value:
+                success: false
+                error:
+                  error: Unauthorized
+                  message: "Missing API Key. Please provide X-API-Key header."
+                  code: AUTH_MISSING_KEY
+            invalid_key:
+              summary: Invalid API Key
+              value:
+                success: false
+                error:
+                  error: Unauthorized
+                  message: "Invalid or inactive API Key."
+                  code: AUTH_INVALID_KEY
+
+    NotFound:
+      description: Export not found
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+          example:
+            success: false
+            error:
+              error: Not Found
+              message: "Export not found"
+              code: EXPORT_NOT_FOUND
+
+    ValidationError:
+      description: Validation error
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+          example:
+            success: false
+            error:
+              error: Bad Request
+              message: "Invalid action. Must be 'confirm' or 'unconfirm'"
+              code: VALIDATION_ERROR
