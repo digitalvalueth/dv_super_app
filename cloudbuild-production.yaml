@@ -98,7 +98,6 @@ images:
 # ==================== BUILD OPTIONS ====================
 options:
   logging: CLOUD_LOGGING_ONLY
-  machineType: "e2-standard-2"
 
 timeout: "1800s"
 
@@ -108,7 +107,7 @@ timeout: "1800s"
 # 2. Create or edit your trigger
 # 3. Add these substitution variables with actual values:
 substitutions:
-  _FIREBASE_API_KEY: "AIzaSyDIoOXpF6PZ87Ju6v8fZWTb_Wr5CDqr6YI"
+  _FIREBASE_API_KEY: "SET_IN_CLOUD_BUILD_TRIGGER"
   _FIREBASE_AUTH_DOMAIN: "fittbsa.firebaseapp.com"
   _FIREBASE_PROJECT_ID: "fittbsa"
   _FIREBASE_STORAGE_BUCKET: "fittbsa.firebasestorage.app"
