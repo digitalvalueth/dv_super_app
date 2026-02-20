@@ -4,7 +4,13 @@ import { Badge } from "@/components/watson/ui/badge";
 import { Button } from "@/components/watson/ui/button";
 import { Card, CardContent } from "@/components/watson/ui/card";
 import { ValidationResult } from "@/types/watson/invoice";
-import { AlertCircle, AlertTriangle, CheckCircle, ChevronDown, ChevronUp } from "lucide-react";
+import {
+  AlertCircle,
+  AlertTriangle,
+  CheckCircle,
+  ChevronDown,
+  ChevronUp,
+} from "lucide-react";
 import { useState } from "react";
 
 interface ValidationSummaryProps {
@@ -18,7 +24,7 @@ export function ValidationSummary({ result }: ValidationSummaryProps) {
     return (
       <Card className="shadow-sm">
         <CardContent className="p-3 text-center text-gray-500 text-sm">
-          กดปุ่ม "Validate" เพื่อตรวจสอบข้อมูล
+          กดปุ่ม &quot;Validate&quot; เพื่อตรวจสอบข้อมูล
         </CardContent>
       </Card>
     );
@@ -86,32 +92,45 @@ export function ValidationSummary({ result }: ValidationSummaryProps) {
               </div>
             )}
             <div className="h-4 w-px bg-gray-300 mx-1" />
-             <div className="flex gap-4 text-sm">
+            <div className="flex gap-4 text-sm">
+              <div className="flex items-center gap-1">
+                <span className="text-gray-500">ทั้งหมด:</span>
+                <span className="font-medium">{result.totalRows}</span>
+              </div>
+              <div className="flex items-center gap-1">
+                <span className="text-green-600">ถูกต้อง:</span>
+                <span className="font-medium">{result.validRows}</span>
+              </div>
+              {result.errorRows > 0 && (
                 <div className="flex items-center gap-1">
-                    <span className="text-gray-500">ทั้งหมด:</span>
-                    <span className="font-medium">{result.totalRows}</span>
+                  <span className="text-red-600">Errors:</span>
+                  <span className="font-bold text-red-600">
+                    {result.errorRows}
+                  </span>
                 </div>
+              )}
+              {(result.warningRows ?? 0) > 0 && (
                 <div className="flex items-center gap-1">
-                    <span className="text-green-600">ถูกต้อง:</span>
-                    <span className="font-medium">{result.validRows}</span>
+                  <span className="text-yellow-600">Warnings:</span>
+                  <span className="font-bold text-yellow-600">
+                    {result.warningRows}
+                  </span>
                 </div>
-                {result.errorRows > 0 && (
-                    <div className="flex items-center gap-1">
-                        <span className="text-red-600">Errors:</span>
-                        <span className="font-bold text-red-600">{result.errorRows}</span>
-                    </div>
-                )}
-                 {result.warningRows > 0 && (
-                    <div className="flex items-center gap-1">
-                        <span className="text-yellow-600">Warnings:</span>
-                        <span className="font-bold text-yellow-600">{result.warningRows}</span>
-                    </div>
-                )}
-             </div>
+              )}
+            </div>
           </div>
-          
-          <Button variant="ghost" size="sm" className="h-6 w-6 p-0" onClick={toggleExpand}>
-            {isExpanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-6 w-6 p-0"
+            onClick={toggleExpand}
+          >
+            {isExpanded ? (
+              <ChevronUp className="h-4 w-4" />
+            ) : (
+              <ChevronDown className="h-4 w-4" />
+            )}
           </Button>
         </div>
 
@@ -120,10 +139,16 @@ export function ValidationSummary({ result }: ValidationSummaryProps) {
           <div className="mt-3 pt-3 border-t border-gray-100 space-y-3">
             {Object.keys(errorsByColumn).length > 0 && (
               <div className="flex flex-wrap gap-x-4 gap-y-2">
-                <span className="text-xs font-medium text-red-700 whitespace-nowrap">Errors:</span>
+                <span className="text-xs font-medium text-red-700 whitespace-nowrap">
+                  Errors:
+                </span>
                 <div className="flex flex-wrap gap-1.5">
                   {Object.entries(errorsByColumn).map(([column, count]) => (
-                    <Badge key={column} variant="destructive" className="h-5 px-1.5 text-[10px] bg-red-100 text-red-700 hover:bg-red-200 border-red-200">
+                    <Badge
+                      key={column}
+                      variant="destructive"
+                      className="h-5 px-1.5 text-[10px] bg-red-100 text-red-700 hover:bg-red-200 border-red-200"
+                    >
                       {column}: {count}
                     </Badge>
                   ))}
@@ -133,7 +158,9 @@ export function ValidationSummary({ result }: ValidationSummaryProps) {
 
             {Object.keys(warningsByColumn).length > 0 && (
               <div className="flex flex-wrap gap-x-4 gap-y-2">
-                <span className="text-xs font-medium text-yellow-700 whitespace-nowrap">Warnings:</span>
+                <span className="text-xs font-medium text-yellow-700 whitespace-nowrap">
+                  Warnings:
+                </span>
                 <div className="flex flex-wrap gap-1.5">
                   {Object.entries(warningsByColumn).map(([column, count]) => (
                     <Badge
