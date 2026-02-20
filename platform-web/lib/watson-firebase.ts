@@ -39,10 +39,10 @@ const firebaseConfig = {
 };
 
 // Database ID from environment (for multi-database support)
-const FIRESTORE_DB_ID = process.env.NEXT_PUBLIC_FIRESTORE_DB_ID;
+const FIRESTORE_DB_ID = process.env.NEXT_PUBLIC_FIRESTORE_DATABASE_ID;
 if (!FIRESTORE_DB_ID) {
   throw new Error(
-    "Missing required environment variable: NEXT_PUBLIC_FIRESTORE_DB_ID",
+    "Missing required environment variable: NEXT_PUBLIC_FIRESTORE_DATABASE_ID",
   );
 }
 
@@ -63,7 +63,7 @@ function getFirebaseApp(): FirebaseApp {
 export function getFirestoreDb(): Firestore {
   if (!db) {
     const firebaseApp = getFirebaseApp();
-    db = getFirestore(firebaseApp, FIRESTORE_DB_ID);
+    db = getFirestore(firebaseApp, FIRESTORE_DB_ID!);
   }
   return db;
 }
