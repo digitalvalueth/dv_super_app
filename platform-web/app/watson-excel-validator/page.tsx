@@ -125,6 +125,9 @@ function getStatusBadge(status?: WorkflowStatus) {
   }
 }
 
+/** คำนวณด้วย 4dp ก่อน (ตัด floating-point noise) แล้ว format เป็น 2dp */
+const fmt2 = (n: number) => (Math.round(n * 10000) / 10000).toFixed(2);
+
 export default function WatsonExcelValidatorPage() {
   const {
     isLoading,
@@ -580,13 +583,13 @@ export default function WatsonExcelValidatorPage() {
           updated["QtyBuy1"] = newQtyBuy1 > 0 ? newQtyBuy1 : "";
           updated["QtyPro"] = newQtyPro > 0 ? newQtyPro : "";
           updated["PriceBuy1_Invoice_Formula"] =
-            newPriceBuy1Invoice > 0 ? newPriceBuy1Invoice.toFixed(2) : "";
+            newPriceBuy1Invoice > 0 ? fmt2(newPriceBuy1Invoice) : "";
           updated["PriceBuy1_Com_Calculate"] =
-            newPriceBuy1Com > 0 ? newPriceBuy1Com.toFixed(2) : "";
+            newPriceBuy1Com > 0 ? fmt2(newPriceBuy1Com) : "";
           updated["PricePro_Invoice_Formula"] =
-            newPriceProInvoice > 0 ? newPriceProInvoice.toFixed(2) : "";
+            newPriceProInvoice > 0 ? fmt2(newPriceProInvoice) : "";
           updated["PricePro_Com_Calculate"] =
-            newPriceProCom > 0 ? newPriceProCom.toFixed(2) : "";
+            newPriceProCom > 0 ? fmt2(newPriceProCom) : "";
 
           // Recalculate Calc Amt, Diff, Confidence
           const calcAmt = newPriceBuy1Invoice + newPriceProInvoice;
@@ -606,16 +609,14 @@ export default function WatsonExcelValidatorPage() {
             const thresholdPercent = confidenceThreshold * 100;
             const isOk = confidence >= thresholdPercent;
 
-            updated["Calc Amt"] = calcAmt.toFixed(2);
-            updated["Diff"] = isOk
-              ? `✓ ${diff.toFixed(2)}`
-              : `⚠ ${diff.toFixed(2)}`;
+            updated["Calc Amt"] = fmt2(calcAmt);
+            updated["Diff"] = isOk ? `✓ ${fmt2(diff)}` : `⚠ ${fmt2(diff)}`;
             updated["Confidence"] = `${confidence.toFixed(0)}%`;
             updated["Price Match"] = isOk
               ? "✅ OK"
               : diff > 0
-                ? `⬆️ +${diff.toFixed(2)}`
-                : `⬇️ ${diff.toFixed(2)}`;
+                ? `⬆️ +${fmt2(diff)}`
+                : `⬇️ ${fmt2(diff)}`;
 
             // Update Std Qty / Promo Qty display to match
             updated["Std Qty"] = String(newQtyBuy1);
@@ -624,7 +625,7 @@ export default function WatsonExcelValidatorPage() {
             // Recalculate Total Comm
             const totalComm = newPriceBuy1Com + newPriceProCom;
             if (totalComm > 0) {
-              updated["Total Comm"] = `฿${totalComm.toFixed(2)}`;
+              updated["Total Comm"] = `฿${fmt2(totalComm)}`;
             }
           }
         }

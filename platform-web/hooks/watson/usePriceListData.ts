@@ -1,25 +1,25 @@
 "use client";
 
-import { useState, useCallback, useMemo, useEffect } from "react";
 import {
-  PriceListItem,
-  ItemPriceHistory,
-  PricePeriod,
-  PriceMatch,
-  PriceListSummary,
-} from "@/types/watson/pricelist";
-import { RawRow } from "@/types/watson/invoice";
+  clearCurrentPriceList,
+  getCurrentPriceList,
+  saveCurrentPriceList,
+} from "@/lib/watson-firebase";
+import { getFMProductCode } from "@/lib/watson/fmcode-mapping";
 import {
   findBestPriceCombination,
   formatAllocationString,
   type PriceOption,
 } from "@/lib/watson/price-optimizer";
+import { RawRow } from "@/types/watson/invoice";
 import {
-  getCurrentPriceList,
-  saveCurrentPriceList,
-  clearCurrentPriceList,
-} from "@/lib/watson-firebase";
-import { getFMProductCode } from "@/lib/watson/fmcode-mapping";
+  ItemPriceHistory,
+  PriceListItem,
+  PriceListSummary,
+  PriceMatch,
+  PricePeriod,
+} from "@/types/watson/pricelist";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 // Month name abbreviations for parsing Watson date formats
 const MONTH_MAP: Record<string, number> = {
@@ -108,6 +108,9 @@ function parseWatsonDate(dateVal: unknown): Date | null {
 function toDateOnly(d: Date): number {
   return new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
 }
+
+/** คำนวณด้วย 4dp ก่อน (ตัด floating-point noise) แล้ว format เป็น 2dp */
+const fmt2 = (n: number) => (Math.round(n * 10000) / 10000).toFixed(2);
 
 export function usePriceListData() {
   const [priceListRaw, setPriceListRaw] = useState<PriceListItem[]>([]);
@@ -555,14 +558,15 @@ export function usePriceListData() {
               ? `฿${rawItemSingle.priceIncVat.toFixed(2)}`
               : "-",
             "Total Comm": rawItemSingle?.priceIncVat
-              ? `฿${rawItemSingle.priceIncVat.toFixed(2)}`
+              ? `฿${fmt2(rawItemSingle.priceIncVat)}`
               : "-",
             "Calc Log": calcLog.join("\n"),
             // New export columns
             QtyBuy1: "1",
-            PriceBuy1_Invoice_Formula: rawAmt.toFixed(2),
-            PriceBuy1_Com_Calculate:
-              rawItemSingle?.priceIncVat?.toFixed(2) || "",
+            PriceBuy1_Invoice_Formula: fmt2(rawAmt),
+            PriceBuy1_Com_Calculate: rawItemSingle?.priceIncVat
+              ? fmt2(rawItemSingle.priceIncVat)
+              : "",
             QtyPro: "0",
             PricePro_Invoice_Formula: "",
             PricePro_Com_Calculate: "",
@@ -742,7 +746,7 @@ export function usePriceListData() {
                 promoAllocs.length > 0
                   ? formatAllocationString(promoAllocs)
                   : "0";
-              calcAmt = result.calculatedAmt.toFixed(2);
+              calcAmt = fmt2(result.calculatedAmt);
 
               // Calculate new export columns
               // Buy1 (Std) allocation
@@ -829,7 +833,7 @@ export function usePriceListData() {
                 }
               });
               if (totalCommValue > 0) {
-                totalComm = `฿${totalCommValue.toFixed(2)}`;
+                totalComm = `฿${fmt2(totalCommValue)}`;
                 calcLog.push(`  ───────────────────────`);
                 calcLog.push(`  ค่าคอมรวม: ${totalComm}`);
               }
@@ -845,8 +849,8 @@ export function usePriceListData() {
               const isConfidenceOk = result.confidence >= thresholdPercent;
 
               diffStr = isConfidenceOk
-                ? `✓ ${result.diff.toFixed(2)}`
-                : `⚠ ${result.diff.toFixed(2)}`;
+                ? `✓ ${fmt2(result.diff)}`
+                : `⚠ ${fmt2(result.diff)}`;
               confidenceStr = `${result.confidence.toFixed(0)}%`;
 
               // Update price match based on confidence
@@ -855,7 +859,7 @@ export function usePriceListData() {
               } else {
                 const diff = result.diff;
                 priceMatch =
-                  diff > 0 ? `⬆️ +${diff.toFixed(2)}` : `⬇️ ${diff.toFixed(2)}`;
+                  diff > 0 ? `⬆️ +${fmt2(diff)}` : `⬇️ ${fmt2(diff)}`;
               }
             } else {
               // Fallback to simple comparison
@@ -923,16 +927,14 @@ export function usePriceListData() {
           // New export columns
           QtyBuy1: qtyBuy1 > 0 ? qtyBuy1 : "",
           PriceBuy1_Invoice_Formula:
-            priceBuy1InvoiceFormula > 0
-              ? priceBuy1InvoiceFormula.toFixed(2)
-              : "",
+            priceBuy1InvoiceFormula > 0 ? fmt2(priceBuy1InvoiceFormula) : "",
           PriceBuy1_Com_Calculate:
-            priceBuy1ComCalculate > 0 ? priceBuy1ComCalculate.toFixed(2) : "",
+            priceBuy1ComCalculate > 0 ? fmt2(priceBuy1ComCalculate) : "",
           QtyPro: qtyPro > 0 ? qtyPro : "",
           PricePro_Invoice_Formula:
-            priceProInvoiceFormula > 0 ? priceProInvoiceFormula.toFixed(2) : "",
+            priceProInvoiceFormula > 0 ? fmt2(priceProInvoiceFormula) : "",
           PricePro_Com_Calculate:
-            priceProComCalculate > 0 ? priceProComCalculate.toFixed(2) : "",
+            priceProComCalculate > 0 ? fmt2(priceProComCalculate) : "",
           Remark: remarkCombined || plRemark || "-",
           FMProductCode: getFMProductCode(itemCode),
           ReportRunDateTime: reportRunDateTime || "",

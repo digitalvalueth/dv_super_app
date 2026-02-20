@@ -1,16 +1,16 @@
 "use client";
 
-import React, { useState, useMemo } from "react";
+import { Badge } from "@/components/watson/ui/badge";
+import { Button } from "@/components/watson/ui/button";
 import {
   Dialog,
   DialogContent,
   DialogHeader,
   DialogTitle,
 } from "@/components/watson/ui/dialog";
-import { Button } from "@/components/watson/ui/button";
 import { Input } from "@/components/watson/ui/input";
-import { Badge } from "@/components/watson/ui/badge";
-import { AlertTriangle, Check, Package, Tag, Calculator } from "lucide-react";
+import { AlertTriangle, Calculator, Check, Package, Tag } from "lucide-react";
+import { useMemo, useState } from "react";
 
 export interface QtyEditModalData {
   rowIndex: number;
@@ -240,7 +240,8 @@ export function QtyEditModal({
             />
             {stdPriceExtVat > 0 && qtyBuy1 > 0 && (
               <p className="text-xs text-gray-500 mt-1 text-center">
-                = ฿{preview.buy1Invoice.toFixed(2)}
+                = ฿
+                {(Math.round(preview.buy1Invoice * 10000) / 10000).toFixed(2)}
               </p>
             )}
           </div>
@@ -263,7 +264,7 @@ export function QtyEditModal({
             />
             {proPriceExtVat > 0 && qtyPro > 0 && (
               <p className="text-xs text-gray-500 mt-1 text-center">
-                = ฿{preview.proInvoice.toFixed(2)}
+                = ฿{(Math.round(preview.proInvoice * 10000) / 10000).toFixed(2)}
               </p>
             )}
           </div>
@@ -314,7 +315,9 @@ export function QtyEditModal({
             </div>
             <div className="flex justify-between ml-6 text-indigo-700">
               <span>Calc Amt:</span>
-              <span className="font-mono">฿{preview.calcAmt.toFixed(2)}</span>
+              <span className="font-mono">
+                ฿{(Math.round(preview.calcAmt * 10000) / 10000).toFixed(2)}
+              </span>
             </div>
             <div className="flex justify-between ml-6 text-indigo-700">
               <span>Raw Amt:</span>
@@ -330,7 +333,7 @@ export function QtyEditModal({
                 }`}
               >
                 {preview.diff >= 0 ? "+" : ""}
-                {preview.diff.toFixed(2)}
+                {(Math.round(preview.diff * 10000) / 10000).toFixed(2)}
               </span>
             </div>
             <div className="flex justify-between ml-6">
@@ -351,7 +354,7 @@ export function QtyEditModal({
               <div className="flex justify-between ml-6 text-indigo-700 border-t border-indigo-200 pt-1 mt-1">
                 <span>Total Comm:</span>
                 <span className="font-mono font-medium">
-                  ฿{preview.totalCom.toFixed(2)}
+                  ฿{(Math.round(preview.totalCom * 10000) / 10000).toFixed(2)}
                 </span>
               </div>
             )}
