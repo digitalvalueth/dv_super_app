@@ -84,7 +84,10 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Check if user already exists
+    // Derive companyId early (needed for company-scoped checks below)
+    const effectiveCompanyId = senderData.companyId || bodyCompanyId || "";
+
+    // Check if user already exists AND already belongs to this company
     const existingUserSnapshot = await db
       .collection("users")
       .where("email", "==", email)
@@ -92,13 +95,22 @@ export async function POST(request: NextRequest) {
       .get();
 
     if (!existingUserSnapshot.empty) {
-      return NextResponse.json(
-        { error: "User with this email already exists" },
-        { status: 409 },
-      );
+      const existingUser = existingUserSnapshot.docs[0].data();
+      // Only block if the user is already a member of this specific company
+      if (
+        existingUser.companyId &&
+        effectiveCompanyId &&
+        existingUser.companyId === effectiveCompanyId
+      ) {
+        return NextResponse.json(
+          { error: "ผู้ใช้นี้เป็นสมาชิกของบริษัทนี้อยู่แล้ว" },
+          { status: 409 },
+        );
+      }
+      // User exists but not in this company → allow invitation to proceed
     }
 
-    // Check if invitation already exists
+    // Check if pending invitation already exists for this email in this company
     const existingInvitationSnapshot = await db
       .collection("invitations")
       .where("email", "==", email)
@@ -107,14 +119,15 @@ export async function POST(request: NextRequest) {
       .get();
 
     if (!existingInvitationSnapshot.empty) {
-      return NextResponse.json(
-        { error: "Pending invitation already exists for this email" },
-        { status: 409 },
-      );
+      // Only block if the pending invitation is for the same company
+      const existingInv = existingInvitationSnapshot.docs[0].data();
+      if (existingInv.companyId === effectiveCompanyId) {
+        return NextResponse.json(
+          { error: "มีคำเชิญที่รอการตอบรับอยู่แล้วสำหรับอีเมลนี้ในบริษัทนี้" },
+          { status: 409 },
+        );
+      }
     }
-
-    // Derive companyId: super_admin has no companyId, so use bodyCompanyId (derived from branch on frontend)
-    const effectiveCompanyId = senderData.companyId || bodyCompanyId || "";
 
     // Get company data
     let companyName = "";

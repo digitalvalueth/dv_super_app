@@ -9,6 +9,7 @@ import { getAuth } from "firebase/auth";
 import {
   collection,
   doc,
+  getDoc,
   getDocs,
   query,
   updateDoc,
@@ -26,6 +27,7 @@ export default function InvitationsPage() {
   const [showInviteForm, setShowInviteForm] = useState(false);
   const [showBulkInviteForm, setShowBulkInviteForm] = useState(false);
   const [bulkEmails, setBulkEmails] = useState("");
+  const [companyDisplayName, setCompanyDisplayName] = useState("");
   const [formData, setFormData] = useState({
     email: "",
     role: "employee" as "manager" | "supervisor" | "employee",
@@ -36,6 +38,15 @@ export default function InvitationsPage() {
   useEffect(() => {
     if (!userData) return;
     fetchData();
+
+    // Fetch company display name
+    if (userData.companyName) {
+      setCompanyDisplayName(userData.companyName);
+    } else if (userData.companyId) {
+      getDoc(doc(db, "companies", userData.companyId)).then((snap) => {
+        if (snap.exists()) setCompanyDisplayName(snap.data()?.name || "");
+      });
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [userData]);
 
@@ -355,9 +366,17 @@ export default function InvitationsPage() {
       {showInviteForm && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
           <div className="bg-white dark:bg-gray-800 rounded-xl p-6 max-w-md w-full">
-            <h2 className="text-xl font-bold text-gray-900 dark:text-white mb-6">
+            <h2 className="text-xl font-bold text-gray-900 dark:text-white mb-1">
               ส่งคำเชิญ
             </h2>
+            {(companyDisplayName || userData?.role === "super_admin") && (
+              <p className="text-sm text-gray-500 dark:text-gray-400 mb-6">
+                คุณกำลังส่งคำเชิญเข้าร่วมบริษัท{" "}
+                <span className="font-semibold text-blue-600 dark:text-blue-400">
+                  {companyDisplayName || "(ทุกบริษัท)"}
+                </span>
+              </p>
+            )}
             <form onSubmit={handleSendInvitation} className="space-y-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
@@ -500,9 +519,17 @@ export default function InvitationsPage() {
       {showBulkInviteForm && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
           <div className="bg-white dark:bg-gray-800 rounded-xl p-6 max-w-2xl w-full max-h-[90vh] overflow-y-auto">
-            <h2 className="text-xl font-bold text-gray-900 dark:text-white mb-6">
+            <h2 className="text-xl font-bold text-gray-900 dark:text-white mb-1">
               ส่งคำเชิญแบบกลุ่ม
             </h2>
+            {(companyDisplayName || userData?.role === "super_admin") && (
+              <p className="text-sm text-gray-500 dark:text-gray-400 mb-6">
+                คุณกำลังส่งคำเชิญเข้าร่วมบริษัท{" "}
+                <span className="font-semibold text-blue-600 dark:text-blue-400">
+                  {companyDisplayName || "(ทุกบริษัท)"}
+                </span>
+              </p>
+            )}
             <form onSubmit={handleBulkInvitation} className="space-y-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
