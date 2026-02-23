@@ -1,7 +1,7 @@
 {
   "name": "super-fitt",
   "main": "expo-router/entry",
-  "version": "1.0.0",
+  "version": "1.0.2",
   "scripts": {
     "start": "expo start",
     "reset-project": "node ./scripts/reset-project.js",
@@ -12,7 +12,8 @@
     "seed": "tsx scripts/seed-data.ts",
     "seed:companies": "tsx scripts/seed-companies.ts",
     "seed:branches": "tsx scripts/seed-branches.ts",
-    "seed:products": "tsx scripts/seed-products.ts"
+    "seed:products": "tsx scripts/seed-products.ts",
+    "copy:prod": "tsx scripts/copy-to-prod.ts"
   },
   "dependencies": {
     "@expo/vector-icons": "^15.0.3",
