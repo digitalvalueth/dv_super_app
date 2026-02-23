@@ -1,11 +1,15 @@
 import { useAuthStore } from "@/stores/auth.store";
 import { useTheme } from "@/stores/theme.store";
-import { createWatermarkMetadata } from "@/utils/watermark";
+import {
+  createWatermarkMetadata,
+  getCurrentLocation,
+  validateImageExif,
+} from "@/utils/watermark";
 import { Ionicons } from "@expo/vector-icons";
 import { CameraView, useCameraPermissions } from "expo-camera";
 import * as ImagePicker from "expo-image-picker";
-import { router, useLocalSearchParams } from "expo-router";
-import { useCallback, useRef, useState } from "react";
+import { router, useFocusEffect, useLocalSearchParams } from "expo-router";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -37,6 +41,44 @@ export default function CameraScreen() {
   const [isCapturing, setIsCapturing] = useState(false);
   const cameraRef = useRef<CameraView>(null);
 
+  // Pre-fetch location when camera mounts so it’s ready when user taps capture
+  const [prefetchedLocation, setPrefetchedLocation] = useState<{
+    address: string;
+    coordinates: { latitude: number; longitude: number };
+  } | null>(null);
+
+  // Pause camera when navigating away (prevents overheating)
+  const [isCameraActive, setIsCameraActive] = useState(true);
+  useFocusEffect(
+    useCallback(() => {
+      setIsCameraActive(true);
+      return () => setIsCameraActive(false); // called when screen loses focus
+    }, []),
+  );
+
+  // Native barcode scan state
+  const [scannedBarcode, setScannedBarcode] = useState<string | null>(null);
+  const lastScanRef = useRef<number>(0);
+
+  const handleBarcodeScanned = useCallback(({ data }: { data: string }) => {
+    const now = Date.now();
+    // Debounce — process at most once per 800ms
+    if (now - lastScanRef.current < 800) return;
+    lastScanRef.current = now;
+    setScannedBarcode(data);
+  }, []);
+
+  const barcodeMatchesExpected =
+    params.productBarcode && scannedBarcode
+      ? scannedBarcode === params.productBarcode
+      : null;
+
+  useEffect(() => {
+    getCurrentLocation()
+      .then(setPrefetchedLocation)
+      .catch(() => {});
+  }, []);
+
   const handleCapture = useCallback(async () => {
     if (!cameraRef.current || isCapturing) return;
 
@@ -47,31 +89,31 @@ export default function CameraScreen() {
       const watermarkPromise = createWatermarkMetadata(
         user?.name || "Unknown",
         user?.uid || "",
+        user?.branchName || "",
         params.productName,
         params.productBarcode,
+        prefetchedLocation ?? undefined,
       );
 
-      // Take photo
+      // Take photo — no base64 here, just get the URI fast
       const photo = await cameraRef.current.takePictureAsync({
-        quality: 0.8,
-        base64: true,
-        exif: true,
+        quality: 0.7,
       });
 
-      if (!photo?.uri || !photo?.base64) {
+      if (!photo?.uri) {
         Alert.alert("เกิดข้อผิดพลาด", "ไม่สามารถถ่ายรูปได้");
         return;
       }
 
-      // Wait for watermark data (should be ready by now or soon)
+      // Wait for watermark data (should already be ready from pre-fetch)
       const watermarkData = await watermarkPromise;
 
-      // Navigate to preview with photo data
+      // Navigate to preview immediately with just the URI — no base64 overhead
       router.push({
         pathname: "/(mini-apps)/stock-counter/preview",
         params: {
           imageUri: photo.uri,
-          imageBase64: photo.base64,
+          imageBase64: "", // will be read lazily in preview when AI is triggered
           watermarkData: JSON.stringify(watermarkData),
           productId: params.productId,
           productName: params.productName,
@@ -79,6 +121,7 @@ export default function CameraScreen() {
           assignmentId: params.assignmentId,
           beforeQty: params.beforeQty,
           existingSessionId: params.existingSessionId || "",
+          nativeScannedBarcode: scannedBarcode || "", // barcode read by native scanner (100% accurate)
         },
       });
     } catch (error) {
@@ -87,7 +130,7 @@ export default function CameraScreen() {
     } finally {
       setIsCapturing(false);
     }
-  }, [isCapturing, user, params]);
+  }, [isCapturing, user, params, prefetchedLocation]);
 
   const handlePickImage = useCallback(async () => {
     try {
@@ -95,24 +138,70 @@ export default function CameraScreen() {
         mediaTypes: ["images"],
         allowsEditing: false,
         quality: 0.8,
-        base64: true,
+        // No base64: true here — read lazily in preview when AI is triggered (same as camera capture)
+        exif: true, // Required for metadata validation only
       });
 
       if (result.canceled || !result.assets?.[0]) return;
 
       const asset = result.assets[0];
 
-      if (!asset.base64) {
-        Alert.alert("เกิดข้อผิดพลาด", "ไม่สามารถอ่านรูปภาพได้");
+      // Validate EXIF metadata from the gallery image
+      const exifResult = validateImageExif(
+        asset.exif as Record<string, unknown>,
+      );
+
+      if (exifResult.reason === "too_old") {
+        const takenAtStr = exifResult.takenAt
+          ? exifResult.takenAt.toLocaleString("th-TH", {
+              dateStyle: "short",
+              timeStyle: "short",
+            })
+          : "";
+        Alert.alert(
+          "รูปภาพเก่าเกินไป",
+          `รูปนี้ถ่ายเมื่อ ${takenAtStr}\nกรุณาถ่ายรูปใหม่โดยตรงจากกล้องถ่าย`,
+        );
         return;
       }
 
-      // Get watermark metadata
+      if (exifResult.reason === "no_exif" || exifResult.reason === "no_date") {
+        // Image has no EXIF — likely screenshot or downloaded image
+        let proceed = false;
+        await new Promise<void>((resolve) => {
+          Alert.alert(
+            "ไม่พบข้อมูลภาพ",
+            "รูปนี้ไม่มีข้อมูลวันเวลาถ่าย (อาจเป็น screenshot หรือรูปที่ดาวน์โหลด)\nแนะนำให้ถ่ายรูปสดจากกล้อง ต้องการใช้รูปนี้ต่อไปหรือไม่?",
+            [
+              {
+                text: "ถ่ายใหม่",
+                style: "cancel",
+                onPress: () => {
+                  proceed = false;
+                  resolve();
+                },
+              },
+              {
+                text: "ใช้ต่อไป",
+                onPress: () => {
+                  proceed = true;
+                  resolve();
+                },
+              },
+            ],
+          );
+        });
+        if (!proceed) return;
+      }
+
+      // Get watermark metadata (use pre-fetched location if available)
       const watermarkData = await createWatermarkMetadata(
         user?.name || "Unknown",
         user?.uid || "",
+        user?.branchName || "",
         params.productName,
         params.productBarcode,
+        prefetchedLocation ?? undefined,
       );
 
       // Navigate to preview
@@ -120,7 +209,7 @@ export default function CameraScreen() {
         pathname: "/(mini-apps)/stock-counter/preview",
         params: {
           imageUri: asset.uri,
-          imageBase64: asset.base64,
+          imageBase64: "", // lazy read in preview, same as camera capture
           watermarkData: JSON.stringify(watermarkData),
           productId: params.productId,
           productName: params.productName,
@@ -128,6 +217,7 @@ export default function CameraScreen() {
           assignmentId: params.assignmentId,
           beforeQty: params.beforeQty,
           existingSessionId: params.existingSessionId || "",
+          nativeScannedBarcode: scannedBarcode || "",
         },
       });
     } catch (error) {
@@ -193,6 +283,19 @@ export default function CameraScreen() {
         style={styles.camera}
         facing={facing}
         flash={flash}
+        active={isCameraActive}
+        onBarcodeScanned={isCameraActive ? handleBarcodeScanned : undefined}
+        barcodeScannerSettings={{
+          barcodeTypes: [
+            "ean13",
+            "ean8",
+            "upc_a",
+            "upc_e",
+            "code128",
+            "code39",
+            "qr",
+          ],
+        }}
       />
 
       {/* Header - Absolute positioned */}
@@ -223,15 +326,60 @@ export default function CameraScreen() {
 
       {/* Guide overlay - Absolute positioned */}
       <View style={styles.guideContainer}>
-        <View style={styles.guideBox}>
+        <View
+          style={[
+            styles.guideBox,
+            barcodeMatchesExpected === true && styles.guideBoxMatched,
+            barcodeMatchesExpected === false && styles.guideBoxMismatched,
+          ]}
+        >
           <View style={[styles.guideCorner, styles.topLeft]} />
           <View style={[styles.guideCorner, styles.topRight]} />
           <View style={[styles.guideCorner, styles.bottomLeft]} />
           <View style={[styles.guideCorner, styles.bottomRight]} />
         </View>
-        <Text style={styles.guideText}>
-          วางสินค้าในกรอบ ให้เห็น Barcode ชัดเจน
-        </Text>
+
+        {/* Barcode scan status banner */}
+        {scannedBarcode ? (
+          <View
+            style={[
+              styles.barcodeBanner,
+              {
+                backgroundColor:
+                  barcodeMatchesExpected === true
+                    ? "rgba(22,163,74,0.92)"
+                    : barcodeMatchesExpected === false
+                      ? "rgba(220,38,38,0.92)"
+                      : "rgba(0,0,0,0.75)",
+              },
+            ]}
+          >
+            <Ionicons
+              name={
+                barcodeMatchesExpected === true
+                  ? "checkmark-circle"
+                  : barcodeMatchesExpected === false
+                    ? "close-circle"
+                    : "barcode"
+              }
+              size={20}
+              color="#fff"
+            />
+            <Text style={styles.barcodeBannerText}>
+              {barcodeMatchesExpected === true
+                ? `✅ บาร์โค้ดตรง: ${scannedBarcode}`
+                : barcodeMatchesExpected === false
+                  ? `❌ ไม่ตรง: ${scannedBarcode}`
+                  : `📷 พบ: ${scannedBarcode}`}
+            </Text>
+          </View>
+        ) : (
+          <Text style={styles.guideText}>
+            {params.productBarcode
+              ? `สแกนหาบาร์โค้ด: ${params.productBarcode}`
+              : "วางสินค้าในกรอบ ให้เห็น Barcode ชัดเจน"}
+          </Text>
+        )}
       </View>
 
       {/* Bottom controls - Absolute positioned */}
@@ -352,6 +500,28 @@ const styles = StyleSheet.create({
     width: SCREEN_WIDTH * 0.85,
     height: SCREEN_WIDTH * 0.85,
     position: "relative",
+  },
+  guideBoxMatched: {
+    borderColor: "#16a34a",
+  },
+  guideBoxMismatched: {
+    borderColor: "#dc2626",
+  },
+  barcodeBanner: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    marginTop: 20,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 24,
+    maxWidth: SCREEN_WIDTH * 0.85,
+  },
+  barcodeBannerText: {
+    color: "#fff",
+    fontSize: 13,
+    fontWeight: "600",
+    flexShrink: 1,
   },
   guideCorner: {
     position: "absolute",

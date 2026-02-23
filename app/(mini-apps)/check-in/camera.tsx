@@ -4,7 +4,7 @@ import { createWatermarkMetadata } from "@/utils/watermark";
 import { Ionicons } from "@expo/vector-icons";
 import { CameraView, useCameraPermissions } from "expo-camera";
 import * as ImagePicker from "expo-image-picker";
-import { router, useLocalSearchParams } from "expo-router";
+import { router, useFocusEffect, useLocalSearchParams } from "expo-router";
 import { useCallback, useRef, useState } from "react";
 import {
   ActivityIndicator,
@@ -34,6 +34,15 @@ export default function CheckInCameraScreen() {
   const [flash, setFlash] = useState<"off" | "on">("off");
   const [isCapturing, setIsCapturing] = useState(false);
   const cameraRef = useRef<CameraView>(null);
+
+  // Pause camera when navigating away (prevents overheating)
+  const [isCameraActive, setIsCameraActive] = useState(true);
+  useFocusEffect(
+    useCallback(() => {
+      setIsCameraActive(true);
+      return () => setIsCameraActive(false);
+    }, []),
+  );
 
   const handleCapture = useCallback(async () => {
     if (!cameraRef.current || isCapturing) return;
@@ -177,6 +186,7 @@ export default function CheckInCameraScreen() {
         style={styles.camera}
         facing={facing}
         flash={flash}
+        active={isCameraActive}
       />
 
       {/* Header - Absolute positioned */}

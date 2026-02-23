@@ -212,6 +212,7 @@ export const subscribeToProductsWithAssignments = (
   userId: string,
   onUpdate: (products: ProductWithAssignment[]) => void,
   onError?: (error: Error) => void,
+  companyId?: string,
 ): Unsubscribe => {
   console.log("🔔 Setting up realtime products listener for user:", userId);
 
@@ -283,6 +284,16 @@ export const subscribeToProductsWithAssignments = (
 
           for (const productDoc of productSnapshot.docs) {
             const productData = productDoc.data();
+
+            // Filter by companyId to prevent cross-company duplicates
+            if (
+              companyId &&
+              productData.companyId &&
+              productData.companyId !== companyId
+            ) {
+              continue;
+            }
+
             const assignmentInfo = productAssignmentMap.get(
               productData.productId,
             );

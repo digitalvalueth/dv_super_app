@@ -1,4 +1,4 @@
-# ==================== FITT BSA ADMIN WEB - SANDBOX/DEVELOPMENT ====================
+# ==================== FITT BSA PLATFORM WEB - SANDBOX/DEVELOPMENT ====================
 # Deploy to Cloud Run (asia-southeast1 region)
 # Firestore Database: fittsuperapp-dev
 # Environment: Sandbox/Development
@@ -7,7 +7,7 @@ steps:
   # ==================== BUILD ====================
   - name: "gcr.io/cloud-builders/docker"
     id: "build-sandbox"
-    dir: "admin-web"
+    dir: "platform-web"
     args:
       - "build"
       - "--build-arg"
@@ -37,9 +37,9 @@ steps:
       - "--build-arg"
       - "FROM_EMAIL=${_FROM_EMAIL}"
       - "-t"
-      - "gcr.io/$PROJECT_ID/admin-web-dev:$COMMIT_SHA"
+      - "gcr.io/$PROJECT_ID/platform-web-dev:$COMMIT_SHA"
       - "-t"
-      - "gcr.io/$PROJECT_ID/admin-web-dev:latest"
+      - "gcr.io/$PROJECT_ID/platform-web-dev:latest"
       - "-f"
       - "Dockerfile"
       - "."
@@ -49,14 +49,14 @@ steps:
     id: "push-sandbox-sha"
     args:
       - "push"
-      - "gcr.io/$PROJECT_ID/admin-web-dev:$COMMIT_SHA"
+      - "gcr.io/$PROJECT_ID/platform-web-dev:$COMMIT_SHA"
     waitFor: ["build-sandbox"]
 
   - name: "gcr.io/cloud-builders/docker"
     id: "push-sandbox-latest"
     args:
       - "push"
-      - "gcr.io/$PROJECT_ID/admin-web-dev:latest"
+      - "gcr.io/$PROJECT_ID/platform-web-dev:latest"
     waitFor: ["build-sandbox"]
 
   # ==================== DEPLOY TO CLOUD RUN ====================
@@ -68,7 +68,7 @@ steps:
       - "deploy"
       - "fittbsa-admin-web-dev"
       - "--image"
-      - "gcr.io/$PROJECT_ID/admin-web-dev:$COMMIT_SHA"
+      - "gcr.io/$PROJECT_ID/platform-web-dev:$COMMIT_SHA"
       - "--region"
       - "asia-southeast1"
       - "--platform"
@@ -92,13 +92,12 @@ steps:
 
 # ==================== IMAGES ====================
 images:
-  - "gcr.io/$PROJECT_ID/admin-web-dev:$COMMIT_SHA"
-  - "gcr.io/$PROJECT_ID/admin-web-dev:latest"
+  - "gcr.io/$PROJECT_ID/platform-web-dev:$COMMIT_SHA"
+  - "gcr.io/$PROJECT_ID/platform-web-dev:latest"
 
 # ==================== BUILD OPTIONS ====================
 options:
   logging: CLOUD_LOGGING_ONLY
-  machineType: "E2_HIGHCPU_8"
 
 timeout: "1800s"
 
@@ -108,7 +107,7 @@ timeout: "1800s"
 # 2. Create or edit your trigger
 # 3. Add these substitution variables with actual values:
 substitutions:
-  _FIREBASE_API_KEY: "AIzaSyDIoOXpF6PZ87Ju6v8fZWTb_Wr5CDqr6YI"
+  _FIREBASE_API_KEY: "SET_IN_CLOUD_BUILD_TRIGGER"
   _FIREBASE_AUTH_DOMAIN: "fittbsa.firebaseapp.com"
   _FIREBASE_PROJECT_ID: "fittbsa"
   _FIREBASE_STORAGE_BUCKET: "fittbsa.firebasestorage.app"

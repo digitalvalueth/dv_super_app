@@ -8,6 +8,7 @@ interface AuthState {
   user: User | null;
   loading: boolean;
   error: string | null;
+  isFirebaseAuthenticated: boolean; // Firebase Auth layer (not Firestore yet)
 
   // Actions
   setUser: (user: User | null) => void;
@@ -22,6 +23,7 @@ export const useAuthStore = create<AuthState>((set) => ({
   user: null,
   loading: true,
   error: null,
+  isFirebaseAuthenticated: false,
 
   setUser: (user) => set({ user, loading: false }),
 
@@ -41,20 +43,33 @@ export const useAuthStore = create<AuthState>((set) => ({
       onAuthStateChange(async (firebaseUser) => {
         if (firebaseUser) {
           console.log("🔐 User authenticated, setting up realtime listener...");
+          set({ isFirebaseAuthenticated: true });
+
+          // Unsubscribe previous listener before setting up a new one
+          if (userUnsubscribe) {
+            userUnsubscribe();
+            userUnsubscribe = null;
+          }
 
           // Setup realtime listener for user document
           const userDocRef = doc(db, "users", firebaseUser.uid);
           userUnsubscribe = onSnapshot(
             userDocRef,
+            { includeMetadataChanges: true },
             (docSnapshot) => {
               if (docSnapshot.exists()) {
                 const userData = docSnapshot.data() as User;
                 console.log("✅ User data updated:", userData.email);
                 set({ user: userData, loading: false });
-              } else {
-                console.log("⚠️ User document doesn't exist");
+              } else if (!docSnapshot.metadata.fromCache) {
+                // Only clear user when SERVER confirms document doesn't exist
+                // (ignore cache-miss from local Firestore cache)
+                console.log(
+                  "⚠️ User document doesn't exist (server confirmed)",
+                );
                 set({ user: null, loading: false });
               }
+              // If fromCache && !exists: stay loading, wait for server response
             },
             (error) => {
               console.error("❌ Error in user listener:", error);
@@ -62,10 +77,11 @@ export const useAuthStore = create<AuthState>((set) => ({
               getCurrentUser().then((userData) => {
                 set({ user: userData, loading: false });
               });
-            }
+            },
           );
         } else {
           console.log("🔓 No authenticated user");
+          set({ isFirebaseAuthenticated: false });
           // Cleanup user listener if exists
           if (userUnsubscribe) {
             userUnsubscribe();
@@ -84,6 +100,6 @@ export const useAuthStore = create<AuthState>((set) => ({
   },
 
   logout: () => {
-    set({ user: null, loading: false });
+    set({ user: null, loading: false, isFirebaseAuthenticated: false });
   },
 }));

@@ -9,7 +9,10 @@
     "ios": "expo run:ios",
     "web": "expo start --web",
     "lint": "expo lint",
-    "seed": "tsx scripts/seed-data.ts"
+    "seed": "tsx scripts/seed-data.ts",
+    "seed:companies": "tsx scripts/seed-companies.ts",
+    "seed:branches": "tsx scripts/seed-branches.ts",
+    "seed:products": "tsx scripts/seed-products.ts"
   },
   "dependencies": {
     "@expo/vector-icons": "^15.0.3",

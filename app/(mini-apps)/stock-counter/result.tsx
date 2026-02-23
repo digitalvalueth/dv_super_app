@@ -91,11 +91,7 @@ export default function ResultScreen() {
 
         Alert.alert(
           "ยืนยันสำเร็จ",
-          `ยืนยันผลการนับ ${barcodeCount} รายการเรียบร้อยแล้ว\n\n${
-            variance !== 0
-              ? `สินค้าคุณ${variance > 0 ? "ขาดไป" : "เกิน"} ${Math.abs(variance)} ชิ้น`
-              : "จำนวนตรงกัน ✓"
-          }`,
+          `ยืนยันผลการนับ ${barcodeCount} รายการเรียบร้อยแล้ว`,
           [
             {
               text: "ตกลง",
@@ -154,17 +150,14 @@ export default function ResultScreen() {
             timestamp: watermarkData.timestamp,
             employeeName: watermarkData.employeeName,
             employeeId: watermarkData.employeeId,
+            branchName: watermarkData.branchName || "",
           }),
         }),
       });
 
       Alert.alert(
         "บันทึกสำเร็จ",
-        `บันทึกผลการนับ ${barcodeCount} รายการเรียบร้อยแล้ว\n\n${
-          variance !== 0
-            ? `สินค้าคุณ${variance > 0 ? "ขาดไป" : "เกิน"} ${Math.abs(variance)} ชิ้น`
-            : "จำนวนตรงกัน ✓"
-        }`,
+        `บันทึกผลการนับ ${barcodeCount} รายการเรียบร้อยแล้ว`,
         [
           {
             text: "ตกลง",

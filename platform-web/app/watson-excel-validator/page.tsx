@@ -1,0 +1,2529 @@
+"use client";
+
+import { UndoRedoControls } from "@/components/watson/editor/UndoRedoControls";
+import { ExportSuccessModal } from "@/components/watson/export/ExportSuccessModal";
+import { ActivityLogsSidebar } from "@/components/watson/logs/ActivityLogsSidebar";
+import { OfflinePage } from "@/components/watson/OfflinePage";
+import {
+  BulkFixAction,
+  BulkFixSuggestionPanel,
+} from "@/components/watson/pricelist/BulkFixSuggestionPanel";
+import { CalculationLogModal } from "@/components/watson/pricelist/CalculationLogModal";
+import {
+  IssueCategory,
+  PriceIssueBreakdown,
+  PriceIssuePanel,
+} from "@/components/watson/pricelist/PriceIssuePanel";
+import { PriceListSidebar } from "@/components/watson/pricelist/PriceListSidebar";
+import {
+  QtyEditModal,
+  QtyEditModalData,
+} from "@/components/watson/pricelist/QtyEditModal";
+import { FixSuggestionModal } from "@/components/watson/suggestions/FixSuggestionModal";
+import { DataTable } from "@/components/watson/table/DataTable";
+import { Alert, AlertDescription } from "@/components/watson/ui/alert";
+import { Badge } from "@/components/watson/ui/badge";
+import { Button } from "@/components/watson/ui/button";
+import {
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+} from "@/components/watson/ui/card";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/watson/ui/dropdown-menu";
+import { LoadingOverlay } from "@/components/watson/ui/loading-overlay";
+import { Skeleton } from "@/components/watson/ui/skeleton";
+import { toast } from "@/components/watson/ui/toast-provider";
+import { DuplicateFileDialog } from "@/components/watson/upload/DuplicateFileDialog";
+import { FileUploader } from "@/components/watson/upload/FileUploader";
+import { ErrorDetails } from "@/components/watson/validation/ErrorDetails";
+import { ValidationSummary } from "@/components/watson/validation/ValidationSummary";
+import { useActivityLogs } from "@/hooks/watson/useActivityLogs";
+import { useDataEditor } from "@/hooks/watson/useDataEditor";
+import { useExcelUpload } from "@/hooks/watson/useExcelUpload";
+import { useInvoiceUploadHistory } from "@/hooks/watson/useInvoiceUploadHistory";
+import { useOnlineStatus } from "@/hooks/watson/useOnlineStatus";
+import { usePriceImportHistory } from "@/hooks/watson/usePriceImportHistory";
+import { usePriceListData } from "@/hooks/watson/usePriceListData";
+import type { WorkflowStatus } from "@/lib/watson-firebase";
+import {
+  exportToExcel,
+  exportToJson,
+  exportValidationReport,
+  getExportHeaders,
+  saveExportToCloud,
+} from "@/lib/watson/excel-exporter";
+import {
+  applySuggestions,
+  FixSuggestion,
+  FixSuggestionGroup,
+  getAllSuggestions,
+} from "@/lib/watson/fix-suggestions";
+import { validateData } from "@/lib/watson/validators";
+import { useAuthStore } from "@/stores/auth.store";
+import { ValidationResult } from "@/types/watson/invoice";
+import {
+  Building2,
+  Calendar,
+  CheckCircle,
+  ChevronDown,
+  ChevronRight,
+  Cloud,
+  Download,
+  FileJson,
+  FileSpreadsheet,
+  Library,
+  Loader2,
+  RotateCcw,
+  Wand2,
+} from "lucide-react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+
+// Helper function to get status badge display
+function getStatusBadge(status?: WorkflowStatus) {
+  switch (status) {
+    case "confirmed":
+      return (
+        <Badge className="bg-green-500 text-white text-[10px] px-1.5 py-0 h-4">
+          ยืนยันแล้ว
+        </Badge>
+      );
+    case "exported":
+      return (
+        <Badge className="bg-purple-500 text-white text-[10px] px-1.5 py-0 h-4">
+          Export แล้ว
+        </Badge>
+      );
+    case "calculated":
+      return (
+        <Badge className="bg-blue-500 text-white text-[10px] px-1.5 py-0 h-4">
+          เทียบราคาแล้ว
+        </Badge>
+      );
+    case "validated":
+      return (
+        <Badge className="bg-yellow-500 text-white text-[10px] px-1.5 py-0 h-4">
+          ตรวจแล้ว
+        </Badge>
+      );
+    case "uploaded":
+    default:
+      return (
+        <Badge
+          variant="outline"
+          className="text-gray-500 text-[10px] px-1.5 py-0 h-4 border-gray-300"
+        >
+          อัปโหลด
+        </Badge>
+      );
+  }
+}
+
+/** คำนวณด้วย 4dp ก่อน (ตัด floating-point noise) แล้ว format เป็น 2dp */
+const fmt2 = (n: number) => (Math.round(n * 10000) / 10000).toFixed(2);
+
+export default function WatsonExcelValidatorPage() {
+  const {
+    isLoading,
+    error,
+    parsedData,
+    uploadFile,
+    reset,
+    fileName,
+    setFileName,
+    reportMeta,
+    setReportMeta,
+  } = useExcelUpload();
+  const {
+    data,
+    setData,
+    updateCell,
+    deleteRow,
+    shiftRowLeft,
+    shiftRowRight,
+    shiftColumnLeft,
+    shiftColumnRight,
+    clearCell,
+    canUndo,
+    canRedo,
+    undo,
+    redo,
+    historyLength,
+  } = useDataEditor();
+
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const { userData } = useAuthStore();
+
+  // Price List data hook
+  const {
+    priceHistory: itemPriceHistory, // Renamed from priceHistory to avoid conflict
+    priceListRaw, // Get raw list for search
+    summary: priceListSummary,
+    importPriceList,
+    addOrUpdatePriceList,
+    clearPriceList,
+    enrichDataWithPriceMatch,
+  } = usePriceListData();
+
+  // Price Import History hook
+  const {
+    history: priceImportHistory,
+    addRecord: addHistoryRecord,
+    addRecordFromServer,
+    removeRecord: removeHistoryRecord,
+    clearHistory: clearImportHistory,
+    loadRecordData: loadPriceHistoryData,
+  } = usePriceImportHistory();
+
+  // Invoice Upload History hook
+  const {
+    history: invoiceUploadHistory,
+    isLoading: isLoadingHistory,
+    addRecord: saveInvoiceUpload,
+    loadRecord: loadInvoiceUpload,
+    updateRecord: updateInvoiceUpload,
+    updateStatus: updateInvoiceStatus,
+    removeRecord: removeInvoiceUpload,
+  } = useInvoiceUploadHistory();
+
+  // Track current loaded record ID for auto-save
+  const [currentRecordId, setCurrentRecordId] = useState<string | null>(null);
+
+  // Global loading state for full-screen overlay
+  const [isGlobalLoading, setIsGlobalLoading] = useState(false);
+
+  // Wrap loadPriceHistoryData to show overlay
+  const handleLoadPriceHistoryData = useCallback(
+    async (record: any) => {
+      setIsGlobalLoading(true);
+      try {
+        // Add artificial delay for better UX if too fast
+        const [data] = await Promise.all([
+          loadPriceHistoryData(record),
+          new Promise((resolve) => setTimeout(resolve, 500)),
+        ]);
+        return data;
+      } finally {
+        setIsGlobalLoading(false);
+      }
+    },
+    [loadPriceHistoryData],
+  );
+
+  // Track confirmed file state - if set, file is locked and shows export ID
+  const [confirmedExportId, setConfirmedExportId] = useState<string | null>(
+    null,
+  );
+
+  // User overrides for Std Qty / Promo Qty / QtyBuy1 / QtyPro (rowIndex -> overrides)
+  const [qtyOverrides, setQtyOverrides] = useState<
+    Map<
+      number,
+      {
+        stdQty?: string;
+        promoQty?: string;
+        qtyBuy1?: string;
+        qtyPro?: string;
+      }
+    >
+  >(new Map());
+
+  // Activity Logs hook
+  const {
+    logs: activityLogs,
+    summary: logsSummary,
+    clearLogs,
+    logImportExcel,
+    logImportPriceList,
+    logEditCell,
+    logDeleteRow,
+    logShiftRowLeft,
+    logShiftRowRight,
+    logShiftColumnLeft,
+    logShiftColumnRight,
+    logClearCell,
+    logAutoFix,
+    logValidate,
+    logExportExcel,
+    logExportReport,
+    logUndo,
+    logRedo,
+  } = useActivityLogs();
+
+  // Online status detection
+  const { isOnline, isFirebaseConnected, lastChecked, checkConnection } =
+    useOnlineStatus();
+
+  const [headers, setHeaders] = useState<string[]>([]);
+  const [validationResult, setValidationResult] =
+    useState<ValidationResult | null>(null);
+  const [highlightRowIndex, setHighlightRowIndex] = useState<
+    number | undefined
+  >(undefined);
+  const [goToPage, setGoToPage] = useState<number | undefined>(undefined);
+  const [showPriceColumns, setShowPriceColumns] = useState(false);
+  const [showPricePanel, setShowPricePanel] = useState(false);
+  const [priceRecalcTrigger, setPriceRecalcTrigger] = useState(0);
+  const [calcStatus, setCalcStatus] = useState<
+    "idle" | "calculating" | "completed"
+  >("idle");
+  const [confidenceThreshold, setConfidenceThreshold] = useState(0.9); // 90% default
+  const [showOnlyLowConfidence, setShowOnlyLowConfidence] = useState(false);
+  const [showSuggestions, setShowSuggestions] = useState(false);
+  const [suggestionGroups, setSuggestionGroups] = useState<
+    FixSuggestionGroup[]
+  >([]);
+  const [showIssuePanel, setShowIssuePanel] = useState(false);
+  const [showBulkFixPanel, setShowBulkFixPanel] = useState(false);
+  const [bulkAcceptedItemCodes, setBulkAcceptedItemCodes] = useState<
+    Set<string>
+  >(new Set());
+  const [priceFilterCategory, setPriceFilterCategory] =
+    useState<IssueCategory | null>(null);
+
+  // Calc Log modal state
+  const [calcLogOpen, setCalcLogOpen] = useState(false);
+  const [calcLogText, setCalcLogText] = useState("");
+
+  // Qty Edit modal state
+  const [qtyEditOpen, setQtyEditOpen] = useState(false);
+  const [qtyEditData, setQtyEditData] = useState<QtyEditModalData | null>(null);
+  const [qtyEditMaxQty, setQtyEditMaxQty] = useState(0);
+  const [calcLogItemCode, setCalcLogItemCode] = useState("");
+
+  // Duplicate file dialog state
+  const [duplicateDialogOpen, setDuplicateDialogOpen] = useState(false);
+  const [pendingParsedData, setPendingParsedData] = useState<
+    typeof parsedData | null
+  >(null);
+  const [existingRecordForDuplicate, setExistingRecordForDuplicate] = useState<{
+    id: string;
+    uploadedAt: string;
+    rowCount: number;
+  } | null>(null);
+
+  // Derived display data - computed from source data
+  // priceRecalcTrigger forces recalculation when user clicks "Recalculate"
+  const {
+    displayData,
+    displayHeaders,
+    lowConfidenceCount,
+    passedCount,
+    priceIssueBreakdown,
+  } = useMemo(() => {
+    if (showPriceColumns) {
+      const { enrichedData, enrichedHeaders } = enrichDataWithPriceMatch(
+        data,
+        headers,
+        confidenceThreshold,
+        reportMeta?.reportRunDateTime,
+      );
+
+      // Add original row index to each row for tracking after filtering
+      const dataWithOriginalIdx = enrichedData.map((row, idx) => ({
+        ...row,
+        _originalIdx: idx,
+      }));
+
+      // Find Item Code header
+      const itemCodeHeader = headers.find(
+        (h) =>
+          h.toLowerCase().includes("item code") ||
+          h.toLowerCase() === "itemcode",
+      );
+
+      // Find which rows are acceptable based on Confidence >= threshold
+      const acceptable = new Set<number>();
+      const thresholdPercent = confidenceThreshold * 100;
+
+      // Issue tracking maps: itemCode -> { rowIndices, itemName, category, ... }
+      const passedMap = new Map<
+        string,
+        { rowIndices: number[]; itemName: string; confidence: string }
+      >();
+      const notFoundMap = new Map<
+        string,
+        { rowIndices: number[]; itemName: string }
+      >();
+      const noPeriodMap = new Map<
+        string,
+        { rowIndices: number[]; itemName: string }
+      >();
+      const lowMatchMap = new Map<
+        string,
+        {
+          rowIndices: number[];
+          itemName: string;
+          confidence: string;
+          diff: string;
+        }
+      >();
+
+      enrichedData.forEach((row, idx) => {
+        const confidenceValue = String(row["Confidence"] || "");
+        const diffValue = String(row["Diff"] || "");
+        const priceMatch = String(row["Price Match"] || "");
+        const itemCode = itemCodeHeader
+          ? String(row[itemCodeHeader] || "").trim()
+          : "";
+        const itemDesc = String(
+          row["Item Description"] || row["PL Name"] || "",
+        ).trim();
+
+        // Parse confidence percentage
+        const confMatch = confidenceValue.match(/(\d+)/);
+        const confidencePercent = confMatch ? parseInt(confMatch[1], 10) : 0;
+
+        // Check if this item was bulk-accepted
+        const isBulkAccepted = bulkAcceptedItemCodes.has(itemCode);
+
+        if (confidenceValue !== "-" && diffValue !== "-") {
+          if (confidencePercent >= thresholdPercent || isBulkAccepted) {
+            acceptable.add(idx);
+            // Track passed items
+            const existing = passedMap.get(itemCode);
+            if (existing) {
+              existing.rowIndices.push(idx);
+            } else {
+              passedMap.set(itemCode, {
+                rowIndices: [idx],
+                itemName: itemDesc,
+                confidence:
+                  isBulkAccepted && confidencePercent < thresholdPercent
+                    ? `${confidenceValue} ✓` // Mark as bulk-accepted
+                    : confidenceValue,
+              });
+            }
+          } else {
+            // Low match
+            const existing = lowMatchMap.get(itemCode);
+            if (existing) {
+              existing.rowIndices.push(idx);
+            } else {
+              lowMatchMap.set(itemCode, {
+                rowIndices: [idx],
+                itemName: itemDesc,
+                confidence: confidenceValue,
+                diff: diffValue,
+              });
+            }
+          }
+        } else if (priceMatch.includes("คืนสินค้า")) {
+          // Returns are acceptable (no calculation needed, not an issue)
+          acceptable.add(idx);
+          const existing = passedMap.get(itemCode);
+          if (existing) {
+            existing.rowIndices.push(idx);
+          } else {
+            passedMap.set(itemCode, {
+              rowIndices: [idx],
+              itemName: itemDesc,
+              confidence: "คืน",
+            });
+          }
+        } else if (priceMatch.includes("Qty=1")) {
+          // Single item purchases are acceptable (skip validation)
+          acceptable.add(idx);
+          const existing = passedMap.get(itemCode);
+          if (existing) {
+            existing.rowIndices.push(idx);
+          } else {
+            passedMap.set(itemCode, {
+              rowIndices: [idx],
+              itemName: itemDesc,
+              confidence: "Qty=1",
+            });
+          }
+        } else if (priceMatch.includes("No period")) {
+          const existing = noPeriodMap.get(itemCode);
+          if (existing) {
+            existing.rowIndices.push(idx);
+          } else {
+            noPeriodMap.set(itemCode, {
+              rowIndices: [idx],
+              itemName: itemDesc,
+            });
+          }
+        } else {
+          // Not found or other
+          const existing = notFoundMap.get(itemCode);
+          if (existing) {
+            existing.rowIndices.push(idx);
+          } else {
+            notFoundMap.set(itemCode, {
+              rowIndices: [idx],
+              itemName: itemDesc,
+            });
+          }
+        }
+      });
+
+      // Build breakdown
+      const passedItems = Array.from(passedMap.entries())
+        .map(([itemCode, v]) => ({
+          itemCode,
+          itemName: v.itemName,
+          category: "passed" as const,
+          rowCount: v.rowIndices.length,
+          rowIndices: v.rowIndices,
+          sampleConfidence: v.confidence,
+        }))
+        .sort((a, b) => b.rowCount - a.rowCount);
+
+      const notFoundItems = Array.from(notFoundMap.entries())
+        .map(([itemCode, v]) => ({
+          itemCode,
+          itemName: v.itemName,
+          category: "not-found" as const,
+          rowCount: v.rowIndices.length,
+          rowIndices: v.rowIndices,
+        }))
+        .sort((a, b) => b.rowCount - a.rowCount);
+
+      const noPeriodItems = Array.from(noPeriodMap.entries())
+        .map(([itemCode, v]) => ({
+          itemCode,
+          itemName: v.itemName,
+          category: "no-period" as const,
+          rowCount: v.rowIndices.length,
+          rowIndices: v.rowIndices,
+        }))
+        .sort((a, b) => b.rowCount - a.rowCount);
+
+      const lowMatchItems = Array.from(lowMatchMap.entries())
+        .map(([itemCode, v]) => ({
+          itemCode,
+          itemName: v.itemName,
+          category: "low-match" as const,
+          rowCount: v.rowIndices.length,
+          rowIndices: v.rowIndices,
+          sampleConfidence: v.confidence,
+          sampleDiff: v.diff,
+        }))
+        .sort((a, b) => b.rowCount - a.rowCount);
+
+      const breakdown: PriceIssueBreakdown = {
+        passedItems,
+        notFoundItems,
+        noPeriodItems,
+        lowMatchItems,
+        passedRows: passedItems.reduce((s, i) => s + i.rowCount, 0),
+        notFoundRows: notFoundItems.reduce((s, i) => s + i.rowCount, 0),
+        noPeriodRows: noPeriodItems.reduce((s, i) => s + i.rowCount, 0),
+        lowMatchRows: lowMatchItems.reduce((s, i) => s + i.rowCount, 0),
+      };
+
+      // Collect row indices for each category for category filtering
+      const passedRowSet = new Set<number>(acceptable);
+      const notFoundRowSet = new Set<number>();
+      notFoundMap.forEach((v) =>
+        v.rowIndices.forEach((i) => notFoundRowSet.add(i)),
+      );
+      const noPeriodRowSet = new Set<number>();
+      noPeriodMap.forEach((v) =>
+        v.rowIndices.forEach((i) => noPeriodRowSet.add(i)),
+      );
+      const lowMatchRowSet = new Set<number>();
+      lowMatchMap.forEach((v) =>
+        v.rowIndices.forEach((i) => lowMatchRowSet.add(i)),
+      );
+
+      // Apply user overrides for Std Qty / Promo Qty / QtyBuy1 / QtyPro using _originalIdx
+      const dataWithOverrides = dataWithOriginalIdx.map((row) => {
+        const originalIdx = row._originalIdx as number;
+        const override = qtyOverrides.get(originalIdx);
+        if (!override) return row;
+
+        const rowAny = row as Record<string, unknown>;
+        const updated: typeof row & Record<string, unknown> = { ...row };
+
+        // Apply Std Qty / Promo Qty display overrides
+        if (override.stdQty !== undefined) {
+          updated["Std Qty"] = override.stdQty;
+        }
+        if (override.promoQty !== undefined) {
+          updated["Promo Qty"] = override.promoQty;
+        }
+
+        // Apply QtyBuy1 / QtyPro overrides with price recalculation
+        if (override.qtyBuy1 !== undefined || override.qtyPro !== undefined) {
+          const newQtyBuy1 =
+            override.qtyBuy1 !== undefined
+              ? parseInt(override.qtyBuy1) || 0
+              : parseInt(String(rowAny["QtyBuy1"])) || 0;
+          const newQtyPro =
+            override.qtyPro !== undefined
+              ? parseInt(override.qtyPro) || 0
+              : parseInt(String(rowAny["QtyPro"])) || 0;
+
+          // Get per-unit prices from hidden metadata
+          const stdPriceExtVat = Number(rowAny["_stdPriceExtVat"]) || 0;
+          const stdPriceIncVat = Number(rowAny["_stdPriceIncVat"]) || 0;
+          let proPriceExtVat = Number(rowAny["_proPriceExtVat"]) || 0;
+          let proPriceIncVat = Number(rowAny["_proPriceIncVat"]) || 0;
+          // Fallback: if no promo price stored, use std price
+          if (proPriceExtVat === 0 && stdPriceExtVat > 0) {
+            proPriceExtVat = stdPriceExtVat;
+            proPriceIncVat = stdPriceIncVat;
+          }
+
+          // Recalculate prices
+          const newPriceBuy1Invoice = newQtyBuy1 * stdPriceExtVat;
+          const newPriceBuy1Com = newQtyBuy1 * stdPriceIncVat;
+          const newPriceProInvoice = newQtyPro * proPriceExtVat;
+          const newPriceProCom = newQtyPro * proPriceIncVat;
+
+          updated["QtyBuy1"] = newQtyBuy1 > 0 ? newQtyBuy1 : "";
+          updated["QtyPro"] = newQtyPro > 0 ? newQtyPro : "";
+          updated["PriceBuy1_Invoice_Formula"] =
+            newPriceBuy1Invoice > 0 ? fmt2(newPriceBuy1Invoice) : "";
+          updated["PriceBuy1_Com_Calculate"] =
+            newPriceBuy1Com > 0 ? fmt2(newPriceBuy1Com) : "";
+          updated["PricePro_Invoice_Formula"] =
+            newPriceProInvoice > 0 ? fmt2(newPriceProInvoice) : "";
+          updated["PricePro_Com_Calculate"] =
+            newPriceProCom > 0 ? fmt2(newPriceProCom) : "";
+
+          // Recalculate Calc Amt, Diff, Confidence
+          const calcAmt = newPriceBuy1Invoice + newPriceProInvoice;
+          const rawAmtHeader = headers.find(
+            (h) =>
+              h.toLowerCase().includes("total cost") &&
+              h.toLowerCase().includes("exclusive"),
+          );
+          const rawAmt = rawAmtHeader
+            ? Math.abs(Number(rowAny[rawAmtHeader]) || 0)
+            : 0;
+
+          if (calcAmt > 0 && rawAmt > 0) {
+            const diff = calcAmt - rawAmt;
+            const confidence =
+              rawAmt > 0 ? Math.max(0, (1 - Math.abs(diff) / rawAmt) * 100) : 0;
+            const thresholdPercent = confidenceThreshold * 100;
+            const isOk = confidence >= thresholdPercent;
+
+            updated["Calc Amt"] = fmt2(calcAmt);
+            updated["Diff"] = isOk ? `✓ ${fmt2(diff)}` : `⚠ ${fmt2(diff)}`;
+            updated["Confidence"] = `${confidence.toFixed(0)}%`;
+            updated["Price Match"] = isOk
+              ? "✅ OK"
+              : diff > 0
+                ? `⬆️ +${fmt2(diff)}`
+                : `⬇️ ${fmt2(diff)}`;
+
+            // Update Std Qty / Promo Qty display to match
+            updated["Std Qty"] = String(newQtyBuy1);
+            updated["Promo Qty"] = newQtyPro > 0 ? String(newQtyPro) : "0";
+
+            // Recalculate Total Comm
+            const totalComm = newPriceBuy1Com + newPriceProCom;
+            if (totalComm > 0) {
+              updated["Total Comm"] = `฿${fmt2(totalComm)}`;
+            }
+          }
+        }
+
+        return updated;
+      });
+
+      // Filter if showOnlyLowConfidence is enabled
+      let filteredData = dataWithOverrides;
+      if (showOnlyLowConfidence || priceFilterCategory) {
+        const categoryRowSet = priceFilterCategory
+          ? priceFilterCategory === "passed"
+            ? passedRowSet
+            : priceFilterCategory === "not-found"
+              ? notFoundRowSet
+              : priceFilterCategory === "no-period"
+                ? noPeriodRowSet
+                : lowMatchRowSet
+          : null;
+
+        filteredData = dataWithOverrides.filter((row) => {
+          const idx = row._originalIdx as number;
+          // When filtering by 'passed', show only acceptable rows
+          if (priceFilterCategory === "passed") {
+            return acceptable.has(idx);
+          }
+          const isLow = !acceptable.has(idx);
+          if (showOnlyLowConfidence && categoryRowSet) {
+            return isLow && categoryRowSet.has(idx);
+          }
+          if (showOnlyLowConfidence) {
+            return isLow;
+          }
+          // only category filter
+          return categoryRowSet!.has(idx);
+        });
+      }
+
+      const lowConfidenceTotal =
+        breakdown.notFoundRows +
+        breakdown.noPeriodRows +
+        breakdown.lowMatchRows;
+
+      return {
+        displayData: filteredData,
+        displayHeaders: enrichedHeaders,
+        lowConfidenceCount: lowConfidenceTotal,
+        passedCount: acceptable.size,
+        priceIssueBreakdown: breakdown,
+      };
+    }
+    // Add _originalIdx for non-enriched data as well
+    return {
+      displayData: data.map((row, idx) => ({ ...row, _originalIdx: idx })),
+      displayHeaders: headers,
+      lowConfidenceCount: 0,
+      passedCount: 0,
+      priceIssueBreakdown: null as PriceIssueBreakdown | null,
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    data,
+    headers,
+    showPriceColumns,
+    enrichDataWithPriceMatch,
+    priceRecalcTrigger,
+    confidenceThreshold,
+    showOnlyLowConfidence,
+    priceFilterCategory,
+    bulkAcceptedItemCodes,
+    qtyOverrides,
+    reportMeta,
+  ]);
+
+  // When file is parsed, check for duplicates first
+  // This is intentional - we need to sync external parsed data to internal state
+  const lastProcessedParsedDataRef = useRef<typeof parsedData>(null);
+  useEffect(() => {
+    if (parsedData && fileName) {
+      // Skip if we already processed this exact parsedData object
+      if (lastProcessedParsedDataRef.current === parsedData) return;
+      lastProcessedParsedDataRef.current = parsedData;
+
+      // Check if file with same name exists in history
+      const existingRecord = invoiceUploadHistory.find(
+        (r) => r.fileName === fileName,
+      );
+
+      if (existingRecord) {
+        // Show dialog to ask user what to do
+        setPendingParsedData(parsedData);
+        setExistingRecordForDuplicate({
+          id: existingRecord.id,
+          uploadedAt: existingRecord.uploadedAt,
+          rowCount: existingRecord.rowCount,
+        });
+        setDuplicateDialogOpen(true);
+        return;
+      }
+
+      // No duplicate - proceed with normal flow
+      setData(parsedData.data);
+      setHeaders(parsedData.headers);
+      setCurrentRecordId(null);
+      setValidationResult(null);
+      setShowPriceColumns(false);
+      setQtyOverrides(new Map());
+      logImportExcel(fileName, parsedData.data.length);
+
+      // Save to upload history and capture the real ID for auto-save
+      saveInvoiceUpload(fileName, parsedData.headers, parsedData.data, {
+        supplierCode: reportMeta?.reportParameters || undefined,
+        reportDate: reportMeta?.reportRunDateTime || undefined,
+        uploader: userData
+          ? {
+              id: userData.id,
+              name: userData.name || userData.email || "Unknown",
+              email: userData.email,
+              role: userData.role,
+            }
+          : undefined,
+      }).then((newId) => {
+        setCurrentRecordId(newId);
+        // Update URL without reload
+        const newUrl = new URL(window.location.href);
+        newUrl.searchParams.set("id", newId);
+        window.history.pushState({}, "", newUrl);
+      });
+    }
+  }, [
+    parsedData,
+    setData,
+    fileName,
+    logImportExcel,
+    saveInvoiceUpload,
+    reportMeta,
+    invoiceUploadHistory,
+    userData,
+  ]);
+
+  // Load from history
+  const handleLoadFromHistory = useCallback(
+    async (recordId: string) => {
+      setIsGlobalLoading(true);
+      try {
+        // Add artificial delay
+        const [record] = await Promise.all([
+          loadInvoiceUpload(recordId),
+          new Promise((resolve) => setTimeout(resolve, 500)),
+        ]);
+
+        if (record) {
+          setData(record.data || []);
+          setHeaders(record.headers || []);
+          setFileName(record.fileName);
+          setCurrentRecordId(recordId);
+          setValidationResult(null);
+          setShowPriceColumns(false);
+          // Restore qtyOverrides from saved data
+          if (
+            record.qtyOverrides &&
+            Object.keys(record.qtyOverrides).length > 0
+          ) {
+            const restoredMap = new Map<
+              number,
+              {
+                stdQty?: string;
+                promoQty?: string;
+                qtyBuy1?: string;
+                qtyPro?: string;
+              }
+            >();
+            Object.entries(record.qtyOverrides).forEach(([key, val]) => {
+              restoredMap.set(Number(key), val);
+            });
+            setQtyOverrides(restoredMap);
+          } else {
+            setQtyOverrides(new Map());
+          }
+          // Restore bulkAcceptedItemCodes from saved data
+          setBulkAcceptedItemCodes(new Set(record.bulkAcceptedItemCodes || []));
+          // Restore reportMeta from history record
+          setReportMeta({
+            reportName: null,
+            reportRunDateTime: record.reportDate || null,
+            reportParameters: record.supplierCode || null,
+          });
+          // Check if file is confirmed - if so, lock it and show export ID
+          if (record.status === "confirmed" && record.lastExportId) {
+            setConfirmedExportId(record.lastExportId);
+            setShowPriceColumns(true); // Show the full data view
+          } else {
+            setConfirmedExportId(null);
+          }
+          // Don't log - this is loading existing data, not a new import
+        }
+      } catch (error) {
+        console.error("Error loading invoice history:", error);
+        toast.error("โหลดข้อมูลไม่สำเร็จ", "เกิดข้อผิดพลาดในการโหลดข้อมูล");
+      } finally {
+        setIsGlobalLoading(false);
+      }
+    },
+    [loadInvoiceUpload, setData, setFileName, setReportMeta],
+  );
+
+  // Helper to update URL
+  const updateUrlId = useCallback((id: string) => {
+    const newUrl = new URL(window.location.href);
+    newUrl.searchParams.set("id", id);
+    window.history.pushState({}, "", newUrl);
+  }, []);
+
+  // Update handleLoadFromHistory to use updateUrlId
+  const handleLoadFromHistoryWithUrl = useCallback(
+    (id: string) => {
+      handleLoadFromHistory(id);
+      updateUrlId(id);
+    },
+    [handleLoadFromHistory, updateUrlId],
+  );
+
+  // Effect: Load record from URL query param on mount
+  useEffect(() => {
+    const id = searchParams.get("id");
+    if (id && !currentRecordId && !isGlobalLoading) {
+      // Only load if we haven't loaded anything yet
+      handleLoadFromHistoryWithUrl(id);
+    }
+  }, [
+    searchParams,
+    handleLoadFromHistoryWithUrl,
+    currentRecordId,
+    isGlobalLoading,
+  ]);
+
+  // Handle duplicate file dialog: Load existing record
+  const handleDuplicateLoadExisting = useCallback(async () => {
+    if (!existingRecordForDuplicate) return;
+
+    // Clear pending data and reset hook FIRST to prevent useEffect re-trigger
+    setPendingParsedData(null);
+    setExistingRecordForDuplicate(null);
+    reset();
+
+    // Load the existing record
+    const record = await loadInvoiceUpload(existingRecordForDuplicate.id);
+    if (record) {
+      setData(record.data || []);
+      setHeaders(record.headers || []);
+      setFileName(record.fileName);
+      setCurrentRecordId(existingRecordForDuplicate.id);
+
+      const newUrl = new URL(window.location.href);
+      newUrl.searchParams.set("id", existingRecordForDuplicate.id);
+      window.history.pushState({}, "", newUrl);
+      setValidationResult(null);
+      setShowPriceColumns(false);
+      // Restore qtyOverrides from saved data
+      if (record.qtyOverrides && Object.keys(record.qtyOverrides).length > 0) {
+        const restoredMap = new Map<
+          number,
+          {
+            stdQty?: string;
+            promoQty?: string;
+            qtyBuy1?: string;
+            qtyPro?: string;
+          }
+        >();
+        Object.entries(record.qtyOverrides).forEach(([key, val]) => {
+          restoredMap.set(Number(key), val);
+        });
+        setQtyOverrides(restoredMap);
+      } else {
+        setQtyOverrides(new Map());
+      }
+      // Restore bulkAcceptedItemCodes
+      setBulkAcceptedItemCodes(new Set(record.bulkAcceptedItemCodes || []));
+      // Restore reportMeta
+      setReportMeta({
+        reportName: null,
+        reportRunDateTime: record.reportDate || null,
+        reportParameters: record.supplierCode || null,
+      });
+      // Check if file is confirmed - if so, lock it and show export ID
+      if (record.status === "confirmed" && record.lastExportId) {
+        setConfirmedExportId(record.lastExportId);
+        setShowPriceColumns(true);
+      } else {
+        setConfirmedExportId(null);
+      }
+    }
+  }, [
+    existingRecordForDuplicate,
+    loadInvoiceUpload,
+    setData,
+    setFileName,
+    setReportMeta,
+    reset,
+  ]);
+
+  // Handle duplicate file dialog: Overwrite with new data
+  const handleDuplicateOverwrite = useCallback(() => {
+    if (!pendingParsedData || !fileName) return;
+
+    // Store values before reset
+    const currentFileName = fileName;
+    const currentReportMeta = reportMeta;
+    const parsedDataToUse = pendingParsedData;
+
+    // Clear pending data and reset hook FIRST to prevent useEffect re-trigger
+    setPendingParsedData(null);
+    setExistingRecordForDuplicate(null);
+    reset();
+
+    // Restore fileName and reportMeta
+    setFileName(currentFileName);
+    setReportMeta(currentReportMeta);
+
+    // Proceed with normal upload flow
+    setData(parsedDataToUse.data);
+    setHeaders(parsedDataToUse.headers);
+    setCurrentRecordId(null);
+    setValidationResult(null);
+    setShowPriceColumns(false);
+    setQtyOverrides(new Map());
+    logImportExcel(currentFileName, parsedDataToUse.data.length);
+
+    // Save to upload history
+    saveInvoiceUpload(
+      currentFileName,
+      parsedDataToUse.headers,
+      parsedDataToUse.data,
+      {
+        supplierCode: currentReportMeta?.reportParameters || undefined,
+        reportDate: currentReportMeta?.reportRunDateTime || undefined,
+      },
+    ).then((newId) => {
+      setCurrentRecordId(newId);
+      const newUrl = new URL(window.location.href);
+      newUrl.searchParams.set("id", newId);
+      window.history.pushState({}, "", newUrl);
+    });
+  }, [
+    pendingParsedData,
+    fileName,
+    setData,
+    logImportExcel,
+    saveInvoiceUpload,
+    reportMeta,
+    reset,
+    setFileName,
+    setReportMeta,
+  ]);
+
+  // Auto-save when data changes for an existing record (debounced)
+  const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const lastSavedDataRef = useRef<string>("");
+
+  useEffect(() => {
+    if (!currentRecordId || data.length === 0 || headers.length === 0) {
+      return;
+    }
+
+    // Create a simple hash of the data to detect changes
+    const qtyOverridesObj = Object.fromEntries(qtyOverrides);
+    const dataHash = JSON.stringify({
+      rowCount: data.length,
+      firstRow: data[0],
+      bulkAccepted: Array.from(bulkAcceptedItemCodes).sort(),
+      qtyOverrides: qtyOverridesObj,
+    });
+
+    // Skip if data hasn't changed
+    if (dataHash === lastSavedDataRef.current) {
+      return;
+    }
+
+    // Clear any existing timeout
+    if (saveTimeoutRef.current) {
+      clearTimeout(saveTimeoutRef.current);
+    }
+
+    // Convert Map to plain object for Firebase storage
+    const qtyOverridesForStorage: Record<
+      string,
+      { stdQty?: string; promoQty?: string; qtyBuy1?: string; qtyPro?: string }
+    > = {};
+    qtyOverrides.forEach((val, key) => {
+      qtyOverridesForStorage[String(key)] = val;
+    });
+
+    // Debounce save by 1 second
+    saveTimeoutRef.current = setTimeout(() => {
+      updateInvoiceUpload(
+        currentRecordId,
+        headers,
+        data,
+        Array.from(bulkAcceptedItemCodes),
+        qtyOverridesForStorage,
+      );
+      lastSavedDataRef.current = dataHash;
+    }, 1000);
+
+    return () => {
+      if (saveTimeoutRef.current) {
+        clearTimeout(saveTimeoutRef.current);
+      }
+    };
+  }, [
+    currentRecordId,
+    data,
+    headers,
+    bulkAcceptedItemCodes,
+    qtyOverrides,
+    updateInvoiceUpload,
+  ]);
+
+  // Toggle price columns
+  const handleTogglePriceColumns = useCallback(async () => {
+    setIsGlobalLoading(true);
+    try {
+      await new Promise((resolve) => setTimeout(resolve, 100));
+
+      setShowPriceColumns((prev) => {
+        const newValue = !prev;
+        // Update status to "calculated" when enabling price comparison
+        if (newValue && currentRecordId) {
+          updateInvoiceStatus(currentRecordId, "calculated");
+        }
+        return newValue;
+      });
+    } finally {
+      setIsGlobalLoading(false);
+    }
+  }, [currentRecordId, updateInvoiceStatus]);
+
+  // Handle bulk fix actions
+  const handleBulkFix = useCallback((action: BulkFixAction) => {
+    setBulkAcceptedItemCodes((prev) => {
+      const next = new Set(prev);
+      if (action.action === "accept") {
+        next.add(action.itemCode);
+      } else if (action.action === "skip") {
+        // Skip just removes from accepted (if previously accepted)
+        next.delete(action.itemCode);
+      }
+      return next;
+    });
+  }, []);
+
+  const handleValidate = useCallback(async () => {
+    setIsGlobalLoading(true);
+    try {
+      // Small delay to let UI render
+      await new Promise((resolve) => setTimeout(resolve, 100));
+
+      const result = validateData(data, headers);
+      setValidationResult(result);
+      const errorCount = result.errors.filter(
+        (e) => e.severity === "error",
+      ).length;
+      const warningCount = result.errors.filter(
+        (e) => e.severity === "warning",
+      ).length;
+      logValidate(errorCount, warningCount);
+
+      // Update workflow status to "validated"
+      if (currentRecordId) {
+        updateInvoiceStatus(currentRecordId, "validated");
+      }
+    } finally {
+      setIsGlobalLoading(false);
+    }
+  }, [data, headers, logValidate, currentRecordId, updateInvoiceStatus]);
+
+  const handleCellUpdate = useCallback(
+    (rowIndex: number, columnName: string, value: string) => {
+      // Handle QtyBuy1 / QtyPro edits — recalculate prices
+      if (columnName === "QtyBuy1" || columnName === "QtyPro") {
+        // Get the original QTY from data
+        const qtyHeader = headers.find((h) => h.toLowerCase() === "qty");
+        const originalQty = qtyHeader
+          ? Math.abs(Number(data[rowIndex]?.[qtyHeader]) || 0)
+          : 0;
+
+        // Parse the new value
+        const newQty = parseInt(value) || 0;
+
+        // Get current override
+        const currentOverride = qtyOverrides.get(rowIndex) || {};
+
+        // Find the row in displayData by _originalIdx
+        const displayRow = displayData.find(
+          (r) => r._originalIdx === rowIndex,
+        ) as Record<string, unknown> | undefined;
+
+        // Get current QtyBuy1 and QtyPro values
+        const currentQtyBuy1 =
+          columnName === "QtyBuy1"
+            ? newQty
+            : parseInt(
+                String(
+                  currentOverride.qtyBuy1 ?? displayRow?.["QtyBuy1"] ?? "0",
+                ),
+              ) || 0;
+        const currentQtyPro =
+          columnName === "QtyPro"
+            ? newQty
+            : parseInt(
+                String(currentOverride.qtyPro ?? displayRow?.["QtyPro"] ?? "0"),
+              ) || 0;
+
+        // Validate: QtyBuy1 + QtyPro must not exceed Qty
+        const totalQty = currentQtyBuy1 + currentQtyPro;
+        if (totalQty > originalQty) {
+          // Open modal instead of alert
+          setQtyEditData({
+            rowIndex,
+            editField: columnName as "QtyBuy1" | "QtyPro",
+            attemptedValue: newQty,
+            row: (displayRow ?? {}) as Record<string, unknown>,
+          });
+          setQtyEditMaxQty(originalQty);
+          setQtyEditOpen(true);
+          return;
+        }
+
+        // Save to qtyOverrides
+        const oldValue =
+          currentOverride[columnName === "QtyBuy1" ? "qtyBuy1" : "qtyPro"] ||
+          String(displayRow?.[columnName] ?? "-");
+
+        setQtyOverrides((prev) => {
+          const newMap = new Map(prev);
+          newMap.set(rowIndex, {
+            ...currentOverride,
+            [columnName === "QtyBuy1" ? "qtyBuy1" : "qtyPro"]: String(newQty),
+          });
+          return newMap;
+        });
+
+        logEditCell(rowIndex, columnName, oldValue, value);
+        return;
+      }
+
+      // Handle Std Qty / Promo Qty edits specially
+      if (columnName === "Std Qty" || columnName === "Promo Qty") {
+        // Get the original QTY from data
+        const qtyHeader = headers.find((h) => h.toLowerCase() === "qty");
+        const originalQty = qtyHeader
+          ? Math.abs(Number(data[rowIndex]?.[qtyHeader]) || 0)
+          : 0;
+
+        // Parse the new value
+        const newQty = parseInt(value) || 0;
+
+        // Get current override
+        const currentOverride = qtyOverrides.get(rowIndex) || {};
+
+        // Find the row in displayData by _originalIdx
+        const displayRow = displayData.find(
+          (r) => r._originalIdx === rowIndex,
+        ) as Record<string, unknown> | undefined;
+
+        // Get current values (from override or displayData)
+        const currentStdQty =
+          columnName === "Std Qty"
+            ? newQty
+            : parseInt(
+                String(
+                  currentOverride.stdQty || displayRow?.["Std Qty"] || "0",
+                ),
+              ) || 0;
+        const currentPromoQty =
+          columnName === "Promo Qty"
+            ? newQty
+            : parseInt(
+                String(
+                  currentOverride.promoQty || displayRow?.["Promo Qty"] || "0",
+                ).replace(/[^0-9]/g, ""),
+              ) || 0;
+
+        // Validate: Std Qty + Promo Qty should not exceed original QTY
+        const totalQty = currentStdQty + currentPromoQty;
+        if (totalQty > originalQty) {
+          // Open modal for Std Qty / Promo Qty as well
+          setQtyEditData({
+            rowIndex,
+            editField: columnName === "Std Qty" ? "QtyBuy1" : "QtyPro",
+            attemptedValue: newQty,
+            row: (displayRow ?? {}) as Record<string, unknown>,
+          });
+          setQtyEditMaxQty(originalQty);
+          setQtyEditOpen(true);
+          return;
+        }
+
+        // Save to qtyOverrides
+        setQtyOverrides((prev) => {
+          const newMap = new Map(prev);
+          newMap.set(rowIndex, {
+            ...currentOverride,
+            [columnName === "Std Qty" ? "stdQty" : "promoQty"]: String(newQty),
+          });
+          return newMap;
+        });
+
+        logEditCell(
+          rowIndex,
+          columnName,
+          String(
+            currentOverride[columnName === "Std Qty" ? "stdQty" : "promoQty"] ||
+              "-",
+          ),
+          value,
+        );
+        return;
+      }
+
+      const oldValue = data[rowIndex]?.[columnName] ?? null;
+      updateCell(rowIndex, columnName, value);
+      logEditCell(rowIndex, columnName, oldValue, value);
+      setValidationResult(null);
+    },
+    [updateCell, data, headers, logEditCell, qtyOverrides, displayData],
+  );
+
+  // Handler for QtyEditModal save
+  const handleQtyEditModalSave = useCallback(
+    (rowIndex: number, newQtyBuy1: number, newQtyPro: number) => {
+      setQtyOverrides((prev) => {
+        const newMap = new Map(prev);
+        const existing = newMap.get(rowIndex) || {};
+        newMap.set(rowIndex, {
+          ...existing,
+          qtyBuy1: String(newQtyBuy1),
+          qtyPro: String(newQtyPro),
+        });
+        return newMap;
+      });
+      logEditCell(rowIndex, "QtyBuy1", "-", String(newQtyBuy1));
+      logEditCell(rowIndex, "QtyPro", "-", String(newQtyPro));
+      setQtyEditOpen(false);
+    },
+    [logEditCell],
+  );
+
+  const handleShiftLeft = useCallback(
+    (rowIndex: number, colIndex: number) => {
+      shiftRowLeft(rowIndex, colIndex, headers);
+      logShiftRowLeft(rowIndex, colIndex);
+      setValidationResult(null);
+    },
+    [shiftRowLeft, headers, logShiftRowLeft],
+  );
+
+  const handleShiftRight = useCallback(
+    (rowIndex: number, colIndex: number) => {
+      shiftRowRight(rowIndex, colIndex, headers);
+      logShiftRowRight(rowIndex, colIndex);
+      setValidationResult(null);
+    },
+    [shiftRowRight, headers, logShiftRowRight],
+  );
+
+  const handleShiftColumnLeft = useCallback(
+    (colIndex: number) => {
+      shiftColumnLeft(colIndex, headers);
+      logShiftColumnLeft(colIndex, headers[colIndex] || "", data.length);
+      setValidationResult(null);
+    },
+    [shiftColumnLeft, headers, data.length, logShiftColumnLeft],
+  );
+
+  const handleShiftColumnRight = useCallback(
+    (colIndex: number) => {
+      shiftColumnRight(colIndex, headers);
+      logShiftColumnRight(colIndex, headers[colIndex] || "", data.length);
+      setValidationResult(null);
+    },
+    [shiftColumnRight, headers, data.length, logShiftColumnRight],
+  );
+
+  const handleClearCell = useCallback(
+    (rowIndex: number, columnName: string) => {
+      const oldValue = data[rowIndex]?.[columnName] ?? null;
+      clearCell(rowIndex, columnName);
+      logClearCell(rowIndex, columnName, oldValue);
+      setValidationResult(null);
+    },
+    [clearCell, data, logClearCell],
+  );
+
+  const handleDeleteRow = useCallback(
+    (rowIndex: number) => {
+      deleteRow(rowIndex);
+      logDeleteRow(rowIndex);
+      setValidationResult(null);
+    },
+    [deleteRow, logDeleteRow],
+  );
+
+  const handleAutoFix = useCallback(async () => {
+    setIsGlobalLoading(true);
+    try {
+      // Small delay
+      await new Promise((resolve) => setTimeout(resolve, 100));
+
+      // Get all suggestions based on current data and validation errors
+      const groups = getAllSuggestions(
+        data,
+        headers,
+        validationResult?.errors || [],
+      );
+      setSuggestionGroups(groups);
+      setShowSuggestions(true);
+    } finally {
+      setIsGlobalLoading(false);
+    }
+  }, [data, headers, validationResult]);
+
+  // Handle applying a single suggestion
+  const handleApplySingleSuggestion = useCallback(
+    async (suggestion: FixSuggestion) => {
+      setIsGlobalLoading(true);
+      try {
+        await new Promise((resolve) => setTimeout(resolve, 100));
+
+        const { data: newData, appliedCount } = applySuggestions(
+          data,
+          headers,
+          [suggestion],
+        );
+        if (appliedCount > 0) {
+          setData(newData);
+          logAutoFix(appliedCount);
+          setValidationResult(null);
+        }
+      } finally {
+        setIsGlobalLoading(false);
+      }
+    },
+    [data, headers, setData, logAutoFix],
+  );
+
+  // Handle applying multiple suggestions
+  const handleApplyMultipleSuggestions = useCallback(
+    async (suggestions: FixSuggestion[]) => {
+      setIsGlobalLoading(true);
+      try {
+        await new Promise((resolve) => setTimeout(resolve, 100));
+
+        const { data: newData, appliedCount } = applySuggestions(
+          data,
+          headers,
+          suggestions,
+        );
+        if (appliedCount > 0) {
+          setData(newData);
+          logAutoFix(appliedCount);
+          setValidationResult(null);
+        }
+      } finally {
+        setIsGlobalLoading(false);
+      }
+    },
+    [data, headers, setData, logAutoFix],
+  );
+
+  const handleExportFixed = useCallback(() => {
+    const exportFileName = `fixed_${fileName || "data.xlsx"}`;
+    const exportHeaders = getExportHeaders(displayHeaders);
+    exportToExcel(displayData, exportHeaders, exportFileName);
+    logExportExcel(exportFileName);
+  }, [displayData, displayHeaders, fileName, logExportExcel]);
+
+  const handleExportJson = useCallback(() => {
+    const baseName = (fileName || "data.xlsx").replace(/\.[^.]+$/, "");
+    const exportFileName = `${baseName}.json`;
+    const exportHeaders = getExportHeaders(displayHeaders);
+    exportToJson(displayData, exportHeaders, exportFileName);
+    logExportExcel(exportFileName);
+  }, [displayData, displayHeaders, fileName, logExportExcel]);
+
+  const [isSavingToCloud, setIsSavingToCloud] = useState(false);
+  const [exportSuccessModal, setExportSuccessModal] = useState<{
+    open: boolean;
+    exportId: string;
+    supplierCode: string;
+    rowCount: number;
+    reportDate: string;
+  }>({
+    open: false,
+    exportId: "",
+    supplierCode: "",
+    rowCount: 0,
+    reportDate: "",
+  });
+
+  const handleSaveToCloud = useCallback(async () => {
+    // Use fallback values if reportMeta is not available
+    const supplierCode =
+      reportMeta?.reportParameters ||
+      fileName?.replace(/\.[^.]+$/, "") ||
+      "UNKNOWN";
+    const reportDate =
+      reportMeta?.reportRunDateTime || new Date().toISOString();
+
+    setIsGlobalLoading(true);
+    setIsSavingToCloud(true);
+    toast.info(
+      "กำลังบันทึก...",
+      `กำลังอัปโหลดข้อมูล ${displayData.length} แถว`,
+    );
+    try {
+      const exportHeaders = getExportHeaders(displayHeaders);
+      // Convert RawRow[] to array[][] format for API
+      const dataArray: (string | number | null)[][] = displayData.map((row) =>
+        exportHeaders.map((h) => {
+          const val = (row as Record<string, unknown>)[h];
+          if (val === undefined || val === null) return null;
+          if (typeof val === "string" || typeof val === "number") return val;
+          return String(val);
+        }),
+      );
+
+      const exportId = await saveExportToCloud({
+        supplierCode,
+        supplierName: supplierCode,
+        reportDate,
+        headers: exportHeaders,
+        data: dataArray,
+        summary: priceIssueBreakdown
+          ? {
+              passedItems: priceIssueBreakdown.passedItems?.length || 0,
+              lowMatchItems: priceIssueBreakdown.lowMatchItems?.length || 0,
+              notFoundItems: priceIssueBreakdown.notFoundItems?.length || 0,
+            }
+          : {},
+        passedCount,
+        lowConfidenceCount,
+      });
+
+      // Show success modal with API usage info
+      setExportSuccessModal({
+        open: true,
+        exportId,
+        supplierCode,
+        rowCount: dataArray.length,
+        reportDate,
+      });
+      logExportExcel(`cloud:${exportId}`);
+      toast.success(
+        "บันทึกสำเร็จ!",
+        `Export ID: ${exportId.substring(0, 8)}...`,
+      );
+
+      // Update workflow status to "exported"
+      if (currentRecordId) {
+        updateInvoiceStatus(currentRecordId, "exported", {
+          lastExportId: exportId,
+        });
+      }
+    } catch (err) {
+      console.error("Error saving to cloud:", err);
+      const errMsg = err instanceof Error ? err.message : "Unknown error";
+      toast.error("เกิดข้อผิดพลาด", errMsg);
+      alert(`เกิดข้อผิดพลาด: ${errMsg}`);
+    } finally {
+      setIsSavingToCloud(false);
+      setIsGlobalLoading(false);
+    }
+  }, [
+    displayData,
+    displayHeaders,
+    reportMeta,
+    fileName,
+    priceIssueBreakdown,
+    passedCount,
+    lowConfidenceCount,
+    logExportExcel,
+    currentRecordId,
+    updateInvoiceStatus,
+  ]);
+
+  const handleExportReport = useCallback(() => {
+    if (validationResult) {
+      const reportFileName = "validation_report.xlsx";
+      exportValidationReport(
+        data,
+        headers,
+        validationResult.errors,
+        reportFileName,
+      );
+      logExportReport(reportFileName);
+    }
+  }, [data, headers, validationResult, logExportReport]);
+
+  const handleUndo = useCallback(() => {
+    undo();
+    logUndo();
+  }, [undo, logUndo]);
+
+  const handleRedo = useCallback(() => {
+    redo();
+    logRedo();
+  }, [redo, logRedo]);
+
+  const handleRowClick = useCallback((rowIndex: number) => {
+    setHighlightRowIndex(rowIndex);
+    // Calculate which page the row is on (20 rows per page)
+    const PAGE_SIZE = 20;
+    const targetPage = Math.floor(rowIndex / PAGE_SIZE);
+    setGoToPage(targetPage);
+  }, []);
+
+  const handleReset = useCallback(() => {
+    reset();
+    lastProcessedParsedDataRef.current = null;
+    setData([]);
+    setHeaders([]);
+    setValidationResult(null);
+    setHighlightRowIndex(undefined);
+    setCurrentRecordId(null);
+    setConfirmedExportId(null);
+    setShowPriceColumns(false);
+    setQtyOverrides(new Map());
+    setBulkAcceptedItemCodes(new Set());
+  }, [reset, setData]);
+
+  // Handle Calc Log click from DataTable
+  const handleCalcLogClick = useCallback(
+    (rowIndex: number, logText: string) => {
+      // Find row by original index
+      const row = displayData.find((r) => r._originalIdx === rowIndex) as
+        | Record<string, unknown>
+        | undefined;
+      const itemCodeHeader = displayHeaders.find(
+        (h) =>
+          h.toLowerCase().includes("item code") ||
+          h.toLowerCase().includes("itemcode") ||
+          h.toLowerCase().includes("รหัสสินค้า"),
+      );
+      const itemCode = itemCodeHeader
+        ? String(row?.[itemCodeHeader] || "")
+        : "";
+      setCalcLogItemCode(itemCode);
+      setCalcLogText(logText);
+      setCalcLogOpen(true);
+    },
+    [displayData, displayHeaders],
+  );
+
+  // Handle import price list with logging
+  const handleImportPriceList = useCallback(
+    (priceData: unknown[]) => {
+      importPriceList(priceData as never);
+      logImportPriceList("PriceList.json", priceData.length);
+    },
+    [importPriceList, logImportPriceList],
+  );
+
+  // Show offline page when not connected
+  if (!isOnline || !isFirebaseConnected) {
+    return (
+      <OfflinePage
+        isOnline={isOnline}
+        isFirebaseConnected={isFirebaseConnected}
+        lastChecked={lastChecked}
+        onRetry={checkConnection}
+      />
+    );
+  }
+
+  return (
+    <div>
+      {/* Undo/Redo Controls */}
+      {data.length > 0 && !confirmedExportId && (
+        <div className="flex items-center justify-end gap-2 mb-4">
+          <UndoRedoControls
+            canUndo={canUndo}
+            canRedo={canRedo}
+            onUndo={handleUndo}
+            onRedo={handleRedo}
+            historyLength={historyLength}
+          />
+        </div>
+      )}
+
+      <div>
+        {/* Upload Section */}
+        {data.length === 0 && (
+          <div className="w-full h-full">
+            <div className="grid grid-cols-12 gap-6 h-full">
+              {/* Left: File Uploader */}
+              <div className="col-span-12 lg:col-span-8 space-y-4">
+                <FileUploader
+                  onFileSelect={uploadFile}
+                  isLoading={isLoading}
+                  fileName={fileName}
+                  onReset={handleReset}
+                />
+                {error && (
+                  <Alert variant="destructive">
+                    <AlertDescription>{error}</AlertDescription>
+                  </Alert>
+                )}
+              </div>
+
+              {/* Right: Recent Files */}
+              <div className="col-span-12 lg:col-span-4 h-full">
+                <Card className="border-gray-200 h-fit">
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-sm font-medium text-gray-600 flex items-center gap-2">
+                      <Calendar className="h-4 w-4" />
+                      ไฟล์ล่าสุด
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="pt-0">
+                    {isLoadingHistory ? (
+                      // Skeleton loading
+                      <div className="space-y-3">
+                        {[1, 2, 3].map((i) => (
+                          <div key={i} className="flex items-center gap-3 p-2">
+                            <Skeleton className="h-4 w-4 shrink-0" />
+                            <div className="flex-1 space-y-2">
+                              <Skeleton className="h-4 w-3/4" />
+                              <Skeleton className="h-3 w-1/2" />
+                            </div>
+                            <Skeleton className="h-3 w-16" />
+                          </div>
+                        ))}
+                      </div>
+                    ) : invoiceUploadHistory.length > 0 ? (
+                      <div className="space-y-2">
+                        {invoiceUploadHistory.slice(0, 5).map((record) => (
+                          <div
+                            key={record.id}
+                            className="flex items-center justify-between p-2 rounded-lg hover:bg-gray-50 cursor-pointer group border border-transparent hover:border-gray-200 transition-colors"
+                            onClick={() =>
+                              handleLoadFromHistoryWithUrl(record.id)
+                            }
+                          >
+                            <div className="flex items-center gap-3 min-w-0">
+                              <FileSpreadsheet className="h-4 w-4 text-gray-400 shrink-0" />
+                              <div className="min-w-0">
+                                <div className="flex items-center gap-2">
+                                  <p className="text-sm font-medium text-gray-700 truncate">
+                                    {record.fileName}
+                                  </p>
+                                  {getStatusBadge(record.status)}
+                                </div>
+                                <div className="flex items-center gap-2 text-xs text-gray-500">
+                                  <span>{record.rowCount} แถว</span>
+                                  {record.supplierName && (
+                                    <>
+                                      <span>•</span>
+                                      <span className="truncate">
+                                        {record.supplierName}
+                                      </span>
+                                    </>
+                                  )}
+                                  {record.uploader && (
+                                    <>
+                                      <span>•</span>
+                                      <span className="flex items-center gap-1">
+                                        <span className="w-4 h-4 rounded-full bg-indigo-100 text-indigo-700 flex items-center justify-center text-[10px] font-bold">
+                                          {record.uploader.name.charAt(0)}
+                                        </span>
+                                        {record.uploader.name}
+                                      </span>
+                                    </>
+                                  )}
+                                  {record.reportDate && (
+                                    <>
+                                      <span>•</span>
+                                      <span>{record.reportDate}</span>
+                                    </>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <span className="text-xs text-gray-400">
+                                {new Date(record.uploadedAt).toLocaleDateString(
+                                  "th-TH",
+                                  {
+                                    day: "numeric",
+                                    month: "short",
+                                    hour: "2-digit",
+                                    minute: "2-digit",
+                                  },
+                                )}
+                              </span>
+                              {/* Confirm button - only show for exported status */}
+                              {record.status === "exported" &&
+                                record.lastExportId && (
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    className="opacity-0 group-hover:opacity-100 h-6 px-2 text-green-600 hover:text-green-700 hover:bg-green-50"
+                                    onClick={async (e) => {
+                                      e.stopPropagation();
+                                      try {
+                                        // Confirm the export via internal API
+                                        const res = await fetch(
+                                          `/api/internal/exports/${record.lastExportId}/confirm`,
+                                          {
+                                            method: "POST",
+                                            headers: {
+                                              "Content-Type":
+                                                "application/json",
+                                            },
+                                            body: JSON.stringify({
+                                              action: "confirm",
+                                            }),
+                                          },
+                                        );
+                                        if (!res.ok)
+                                          throw new Error(
+                                            "Failed to confirm export",
+                                          );
+                                        // Update invoice status
+                                        updateInvoiceStatus(
+                                          record.id,
+                                          "confirmed",
+                                        );
+                                        toast.success(
+                                          "ยืนยันสำเร็จ!",
+                                          "พร้อมให้ระบบอื่นใช้งาน",
+                                        );
+                                      } catch (err) {
+                                        console.error("Error confirming:", err);
+                                        toast.error(
+                                          "เกิดข้อผิดพลาด",
+                                          "ไม่สามารถยืนยันได้",
+                                        );
+                                      }
+                                    }}
+                                    title="ยืนยันข้อมูล"
+                                  >
+                                    <CheckCircle className="h-3 w-3" />
+                                  </Button>
+                                )}
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="opacity-0 group-hover:opacity-100 h-6 w-6 p-0"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  removeInvoiceUpload(record.id);
+                                }}
+                                title="ลบ"
+                              >
+                                <RotateCcw className="h-3 w-3" />
+                              </Button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="text-center py-8 text-gray-400">
+                        <FileSpreadsheet className="h-8 w-8 mx-auto mb-2 opacity-50" />
+                        <p className="text-sm">ยังไม่มีไฟล์ล่าสุด</p>
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Data Section */}
+        {data.length > 0 && (
+          <div className="space-y-6">
+            {/* Action Bar with Steps */}
+            <Card>
+              <CardContent className="p-4">
+                <div className="flex flex-wrap items-center justify-between gap-4 mb-4">
+                  <div className="flex items-center gap-2">
+                    <FileSpreadsheet className="h-5 w-5 text-gray-500" />
+                    <span className="font-medium">{fileName}</span>
+                    <span className="text-sm text-gray-500">
+                      ({data.length} แถว, {headers.length} คอลัมน์)
+                    </span>
+                  </div>
+                  <Button
+                    onClick={handleReset}
+                    variant="ghost"
+                    size="sm"
+                    disabled={!!confirmedExportId}
+                  >
+                    <RotateCcw className="h-4 w-4 mr-2" />
+                    เริ่มใหม่
+                  </Button>
+                </div>
+
+                {/* Confirmed file banner */}
+                {confirmedExportId && (
+                  <div className="flex items-center gap-3 p-3 mb-4 bg-green-50 border border-green-200 rounded-lg">
+                    <CheckCircle className="h-5 w-5 text-green-600 shrink-0" />
+                    <div className="flex-1">
+                      <p className="font-medium text-green-800">
+                        ไฟล์นี้ยืนยันแล้ว
+                      </p>
+                      <p className="text-sm text-green-600">
+                        Export ID:{" "}
+                        <code className="bg-green-100 px-2 py-0.5 rounded font-mono">
+                          {confirmedExportId}
+                        </code>
+                      </p>
+                    </div>
+                    <span className="text-xs text-green-600 bg-green-100 px-2 py-1 rounded">
+                      Read-only
+                    </span>
+                  </div>
+                )}
+
+                {/* Step-based workflow */}
+                <div className="flex flex-wrap items-center gap-3 pt-3 border-t">
+                  {/* Step 1: Validate */}
+                  <div className="flex items-center gap-2">
+                    <span
+                      className={`flex items-center justify-center w-6 h-6 rounded-full text-xs font-bold ${
+                        validationResult
+                          ? validationResult.isValid
+                            ? "bg-green-500 text-white"
+                            : "bg-yellow-500 text-white"
+                          : "bg-blue-500 text-white"
+                      }`}
+                    >
+                      1
+                    </span>
+                    <Button
+                      onClick={handleValidate}
+                      variant={validationResult ? "outline" : "default"}
+                      size="sm"
+                      disabled={!!confirmedExportId}
+                    >
+                      <CheckCircle className="h-4 w-4 mr-2" />
+                      {confirmedExportId
+                        ? "✓ ยืนยันแล้ว"
+                        : validationResult
+                          ? validationResult.isValid
+                            ? "✓ ผ่าน"
+                            : "Validate ใหม่"
+                          : "Validate"}
+                    </Button>
+                  </div>
+
+                  {/* Arrow */}
+                  <ChevronRight className="h-4 w-4 text-gray-400" />
+
+                  {/* Step 2: Fix (if needed) */}
+                  <div className="flex items-center gap-2">
+                    <span
+                      className={`flex items-center justify-center w-6 h-6 rounded-full text-xs font-bold ${
+                        validationResult?.isValid
+                          ? "bg-green-500 text-white"
+                          : "bg-gray-300 text-gray-600"
+                      }`}
+                    >
+                      2
+                    </span>
+                    <Button
+                      onClick={handleAutoFix}
+                      variant="outline"
+                      size="sm"
+                      disabled={
+                        !!confirmedExportId ||
+                        !validationResult ||
+                        validationResult.isValid
+                      }
+                    >
+                      <Wand2 className="h-4 w-4 mr-2" />
+                      Auto-fix
+                    </Button>
+                  </div>
+
+                  {/* Arrow */}
+                  <ChevronRight className="h-4 w-4 text-gray-400" />
+
+                  {/* Step 3: Price Comparison */}
+                  <div className="flex items-center gap-2">
+                    <span
+                      className={`flex items-center justify-center w-6 h-6 rounded-full text-xs font-bold ${
+                        showPriceColumns
+                          ? "bg-indigo-500 text-white"
+                          : validationResult?.isValid
+                            ? "bg-indigo-500 text-white"
+                            : "bg-gray-300 text-gray-600"
+                      }`}
+                    >
+                      3
+                    </span>
+                    <Button
+                      onClick={() => setShowPricePanel(!showPricePanel)}
+                      variant={showPricePanel ? "default" : "outline"}
+                      size="sm"
+                      className={
+                        showPricePanel
+                          ? "bg-indigo-600 hover:bg-indigo-700"
+                          : ""
+                      }
+                      disabled={!validationResult?.isValid}
+                      title={
+                        !validationResult?.isValid ? "Validate ให้ผ่านก่อน" : ""
+                      }
+                    >
+                      <Library className="h-4 w-4 mr-2" />
+                      เทียบราคา
+                      {priceListSummary.totalItems > 0 && (
+                        <span className="ml-1 text-xs">
+                          ({priceListSummary.totalItems})
+                        </span>
+                      )}
+                    </Button>
+                  </div>
+
+                  {/* Arrow */}
+                  <ChevronRight className="h-4 w-4 text-gray-400" />
+
+                  {/* Step 4: Export */}
+                  <div className="flex items-center gap-2">
+                    <span
+                      className={`flex items-center justify-center w-6 h-6 rounded-full text-xs font-bold ${
+                        confirmedExportId
+                          ? "bg-green-600 text-white"
+                          : validationResult?.isValid
+                            ? "bg-green-500 text-white"
+                            : "bg-gray-300 text-gray-600"
+                      }`}
+                    >
+                      4
+                    </span>
+                    {confirmedExportId ? (
+                      <div className="flex items-center gap-2 px-3 py-1.5 bg-green-100 rounded-md border border-green-200">
+                        <CheckCircle className="h-4 w-4 text-green-600" />
+                        <span className="text-sm font-medium text-green-800">
+                          ยืนยันแล้ว
+                        </span>
+                      </div>
+                    ) : (
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button variant="outline" size="sm">
+                            <Download className="h-4 w-4 mr-2" />
+                            Export
+                            <ChevronDown className="h-3 w-3 ml-1" />
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end">
+                          <DropdownMenuItem onClick={handleExportFixed}>
+                            <FileSpreadsheet className="h-4 w-4 mr-2" />
+                            Export Excel (.xlsx)
+                          </DropdownMenuItem>
+                          <DropdownMenuItem onClick={handleExportJson}>
+                            <FileJson className="h-4 w-4 mr-2" />
+                            Export JSON (.json)
+                          </DropdownMenuItem>
+                          <DropdownMenuItem
+                            onClick={handleSaveToCloud}
+                            disabled={isSavingToCloud}
+                          >
+                            {isSavingToCloud ? (
+                              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                            ) : (
+                              <Cloud className="h-4 w-4 mr-2" />
+                            )}
+                            Save to Cloud (API)
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    )}
+                    {validationResult &&
+                      !validationResult.isValid &&
+                      !confirmedExportId && (
+                        <Button
+                          onClick={handleExportReport}
+                          variant="outline"
+                          size="sm"
+                        >
+                          <Download className="h-4 w-4 mr-2" />
+                          Report
+                        </Button>
+                      )}
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Fix Suggestion Modal */}
+            <FixSuggestionModal
+              open={showSuggestions}
+              groups={suggestionGroups}
+              onApplySingle={handleApplySingleSuggestion}
+              onApplyGroup={handleApplyMultipleSuggestions}
+              onApplyAll={handleApplyMultipleSuggestions}
+              onClose={() => setShowSuggestions(false)}
+              onHighlightRow={(rowIndex) => {
+                setHighlightRowIndex(rowIndex);
+                setGoToPage(Math.floor(rowIndex / 20) + 1);
+              }}
+            />
+
+            {/* Price Panel - Step 3 */}
+            {showPricePanel && (
+              <Card className="border-indigo-200 bg-indigo-50/30">
+                <CardHeader className="pb-2">
+                  <div className="flex items-center justify-between">
+                    <CardTitle className="text-lg flex items-center gap-2 text-indigo-700">
+                      <Library className="h-5 w-5" />
+                      Price List
+                    </CardTitle>
+                    {priceListSummary.totalItems > 0 && (
+                      <Button
+                        onClick={handleTogglePriceColumns}
+                        variant={showPriceColumns ? "default" : "outline"}
+                        size="sm"
+                        className={
+                          showPriceColumns
+                            ? "bg-green-600 hover:bg-green-700"
+                            : "border-indigo-300 text-indigo-600 hover:bg-indigo-100"
+                        }
+                      >
+                        {showPriceColumns
+                          ? "✅ กำลังวิเคราะห์ราคา"
+                          : "📊 วิเคราะห์ราคา"}
+                      </Button>
+                    )}
+                  </div>
+                  <p className="text-sm text-indigo-600">
+                    Import ไฟล์ Price List แล้วกด &quot;วิเคราะห์ราคา&quot;
+                    เพื่อเทียบกับ Invoice
+                  </p>
+                </CardHeader>
+                <CardContent>
+                  <PriceListSidebar
+                    priceHistory={itemPriceHistory}
+                    priceListRaw={priceListRaw}
+                    summary={priceListSummary}
+                    onImport={handleImportPriceList}
+                    onMerge={addOrUpdatePriceList}
+                    onClear={clearPriceList}
+                    isInline={true}
+                    importHistory={priceImportHistory}
+                    onSaveHistory={addHistoryRecord}
+                    onHistoryAdd={addRecordFromServer}
+                    onRemoveHistory={removeHistoryRecord}
+                    onClearHistory={clearImportHistory}
+                    onLoadHistoryData={handleLoadPriceHistoryData}
+                    currentUser={userData}
+                  />
+                </CardContent>
+              </Card>
+            )}
+
+            {/* Main Content - Full Width Table */}
+            <div className="space-y-6">
+              {/* Validation Summary - Top */}
+              <ValidationSummary result={validationResult} />
+
+              <div className="w-full">
+                {/* Price Analysis Bar */}
+                {showPriceColumns && (
+                  <div className="mb-4 border border-indigo-200 rounded-lg overflow-hidden">
+                    <div className="p-3 bg-indigo-50">
+                      <div className="flex flex-wrap items-center gap-3">
+                        {/* Stats — pass/fail */}
+                        <div className="flex items-center gap-1.5">
+                          <div className="w-2.5 h-2.5 rounded-full bg-green-500" />
+                          <span className="text-sm text-gray-700">
+                            <span className="font-semibold text-green-700">
+                              {passedCount}
+                            </span>{" "}
+                            ผ่าน
+                          </span>
+                        </div>
+
+                        {/* Breakdown badges */}
+                        {priceIssueBreakdown && (
+                          <>
+                            {priceIssueBreakdown.notFoundRows > 0 && (
+                              <button
+                                onClick={() => {
+                                  setShowIssuePanel(true);
+                                  setPriceFilterCategory("not-found");
+                                }}
+                                className="flex items-center gap-1 px-2 py-0.5 bg-red-100 border border-red-200 rounded-full text-xs text-red-700 hover:bg-red-200 transition-colors"
+                              >
+                                ❌ ไม่พบรหัส{" "}
+                                <span className="font-semibold">
+                                  {priceIssueBreakdown.notFoundItems.length}
+                                </span>{" "}
+                                สินค้า ({priceIssueBreakdown.notFoundRows} แถว)
+                              </button>
+                            )}
+                            {priceIssueBreakdown.noPeriodRows > 0 && (
+                              <button
+                                onClick={() => {
+                                  setShowIssuePanel(true);
+                                  setPriceFilterCategory("no-period");
+                                }}
+                                className="flex items-center gap-1 px-2 py-0.5 bg-yellow-100 border border-yellow-200 rounded-full text-xs text-yellow-700 hover:bg-yellow-200 transition-colors"
+                              >
+                                ❓ ไม่มีช่วงราคา{" "}
+                                <span className="font-semibold">
+                                  {priceIssueBreakdown.noPeriodItems.length}
+                                </span>{" "}
+                                สินค้า ({priceIssueBreakdown.noPeriodRows} แถว)
+                              </button>
+                            )}
+                            {priceIssueBreakdown.lowMatchRows > 0 && (
+                              <button
+                                onClick={() => {
+                                  setShowIssuePanel(true);
+                                  setPriceFilterCategory("low-match");
+                                }}
+                                className="flex items-center gap-1 px-2 py-0.5 bg-orange-100 border border-orange-200 rounded-full text-xs text-orange-700 hover:bg-orange-200 transition-colors"
+                              >
+                                ⚠ ราคาไม่ตรง{" "}
+                                <span className="font-semibold">
+                                  {priceIssueBreakdown.lowMatchItems.length}
+                                </span>{" "}
+                                สินค้า ({priceIssueBreakdown.lowMatchRows} แถว)
+                              </button>
+                            )}
+                          </>
+                        )}
+
+                        {/* Spacer */}
+                        <div className="flex-1" />
+
+                        {/* Confidence input */}
+                        <div className="flex items-center gap-2 px-2 py-1 bg-white rounded-md border border-indigo-200">
+                          <span className="text-xs text-gray-600 whitespace-nowrap">
+                            ความเชื่อมั่น:
+                          </span>
+                          <input
+                            type="number"
+                            min="80"
+                            max="100"
+                            step="1"
+                            defaultValue={Math.round(confidenceThreshold * 100)}
+                            onBlur={(e) => {
+                              const val = parseInt(e.target.value, 10);
+                              if (val >= 80 && val <= 100) {
+                                setConfidenceThreshold(val / 100);
+                              } else {
+                                e.target.value = String(
+                                  Math.round(confidenceThreshold * 100),
+                                );
+                              }
+                            }}
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter") {
+                                const val = parseInt(
+                                  (e.target as HTMLInputElement).value,
+                                  10,
+                                );
+                                if (val >= 80 && val <= 100) {
+                                  setConfidenceThreshold(val / 100);
+                                }
+                                (e.target as HTMLInputElement).blur();
+                              }
+                            }}
+                            className="w-14 h-6 text-center text-xs font-bold text-indigo-600 border border-gray-300 rounded px-1"
+                            title="กรอกค่า 80-100 แล้วกด Enter"
+                          />
+                          <span className="text-xs text-gray-600">%</span>
+                        </div>
+
+                        {/* Show only low */}
+                        <Button
+                          onClick={() =>
+                            setShowOnlyLowConfidence(!showOnlyLowConfidence)
+                          }
+                          variant={
+                            showOnlyLowConfidence ? "default" : "outline"
+                          }
+                          size="sm"
+                          className={
+                            showOnlyLowConfidence
+                              ? "bg-orange-500 hover:bg-orange-600 text-white"
+                              : "border-orange-300 text-orange-600 hover:bg-orange-50"
+                          }
+                          title="แสดงเฉพาะแถวที่ไม่ผ่านเกณฑ์"
+                        >
+                          {showOnlyLowConfidence ? (
+                            <>⚠ เฉพาะ Low ({lowConfidenceCount})</>
+                          ) : (
+                            <>👁 เฉพาะ Low ({lowConfidenceCount})</>
+                          )}
+                        </Button>
+
+                        {/* Issue Panel Toggle */}
+                        {lowConfidenceCount > 0 && (
+                          <Button
+                            onClick={() => setShowIssuePanel(!showIssuePanel)}
+                            variant={showIssuePanel ? "default" : "outline"}
+                            size="sm"
+                            className={
+                              showIssuePanel
+                                ? "bg-indigo-600 hover:bg-indigo-700 text-white"
+                                : "border-indigo-300 text-indigo-600 hover:bg-indigo-50"
+                            }
+                          >
+                            🔍 วิเคราะห์ปัญหา
+                          </Button>
+                        )}
+
+                        {/* Bulk Fix Toggle */}
+                        {lowConfidenceCount > 0 && (
+                          <Button
+                            onClick={() =>
+                              setShowBulkFixPanel(!showBulkFixPanel)
+                            }
+                            variant={showBulkFixPanel ? "default" : "outline"}
+                            size="sm"
+                            className={
+                              showBulkFixPanel
+                                ? "bg-amber-500 hover:bg-amber-600 text-white"
+                                : "border-amber-300 text-amber-600 hover:bg-amber-50"
+                            }
+                          >
+                            <Wand2 className="h-3.5 w-3.5 mr-1" />
+                            Bulk Fix
+                            {bulkAcceptedItemCodes.size > 0 && (
+                              <span className="ml-1 bg-white/30 px-1.5 py-0.5 rounded text-xs">
+                                {bulkAcceptedItemCodes.size}
+                              </span>
+                            )}
+                          </Button>
+                        )}
+
+                        {/* Recalculate */}
+                        <Button
+                          onClick={() => {
+                            setCalcStatus("calculating");
+                            setTimeout(() => {
+                              setPriceRecalcTrigger((t) => t + 1);
+                              setCalcStatus("completed");
+                              setTimeout(() => setCalcStatus("idle"), 3000);
+                            }, 100);
+                          }}
+                          variant={
+                            calcStatus === "completed" ? "default" : "outline"
+                          }
+                          size="sm"
+                          disabled={calcStatus === "calculating"}
+                          className={
+                            calcStatus === "completed"
+                              ? "bg-green-600 hover:bg-green-700 text-white"
+                              : "border-indigo-300 text-indigo-600 hover:bg-indigo-50"
+                          }
+                          title="คำนวณราคาใหม่หลังจาก Import โปรโมชั่นเพิ่ม"
+                        >
+                          {calcStatus === "calculating" ? (
+                            <>⏳ กำลังคำนวณ...</>
+                          ) : calcStatus === "completed" ? (
+                            <>✓ คำนวณเสร็จแล้ว</>
+                          ) : (
+                            <>🔄 คำนวณใหม่</>
+                          )}
+                        </Button>
+                      </div>
+                    </div>
+
+                    {/* Issue Panel & Bulk Fix Panel (side by side when both open) */}
+                    {(showIssuePanel || showBulkFixPanel) && (
+                      <div
+                        className={`grid gap-3 border-t border-gray-200 ${
+                          showIssuePanel && showBulkFixPanel
+                            ? "grid-cols-2"
+                            : "grid-cols-1"
+                        }`}
+                      >
+                        {/* Issue Panel (expandable) */}
+                        {showIssuePanel && priceIssueBreakdown && (
+                          <div className="p-3 bg-white border-r border-indigo-100 max-h-125 overflow-y-auto">
+                            <PriceIssuePanel
+                              breakdown={priceIssueBreakdown}
+                              activeFilter={priceFilterCategory}
+                              onFilterByItemCode={(itemCode, category) => {
+                                // For passed items, filter to show only passed rows
+                                // For issue items, filter to show only low-confidence rows
+                                if (category === "passed") {
+                                  setShowOnlyLowConfidence(false);
+                                  setPriceFilterCategory("passed");
+                                } else {
+                                  setShowOnlyLowConfidence(true);
+                                  setPriceFilterCategory(category);
+                                }
+                                // Trigger search in DataTable by setting the search externally
+                                // For now, we use the existing filter mechanism
+                                const el =
+                                  document.querySelector<HTMLInputElement>(
+                                    '[placeholder="ค้นหาข้อมูล..."]',
+                                  );
+                                if (el) {
+                                  const nativeInputValueSetter =
+                                    Object.getOwnPropertyDescriptor(
+                                      window.HTMLInputElement.prototype,
+                                      "value",
+                                    )?.set;
+                                  nativeInputValueSetter?.call(el, itemCode);
+                                  el.dispatchEvent(
+                                    new Event("input", { bubbles: true }),
+                                  );
+                                  el.dispatchEvent(
+                                    new Event("change", { bubbles: true }),
+                                  );
+                                }
+                              }}
+                              onFilterByCategory={(category) => {
+                                setPriceFilterCategory(category);
+                                if (category && category !== "passed") {
+                                  setShowOnlyLowConfidence(true);
+                                } else if (category === "passed") {
+                                  setShowOnlyLowConfidence(false);
+                                } else {
+                                  // null = clear filter, reset showOnlyLowConfidence
+                                  setShowOnlyLowConfidence(false);
+                                }
+                              }}
+                            />
+                          </div>
+                        )}
+
+                        {/* Bulk Fix Panel (expandable) */}
+                        {showBulkFixPanel && displayData.length > 0 && (
+                          <div className="p-3 bg-white max-h-125 overflow-y-auto">
+                            <BulkFixSuggestionPanel
+                              enrichedData={displayData}
+                              headers={displayHeaders}
+                              confidenceThreshold={confidenceThreshold}
+                              acceptedItemCodes={bulkAcceptedItemCodes}
+                              onBulkFix={handleBulkFix}
+                              onClose={() => setShowBulkFixPanel(false)}
+                            />
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )}
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="text-lg flex items-center gap-2">
+                      ข้อมูล
+                      {showPriceColumns && (
+                        <span className="text-sm font-normal text-purple-600 bg-purple-50 px-2 py-1 rounded">
+                          + STD/Pro Price
+                        </span>
+                      )}
+                    </CardTitle>
+                    {reportMeta &&
+                      (reportMeta.reportRunDateTime ||
+                        reportMeta.reportParameters) && (
+                        <div className="flex flex-wrap items-center gap-3 text-sm">
+                          {reportMeta.reportRunDateTime && (
+                            <span className="flex items-center gap-1.5 text-gray-600 bg-gray-100 px-2.5 py-1 rounded-md">
+                              <Calendar className="h-3.5 w-3.5 text-gray-500" />
+                              Report: {reportMeta.reportRunDateTime}
+                            </span>
+                          )}
+                          {reportMeta.reportParameters && (
+                            <span className="flex items-center gap-1.5 text-gray-600 bg-gray-100 px-2.5 py-1 rounded-md">
+                              <Building2 className="h-3.5 w-3.5 text-gray-500" />
+                              Supplier: {reportMeta.reportParameters}
+                            </span>
+                          )}
+                        </div>
+                      )}
+                    <p className="text-sm text-gray-500">
+                      ดับเบิลคลิกที่ cell เพื่อแก้ไข | คลิกที่หัว Column เพื่อ
+                      Shift ทั้ง Column
+                    </p>
+                  </CardHeader>
+                  <CardContent>
+                    <DataTable
+                      data={displayData}
+                      headers={displayHeaders}
+                      errors={validationResult?.errors || []}
+                      onCellUpdate={handleCellUpdate}
+                      onShiftLeft={handleShiftLeft}
+                      onShiftRight={handleShiftRight}
+                      onShiftColumnLeft={handleShiftColumnLeft}
+                      onShiftColumnRight={handleShiftColumnRight}
+                      onClearCell={handleClearCell}
+                      onDeleteRow={handleDeleteRow}
+                      highlightRowIndex={highlightRowIndex}
+                      goToPage={goToPage}
+                      onPageChanged={() => setGoToPage(undefined)}
+                      confidenceThreshold={
+                        showPriceColumns ? confidenceThreshold : undefined
+                      }
+                      bulkAcceptedItemCodes={
+                        showPriceColumns ? bulkAcceptedItemCodes : undefined
+                      }
+                      onCalcLogClick={
+                        showPriceColumns ? handleCalcLogClick : undefined
+                      }
+                      readOnly={!!confirmedExportId}
+                    />
+                  </CardContent>
+                </Card>
+              </div>
+
+              {/* Bottom Section - Logs & Errors */}
+              <div className="grid grid-cols-1 xl:grid-cols-4 gap-6">
+                <div className="xl:col-span-1">
+                  <ActivityLogsSidebar
+                    logs={activityLogs}
+                    summary={logsSummary}
+                    onClearLogs={clearLogs}
+                  />
+                </div>
+                <div className="xl:col-span-3">
+                  {validationResult && !validationResult.isValid && (
+                    <ErrorDetails
+                      errors={validationResult.errors}
+                      onRowClick={handleRowClick}
+                    />
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Calculation Log Modal */}
+      <CalculationLogModal
+        open={calcLogOpen}
+        onOpenChange={setCalcLogOpen}
+        logText={calcLogText}
+        itemCode={calcLogItemCode}
+      />
+
+      {/* Export Success Modal */}
+      <ExportSuccessModal
+        open={exportSuccessModal.open}
+        onOpenChange={(open) =>
+          setExportSuccessModal((prev) => ({ ...prev, open }))
+        }
+        exportId={exportSuccessModal.exportId}
+        supplierCode={exportSuccessModal.supplierCode}
+        rowCount={exportSuccessModal.rowCount}
+        reportDate={exportSuccessModal.reportDate}
+        onStatusChange={(status) => {
+          // Update invoice workflow status when export is confirmed/unconfirmed
+          if (currentRecordId) {
+            updateInvoiceStatus(
+              currentRecordId,
+              status === "confirmed" ? "confirmed" : "exported",
+            );
+          }
+        }}
+      />
+
+      {/* Qty Edit Modal */}
+      <QtyEditModal
+        open={qtyEditOpen}
+        onOpenChange={setQtyEditOpen}
+        data={qtyEditData}
+        maxQty={qtyEditMaxQty}
+        onSave={handleQtyEditModalSave}
+      />
+
+      {/* Duplicate File Dialog */}
+      <DuplicateFileDialog
+        open={duplicateDialogOpen}
+        onOpenChange={setDuplicateDialogOpen}
+        fileName={fileName || ""}
+        existingRecordDate={
+          existingRecordForDuplicate
+            ? new Date(existingRecordForDuplicate.uploadedAt).toLocaleString(
+                "th-TH",
+                {
+                  day: "2-digit",
+                  month: "short",
+                  hour: "2-digit",
+                  minute: "2-digit",
+                },
+              )
+            : ""
+        }
+        existingRecordRows={existingRecordForDuplicate?.rowCount || 0}
+        onLoadExisting={handleDuplicateLoadExisting}
+        onOverwrite={handleDuplicateOverwrite}
+      />
+      <LoadingOverlay
+        isLoading={isGlobalLoading}
+        message="กำลังโหลดข้อมูล..."
+      />
+    </div>
+  );
+}
