@@ -2,7 +2,7 @@ import { getProductCountingSessions } from "@/services/counting.service";
 import { useAuthStore } from "@/stores/auth.store";
 import { useTheme } from "@/stores/theme.store";
 import { CountingSession } from "@/types";
-import { createWatermarkMetadata } from "@/utils/watermark";
+import { createWatermarkMetadata, validateImageExif } from "@/utils/watermark";
 import { Ionicons } from "@expo/vector-icons";
 import * as FileSystem from "expo-file-system";
 import { Image } from "expo-image";
@@ -79,8 +79,15 @@ export default function ProductDetailsScreen() {
 
     try {
       const sessions = await getProductCountingSessions(productId);
-      // แสดงทั้ง pending (draft) และ completed
-      setCountingSessions(sessions);
+      // แสดง completed/approved และ analyzed (ยังไม่ยืนยัน) ใน "รูปที่แนบแล้ว" — ไม่รวม pending/mismatch
+      setCountingSessions(
+        sessions.filter(
+          (s) =>
+            s.status === "completed" ||
+            s.status === "approved" ||
+            s.status === "analyzed",
+        ),
+      );
     } catch (error) {
       console.error("Error fetching counting sessions:", error);
     }
@@ -98,9 +105,12 @@ export default function ProductDetailsScreen() {
 
   const getLocation = async () => {
     try {
-      const { status } = await Location.requestForegroundPermissionsAsync();
+      const { status } = await Location.getForegroundPermissionsAsync();
       if (status === "granted") {
-        const currentLocation = await Location.getCurrentPositionAsync({});
+        // Low accuracy = fastest fix, sufficient for passing lat/lng to camera
+        const currentLocation = await Location.getCurrentPositionAsync({
+          accuracy: Location.Accuracy.Low,
+        });
         setLocation(currentLocation);
       }
     } catch (error) {
@@ -156,14 +166,65 @@ export default function ProductDetailsScreen() {
 
       const result = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: "images",
-        allowsEditing: true,
-        aspect: [4, 3],
+        allowsEditing: false,
         quality: 0.8,
         base64: true, // Important: Request base64 encoding
+        exif: true, // Required for metadata validation
       });
 
       if (!result.canceled && result.assets[0]) {
         const asset = result.assets[0];
+
+        // --- EXIF validation ---
+        const exifResult = validateImageExif(
+          asset.exif as Record<string, unknown>,
+        );
+
+        if (exifResult.reason === "too_old") {
+          const takenAtStr = exifResult.takenAt
+            ? exifResult.takenAt.toLocaleString("th-TH", {
+                dateStyle: "short",
+                timeStyle: "short",
+              })
+            : "";
+          Alert.alert(
+            "รูปภาพเก่าเกินไป",
+            `รูปนี้ถ่ายเมื่อ ${takenAtStr}\nกรุณาถ่ายรูปใหม่โดยตรงจากกล้องถ่าย`,
+          );
+          return;
+        }
+
+        if (
+          exifResult.reason === "no_exif" ||
+          exifResult.reason === "no_date"
+        ) {
+          // Prompt user to confirm
+          let proceed = false;
+          await new Promise<void>((resolve) => {
+            Alert.alert(
+              "ไม่พบข้อมูลภาพ",
+              "รูปนี้ไม่มีข้อมูลวันเวลาถ่าย (อาจเป็น screenshot หรือรูปที่ดาวน์โหลด)\nต้องการใช้รูปนี้ต่อไปหรือไม่?",
+              [
+                {
+                  text: "ถ่ายใหม่",
+                  style: "cancel",
+                  onPress: () => {
+                    proceed = false;
+                    resolve();
+                  },
+                },
+                {
+                  text: "ใช้ต่อไป",
+                  onPress: () => {
+                    proceed = true;
+                    resolve();
+                  },
+                },
+              ],
+            );
+          });
+          if (!proceed) return;
+        }
         let base64Data = asset.base64;
 
         // If base64 is not included, read it manually
@@ -179,12 +240,24 @@ export default function ProductDetailsScreen() {
           return;
         }
 
-        // Get watermark metadata
+        // Get watermark metadata — reuse pre-fetched location to avoid extra GPS call
+        const locationOverride = location
+          ? {
+              address: `${location.coords.latitude.toFixed(5)}, ${location.coords.longitude.toFixed(5)}`,
+              coordinates: {
+                latitude: location.coords.latitude,
+                longitude: location.coords.longitude,
+              },
+            }
+          : undefined;
+
         const watermarkData = await createWatermarkMetadata(
           user?.name || "Unknown",
           user?.uid || "",
+          user?.branchName || "",
           productName,
           productBarcode,
+          locationOverride,
         );
 
         // ถ้ามี pending session อยู่แล้ว ให้ส่ง existingSessionId ไปเพื่ออัพเดทแทนสร้างใหม่
@@ -491,7 +564,7 @@ export default function ProductDetailsScreen() {
               style={[styles.viewAllButton, { borderColor: colors.border }]}
               onPress={() => {
                 router.push({
-                  pathname: "/(tabs)/products/completed",
+                  pathname: "/(mini-apps)/stock-counter/products/completed",
                   params: {
                     productId,
                     productName,

@@ -3,23 +3,23 @@
 import { useAuthStore } from "@/stores/auth.store";
 import { useSidebarStore } from "@/stores/sidebar.store";
 import {
-    BarChart3,
-    Building2,
-    ChevronLeft,
-    ChevronRight,
-    ClipboardList,
-    Clock,
-    DollarSign,
-    Factory,
-    Home,
-    LayoutDashboard,
-    Mail,
-    Menu,
-    Package,
-    Shield,
-    Truck,
-    Users,
-    X,
+  BarChart3,
+  Building2,
+  ChevronLeft,
+  ChevronRight,
+  ClipboardList,
+  Clock,
+  DollarSign,
+  Factory,
+  Home,
+  LayoutDashboard,
+  Mail,
+  Menu,
+  Package,
+  Shield,
+  Truck,
+  Users,
+  X,
 } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
@@ -38,6 +38,7 @@ const navigation = [
     href: "/stock-counter/dashboard/users",
     icon: Users,
     hideForSupervisor: true,
+    hideForManager: true,
   },
   {
     name: "บริษัท",
@@ -58,8 +59,16 @@ const navigation = [
     adminOnly: true,
   },
   { name: "สินค้า", href: "/stock-counter/dashboard/products", icon: Package },
-  { name: "ข้อมูลการนับ", href: "/stock-counter/dashboard/counting", icon: ClipboardList },
-  { name: "เช็คชื่อพนักงาน", href: "/stock-counter/dashboard/attendance", icon: Clock },
+  {
+    name: "ข้อมูลการนับ",
+    href: "/stock-counter/dashboard/counting",
+    icon: ClipboardList,
+  },
+  {
+    name: "เช็คชื่อพนักงาน",
+    href: "/stock-counter/dashboard/attendance",
+    icon: Clock,
+  },
   { name: "รับสินค้า", href: "/stock-counter/dashboard/delivery", icon: Truck },
   {
     name: "ค่าคอมมิชชั่น",
@@ -73,6 +82,7 @@ const navigation = [
     href: "/stock-counter/dashboard/invitations",
     icon: Mail,
     hideForSupervisor: true,
+    hideForManager: true,
   },
 ];
 
@@ -86,12 +96,14 @@ export function StockCounterSidebar() {
   const isAdminOrAbove =
     userData?.role === "admin" || userData?.role === "super_admin";
   const isSupervisor = userData?.role === "supervisor";
+  const isManager = userData?.role === "manager";
 
   const filteredNavigation = navigation.filter((item) => {
     if (item.superAdminOnly) return isSuperAdmin;
     if (item.adminOnly) return isAdminOrAbove;
     if (item.supervisorOnly) return isSupervisor;
     if (item.hideForSupervisor && isSupervisor) return false;
+    if (item.hideForManager && isManager) return false;
     return true;
   });
 
@@ -121,7 +133,7 @@ export function StockCounterSidebar() {
       <aside
         className={`
           fixed lg:static inset-y-0 left-0 z-40
-          ${collapsed ? "w-[72px]" : "w-64"} 
+          ${collapsed ? "w-18" : "w-64"} 
           bg-white dark:bg-gray-800 border-r border-gray-200 dark:border-gray-700 
           transition-all duration-300 ease-in-out
           ${
@@ -133,10 +145,14 @@ export function StockCounterSidebar() {
       >
         <div className="h-full flex flex-col">
           {/* Header */}
-          <div className={`border-b border-gray-200 dark:border-gray-700 ${collapsed ? "p-3" : "p-6"}`}>
+          <div
+            className={`border-b border-gray-200 dark:border-gray-700 ${collapsed ? "p-3" : "p-6"}`}
+          >
             {collapsed ? (
               <div className="flex items-center justify-center">
-                <span className="text-xl font-bold text-blue-600 dark:text-blue-400">SC</span>
+                <span className="text-xl font-bold text-blue-600 dark:text-blue-400">
+                  SC
+                </span>
               </div>
             ) : (
               <>
@@ -150,7 +166,9 @@ export function StockCounterSidebar() {
             )}
           </div>
 
-          <nav className={`flex-1 ${collapsed ? "p-2" : "p-4"} space-y-1 overflow-y-auto`}>
+          <nav
+            className={`flex-1 ${collapsed ? "p-2" : "p-4"} space-y-1 overflow-y-auto`}
+          >
             {/* Back to Platform */}
             <Link
               href="/"
@@ -164,7 +182,8 @@ export function StockCounterSidebar() {
             {filteredNavigation.map((item) => {
               const isActive =
                 pathname === item.href ||
-                (item.href !== "/stock-counter/dashboard" && pathname.startsWith(item.href));
+                (item.href !== "/stock-counter/dashboard" &&
+                  pathname.startsWith(item.href));
               const Icon = item.icon;
 
               return (

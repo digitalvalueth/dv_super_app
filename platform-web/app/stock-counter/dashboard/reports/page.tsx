@@ -207,7 +207,7 @@ export default function ReportsPage() {
       {/* Quick Links to Sub-Reports */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <Link
-          href="/dashboard/reports/employee-behavior"
+          href="/stock-counter/dashboard/reports/employee-behavior"
           className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 hover:border-purple-400 hover:shadow-md transition-all group"
         >
           <div className="flex items-center justify-between">
@@ -229,7 +229,7 @@ export default function ReportsPage() {
         </Link>
 
         <Link
-          href="/dashboard/reports/stock-comparison"
+          href="/stock-counter/dashboard/reports/stock-comparison"
           className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 hover:border-teal-400 hover:shadow-md transition-all group"
         >
           <div className="flex items-center justify-between">

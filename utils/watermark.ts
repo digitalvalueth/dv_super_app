@@ -4,6 +4,7 @@ import * as Location from "expo-location";
 export interface WatermarkData {
   employeeName: string;
   employeeId: string;
+  branchName?: string;
   deviceName: string;
   deviceModel: string;
   location: string;
@@ -44,45 +45,14 @@ export const getCurrentLocation = async (): Promise<{
       };
     }
 
-    // Use Balanced accuracy for faster response (High is too slow)
+    // Use Low accuracy — fastest GPS fix, sufficient for watermark
     const location = await Location.getCurrentPositionAsync({
-      accuracy: Location.Accuracy.Balanced,
+      accuracy: Location.Accuracy.Low,
     });
 
     const { latitude, longitude } = location.coords;
-
-    // Try to get address, but don't wait too long
-    let addressText = `${latitude.toFixed(6)}, ${longitude.toFixed(6)}`;
-
-    try {
-      // Wrap reverseGeocode in a timeout
-      const geocodePromise = Location.reverseGeocodeAsync({
-        latitude,
-        longitude,
-      });
-
-      const timeoutPromise = new Promise<null>((resolve) =>
-        setTimeout(() => resolve(null), 2000)
-      );
-
-      const result = await Promise.race([geocodePromise, timeoutPromise]);
-
-      if (result && result[0]) {
-        const address = result[0];
-        const parts = [
-          address.street,
-          address.district,
-          address.subregion,
-          address.city,
-          address.region,
-        ].filter(Boolean);
-        if (parts.length > 0) {
-          addressText = parts.join(", ");
-        }
-      }
-    } catch {
-      // Use coordinates as fallback
-    }
+    // Use coordinates directly — skip reverseGeocodeAsync (network call)
+    const addressText = `${latitude.toFixed(5)}, ${longitude.toFixed(5)}`;
 
     return {
       address: addressText,
@@ -95,6 +65,55 @@ export const getCurrentLocation = async (): Promise<{
       coordinates: { latitude: 0, longitude: 0 },
     };
   }
+};
+
+export interface ExifValidationResult {
+  valid: boolean;
+  takenAt: Date | null;
+  /** "no_exif" | "no_date" | "too_old" | "ok" */
+  reason: string;
+}
+
+/**
+ * Validate EXIF metadata from a gallery-picked image.
+ * - no_exif  : image has no EXIF at all (screenshot / downloaded image)
+ * - no_date  : EXIF exists but no DateTimeOriginal/DateTime field
+ * - too_old  : photo was taken more than maxAgeMinutes ago → block
+ * - ok       : photo is recent enough
+ */
+export const validateImageExif = (
+  exif: Record<string, unknown> | null | undefined,
+  maxAgeMinutes = 120,
+): ExifValidationResult => {
+  if (!exif || Object.keys(exif).length === 0) {
+    return { valid: false, takenAt: null, reason: "no_exif" };
+  }
+
+  const dateStr =
+    (exif.DateTimeOriginal as string | undefined) ||
+    (exif.DateTime as string | undefined);
+
+  if (!dateStr) {
+    return { valid: false, takenAt: null, reason: "no_date" };
+  }
+
+  // EXIF date format: "YYYY:MM:DD HH:MM:SS"
+  const normalized = (dateStr as string).replace(
+    /^(\d{4}):(\d{2}):(\d{2})/,
+    "$1-$2-$3",
+  );
+  const takenAt = new Date(normalized);
+
+  if (isNaN(takenAt.getTime())) {
+    return { valid: false, takenAt: null, reason: "no_date" };
+  }
+
+  const ageMinutes = (Date.now() - takenAt.getTime()) / (1000 * 60);
+  if (ageMinutes > maxAgeMinutes) {
+    return { valid: false, takenAt, reason: "too_old" };
+  }
+
+  return { valid: true, takenAt, reason: "ok" };
 };
 
 /**
@@ -139,19 +158,27 @@ export const generateWatermarkLines = (data: WatermarkData): string[] => {
 
 /**
  * Create watermark metadata object
+ * Pass locationOverride to skip re-fetching location (faster)
  */
 export const createWatermarkMetadata = async (
   employeeName: string,
   employeeId: string,
+  branchName?: string,
   productName?: string,
-  productBarcode?: string
+  productBarcode?: string,
+  locationOverride?: {
+    address: string;
+    coordinates: { latitude: number; longitude: number };
+  },
 ): Promise<WatermarkData> => {
   const { deviceName, deviceModel } = getDeviceInfo();
-  const { address, coordinates } = await getCurrentLocation();
+  const { address, coordinates } =
+    locationOverride ?? (await getCurrentLocation());
 
   return {
     employeeName,
     employeeId,
+    branchName,
     deviceName,
     deviceModel,
     location: address,

@@ -32,6 +32,9 @@ export default function DeliveryCameraScreen() {
   const [isCapturing, setIsCapturing] = useState(false);
   const cameraRef = useRef<CameraView>(null);
 
+  // Pause camera when navigating away (prevents overheating)
+  const [isCameraActive, setIsCameraActive] = useState(true);
+
   const handleCapture = useCallback(async () => {
     if (!cameraRef.current || isCapturing) return;
 
@@ -134,6 +137,13 @@ export default function DeliveryCameraScreen() {
   // Redirect if no shipment selected
   useFocusEffect(
     useCallback(() => {
+      setIsCameraActive(true);
+      return () => setIsCameraActive(false);
+    }, []),
+  );
+
+  useFocusEffect(
+    useCallback(() => {
       if (!selectedShipment) {
         const timeout = setTimeout(() => {
           router.back();
@@ -203,6 +213,7 @@ export default function DeliveryCameraScreen() {
         style={styles.camera}
         facing={facing}
         flash={flash}
+        active={isCameraActive}
       />
 
       {/* Header - Absolute positioned */}

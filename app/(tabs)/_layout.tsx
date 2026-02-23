@@ -8,11 +8,21 @@ export default function TabLayout() {
   const { colors } = useTheme();
   const user = useAuthStore((state) => state.user);
   const loading = useAuthStore((state) => state.loading);
+  const isFirebaseAuthenticated = useAuthStore(
+    (state) => state.isFirebaseAuthenticated,
+  );
 
   console.log("📍 TabLayout - loading:", loading, "user:", user?.email);
 
+  // Still initializing
+  if (loading) return null;
+
+  // Firebase Auth confirmed but Firestore snapshot hasn't arrived yet
+  // (prevents flicker-redirect to login during cache-miss)
+  if (isFirebaseAuthenticated && !user) return null;
+
   // If user is not authenticated, redirect to login
-  if (!loading && !user) {
+  if (!user) {
     console.log("🚀 TabLayout - Redirecting to /(login)");
     return <Redirect href="/(login)" />;
   }

@@ -88,6 +88,7 @@ export interface Product {
   sku?: string; // For backward compatibility
   description?: string;
   barcode: string;
+  sellerCode?: string | null;
   category?: string;
   series?: string;
   beforeCount?: number;

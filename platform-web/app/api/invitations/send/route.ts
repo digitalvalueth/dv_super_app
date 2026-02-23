@@ -84,7 +84,10 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Check if user already exists
+    // Derive companyId early (needed for company-scoped checks below)
+    const effectiveCompanyId = senderData.companyId || bodyCompanyId || "";
+
+    // Check if user already exists AND already belongs to this company
     const existingUserSnapshot = await db
       .collection("users")
       .where("email", "==", email)
@@ -92,13 +95,22 @@ export async function POST(request: NextRequest) {
       .get();
 
     if (!existingUserSnapshot.empty) {
-      return NextResponse.json(
-        { error: "User with this email already exists" },
-        { status: 409 },
-      );
+      const existingUser = existingUserSnapshot.docs[0].data();
+      // Only block if the user is already a member of this specific company
+      if (
+        existingUser.companyId &&
+        effectiveCompanyId &&
+        existingUser.companyId === effectiveCompanyId
+      ) {
+        return NextResponse.json(
+          { error: "ผู้ใช้นี้เป็นสมาชิกของบริษัทนี้อยู่แล้ว" },
+          { status: 409 },
+        );
+      }
+      // User exists but not in this company → allow invitation to proceed
     }
 
-    // Check if invitation already exists
+    // Check if pending invitation already exists for this email in this company
     const existingInvitationSnapshot = await db
       .collection("invitations")
       .where("email", "==", email)
@@ -107,14 +119,15 @@ export async function POST(request: NextRequest) {
       .get();
 
     if (!existingInvitationSnapshot.empty) {
-      return NextResponse.json(
-        { error: "Pending invitation already exists for this email" },
-        { status: 409 },
-      );
+      // Only block if the pending invitation is for the same company
+      const existingInv = existingInvitationSnapshot.docs[0].data();
+      if (existingInv.companyId === effectiveCompanyId) {
+        return NextResponse.json(
+          { error: "มีคำเชิญที่รอการตอบรับอยู่แล้วสำหรับอีเมลนี้ในบริษัทนี้" },
+          { status: 409 },
+        );
+      }
     }
-
-    // Derive companyId: super_admin has no companyId, so use bodyCompanyId (derived from branch on frontend)
-    const effectiveCompanyId = senderData.companyId || bodyCompanyId || "";
 
     // Get company data
     let companyName = "";
@@ -197,6 +210,43 @@ export async function POST(request: NextRequest) {
     const invitationRef = await db
       .collection("invitations")
       .add(invitationData);
+
+    // Send in-app notification if the invited user already exists in the system
+    try {
+      let targetUserId: string | null = null;
+
+      // Re-use existingUserSnapshot already fetched above
+      if (!existingUserSnapshot.empty) {
+        const existingUser = existingUserSnapshot.docs[0];
+        const existingUserData = existingUser.data();
+        // Use uid field (Firebase Auth UID) or document ID
+        targetUserId = existingUserData.uid || existingUser.id;
+      }
+
+      if (targetUserId) {
+        await db.collection("notifications").add({
+          userId: targetUserId,
+          type: "company_invite",
+          title: "คำเชิญเข้าร่วมบริษัท",
+          message: `คุณได้รับคำเชิญให้เข้าร่วม${companyName ? `บริษัท ${companyName}` : ""}${branchName ? ` สาขา ${branchName}` : ""}`,
+          data: {
+            invitationId: invitationRef.id,
+            companyId: effectiveCompanyId,
+            companyName: companyName,
+            branchId: branchId || null,
+            branchName: branchName,
+            role: role,
+            actionRequired: true,
+            actionType: "accept_reject",
+          },
+          read: false,
+          createdAt: new Date(),
+        });
+      }
+    } catch (notifError) {
+      // Don't fail the request if notification creation fails
+      console.error("Error creating in-app notification:", notifError);
+    }
 
     // Send invitation email
     const baseUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";

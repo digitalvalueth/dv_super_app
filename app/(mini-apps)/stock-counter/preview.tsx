@@ -3,17 +3,22 @@ import {
   updateAssignmentStatus,
   uploadCountingImage,
 } from "@/services/counting.service";
-import { countBarcodesInImage } from "@/services/gemini.service";
+import {
+  BarcodeCountResult,
+  countBarcodesInImage,
+} from "@/services/gemini.service";
 import { useAuthStore } from "@/stores/auth.store";
 import { useTheme } from "@/stores/theme.store";
 import { formatTimestamp, WatermarkData } from "@/utils/watermark";
 import { Ionicons } from "@expo/vector-icons";
+import * as FileSystem from "expo-file-system/legacy";
 import { router, useLocalSearchParams } from "expo-router";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
   Image,
+  Modal,
   ScrollView,
   StyleSheet,
   Text,
@@ -49,12 +54,17 @@ export default function PreviewScreen() {
     assignmentId?: string;
     beforeQty?: string;
     existingSessionId?: string; // ถ้ามี แสดงว่ามี session อยู่แล้ว ให้อัพเดทแทนสร้างใหม่
+    nativeScannedBarcode?: string; // barcode ที่สแกนด้วย native scanner (แม่นยำ 100%)
   }>();
 
   const [isProcessing, setIsProcessing] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
   const [isLoadingImage, setIsLoadingImage] = useState(false);
+  const [isFullscreen, setIsFullscreen] = useState(false);
   const [barcodeCount, setBarcodeCount] = useState<number | null>(null);
+  const [barcodeMatch, setBarcodeMatch] = useState<boolean | null>(null);
+  const [detectedBarcodes, setDetectedBarcodes] = useState<string[]>([]);
+  const [needsRecount, setNeedsRecount] = useState<boolean>(false);
   const [processingTime, setProcessingTime] = useState<number | null>(null);
   const [sessionId, setSessionId] = useState<string | null>(
     params.existingSessionId || null,
@@ -87,9 +97,14 @@ export default function PreviewScreen() {
         return;
       }
 
-      // ถ้ามี existingSessionId และไม่มี imageBase64 แสดงว่ามาจากหน้า details กดดูรูปที่มีอยู่แล้ว
-      // ต้องโหลด base64 จาก URL เพื่อวิเคราะห์ AI
-      if (params.existingSessionId && !params.imageBase64) {
+      // ถ้ามี existingSessionId และไม่มี imageBase64 และ imageUri เป็น Firebase URL
+      // = มาจากหน้า details กดดูรูปเก่า → โหลด base64 จาก URL
+      // (ถ้า imageUri เป็น local file = กด ถ่ายใหม่ → ผ่านไปให้ upload logic ด้านล่างจัดการ)
+      if (
+        params.existingSessionId &&
+        !params.imageBase64 &&
+        params.imageUri?.startsWith("https://")
+      ) {
         // Fix URL encoding สำหรับ Firebase Storage
         const fixedImageUrl = fixFirebaseStorageUrl(params.imageUri);
 
@@ -223,6 +238,7 @@ export default function PreviewScreen() {
                     watermarkData.timestamp || new Date().toISOString(),
                   employeeName: watermarkData.employeeName || user.name || "",
                   employeeId: user.uid,
+                  branchName: watermarkData.branchName || user.branchName || "",
                   deviceModel: watermarkData.deviceModel || "Unknown",
                 })
               : "",
@@ -252,12 +268,6 @@ export default function PreviewScreen() {
   ]);
 
   const handleAnalyze = useCallback(async () => {
-    // ใช้รูปปกติ (ไม่มี watermark) สำหรับ AI วิเคราะห์
-    if (!imageBase64) {
-      Alert.alert("เกิดข้อผิดพลาด", "ไม่พบข้อมูลรูปภาพ กรุณารอโหลดรูปสักครู่");
-      return;
-    }
-
     if (!sessionId) {
       Alert.alert("กรุณารอสักครู่", "กำลังอัพโหลดรูปภาพ...");
       return;
@@ -266,30 +276,83 @@ export default function PreviewScreen() {
     try {
       setIsProcessing(true);
       setBarcodeCount(null);
+      setNeedsRecount(false);
 
-      // 1. วิเคราะห์รูปด้วย AI (ใช้รูปปกติ ไม่มี watermark)
-      const result = await countBarcodesInImage(imageBase64);
+      // Read base64 lazily — only when AI analysis is actually needed
+      let base64ForAI = imageBase64;
+      if (!base64ForAI) {
+        const localUri = params.imageUri;
+        if (!localUri) {
+          Alert.alert("เกิดข้อผิดพลาด", "ไม่พบข้อมูลรูปภาพ");
+          return;
+        }
+        // Read from local file — fast disk I/O, no network needed
+        base64ForAI = await FileSystem.readAsStringAsync(localUri, {
+          encoding: "base64",
+        });
+        setImageBase64(base64ForAI);
+      }
+
+      // 1. วิเคราะห์รูปด้วย AI พร้อม barcode validation
+      // ใช้ nativeScannedBarcode ถ้ามี (แม่นยำกว่า) มิฉะนั้นใช้ productBarcode จากระบบ
+      // AI จะตรวจบาร์โค้ดในรูปเสมอ — ป้องกัน fraud (สแกนสินค้าถูก แต่ถ่ายรูปสินค้าผิด)
+      const effectiveExpectedBarcode =
+        params.nativeScannedBarcode || params.productBarcode || undefined;
+
+      const result: BarcodeCountResult = await countBarcodesInImage(
+        base64ForAI,
+        effectiveExpectedBarcode,
+        params.productName || undefined,
+      );
 
       setBarcodeCount(result.count);
+      setBarcodeMatch(result.barcodeMatch);
+      setDetectedBarcodes(result.detectedBarcodes);
+      setNeedsRecount(result.needsRecount ?? false);
       setProcessingTime(result.processingTime);
+
+      // needsRecount = AI detected correct barcode but gave inconsistent count=0 (hallucination)
+      if (result.needsRecount) {
+        Alert.alert(
+          "🔄 วิเคราะห์ไม่สมบูรณ์",
+          `AI พบบาร์โค้ดถูกต้อง (${result.matchedBarcode}) แต่นับจำนวนไม่สมบูรณ์\nกรุณากดวิเคราะห์อีกครั้ง`,
+          [{ text: "วิเคราะห์อีกครั้ง" }],
+        );
+      } else if (params.productBarcode && !result.barcodeMatch) {
+        // Warning if barcode doesn't match (only when product has a barcode)
+        Alert.alert(
+          "⚠️ บาร์โค้ดไม่ตรง",
+          result.detectedBarcodes.length > 0
+            ? `พบบาร์โค้ด: ${result.detectedBarcodes.join(", ")}\nแต่ต้องการ: ${params.productBarcode || "-"}\n\nกรุณาถ่ายรูปสินค้าที่ถูกต้อง`
+            : `ไม่พบบาร์โค้ดในรูปภาพ\nกรุณาถ่ายรูปสินค้าให้เห็นบาร์โค้ดชัดเจน`,
+          [{ text: "ตกลง" }],
+        );
+      }
 
       // 2. อัพเดท session ที่มีอยู่แล้วด้วยผลวิเคราะห์
       const { updateDoc, doc } = await import("firebase/firestore");
       const { db } = await import("@/config/firebase");
 
       const beforeQty = parseInt(params.beforeQty || "0");
-      const variance = beforeQty - result.count;
+      // ถ้าบาร์โค้ดไม่ตรง อย่าบันทึกจำนวนของสินค้าอื่น ให้ count = 0
+      const isMismatch = !!params.productBarcode && !result.barcodeMatch;
+      const countToSave = isMismatch ? 0 : result.count;
+      const variance = beforeQty - countToSave;
 
       await updateDoc(doc(db, "countingSessions", sessionId), {
-        currentCountQty: result.count,
+        currentCountQty: countToSave,
         variance: variance,
-        aiCount: result.count,
+        aiCount: countToSave,
         aiConfidence: 0.95,
-        manualCount: result.count,
-        finalCount: result.count,
+        manualCount: countToSave,
+        finalCount: countToSave,
         discrepancy: Math.abs(variance),
         processingTime: result.processingTime || 0,
-        status: "analyzed", // เปลี่ยนจาก pending เป็น analyzed (วิเคราะห์แล้ว แต่ยังไม่ยืนยัน)
+        barcodeMatch: result.barcodeMatch,
+        detectedBarcodes: result.detectedBarcodes,
+        matchedBarcode: result.matchedBarcode || null,
+        // mismatch = ถ่ายผิดสินค้า, analyzed = วิเคราะห์แล้วรอยืนยัน
+        status: isMismatch ? "mismatch" : "analyzed",
         updatedAt: new Date(),
       });
     } catch (error) {
@@ -298,7 +361,7 @@ export default function PreviewScreen() {
     } finally {
       setIsProcessing(false);
     }
-  }, [imageBase64, sessionId, params.beforeQty]);
+  }, [imageBase64, sessionId, params.beforeQty, params.imageUri]);
 
   const handleRetake = () => {
     router.back();
@@ -381,13 +444,46 @@ export default function PreviewScreen() {
               </Text>
             </View>
           ) : (
-            <Image
-              source={{ uri: displayImageUri || params.imageUri }}
-              style={styles.image}
-              resizeMode="cover"
-            />
+            <TouchableOpacity
+              activeOpacity={0.95}
+              onPress={() => setIsFullscreen(true)}
+            >
+              <Image
+                source={{ uri: displayImageUri || params.imageUri }}
+                style={styles.image}
+                resizeMode="cover"
+              />
+              {/* Fullscreen hint */}
+              <View style={styles.fullscreenHint}>
+                <Ionicons name="expand" size={16} color="#fff" />
+                <Text style={styles.fullscreenHintText}>ดูรูปเต็มจอ</Text>
+              </View>
+            </TouchableOpacity>
           )}
         </View>
+
+        {/* Fullscreen Modal */}
+        <Modal
+          visible={isFullscreen}
+          transparent={false}
+          animationType="fade"
+          statusBarTranslucent
+          onRequestClose={() => setIsFullscreen(false)}
+        >
+          <View style={styles.fullscreenContainer}>
+            <Image
+              source={{ uri: displayImageUri || params.imageUri }}
+              style={styles.fullscreenImage}
+              resizeMode="contain"
+            />
+            <TouchableOpacity
+              style={styles.fullscreenClose}
+              onPress={() => setIsFullscreen(false)}
+            >
+              <Ionicons name="close" size={28} color="#fff" />
+            </TouchableOpacity>
+          </View>
+        </Modal>
 
         {/* Product Info */}
         {params.productName && (
@@ -511,6 +607,49 @@ export default function PreviewScreen() {
                   Barcode
                 </Text>
               </View>
+
+              {/* Barcode match status badge */}
+              {needsRecount ? (
+                <View
+                  style={[
+                    styles.barcodeMatchBadge,
+                    { backgroundColor: "#d9770620" },
+                  ]}
+                >
+                  <Ionicons name="refresh-circle" size={18} color="#d97706" />
+                  <Text style={[styles.barcodeMatchText, { color: "#d97706" }]}>
+                    พบบาร์โค้ดถูกต้องแต่นับไม่สมบูรณ์ — วิเคราะห์อีกครั้ง
+                  </Text>
+                </View>
+              ) : params.productBarcode ? (
+                <View
+                  style={[
+                    styles.barcodeMatchBadge,
+                    {
+                      backgroundColor: barcodeMatch ? "#16a34a20" : "#dc262620",
+                    },
+                  ]}
+                >
+                  <Ionicons
+                    name={barcodeMatch ? "checkmark-circle" : "close-circle"}
+                    size={18}
+                    color={barcodeMatch ? "#16a34a" : "#dc2626"}
+                  />
+                  <Text
+                    style={[
+                      styles.barcodeMatchText,
+                      { color: barcodeMatch ? "#16a34a" : "#dc2626" },
+                    ]}
+                  >
+                    {barcodeMatch
+                      ? "บาร์โค้ดตรงกัน"
+                      : detectedBarcodes.length > 0
+                        ? `ไม่ตรง (พบ: ${detectedBarcodes[0]})`
+                        : "ไม่พบบาร์โค้ด"}
+                  </Text>
+                </View>
+              ) : null}
+
               {processingTime && (
                 <Text
                   style={[
@@ -539,19 +678,13 @@ export default function PreviewScreen() {
             style={[
               styles.analyzeButton,
               { backgroundColor: colors.primary },
-              (isProcessing ||
-                isUploading ||
-                isLoadingImage ||
-                !sessionId ||
-                !imageBase64) && { opacity: 0.6 },
+              (isProcessing || isUploading || isLoadingImage || !sessionId) && {
+                opacity: 0.6,
+              },
             ]}
             onPress={handleAnalyze}
             disabled={
-              isProcessing ||
-              isUploading ||
-              isLoadingImage ||
-              !sessionId ||
-              !imageBase64
+              isProcessing || isUploading || isLoadingImage || !sessionId
             }
           >
             {isUploading ? (
@@ -603,11 +736,22 @@ export default function PreviewScreen() {
           style={[
             styles.actionButton,
             styles.confirmButton,
-            { backgroundColor: colors.primary },
-            barcodeCount === null && { opacity: 0.5 },
+            {
+              backgroundColor:
+                barcodeMatch === false && !!params.productBarcode
+                  ? "#dc2626"
+                  : colors.primary,
+            },
+            (barcodeCount === null ||
+              (barcodeMatch === false && !!params.productBarcode)) && {
+              opacity: 0.5,
+            },
           ]}
           onPress={handleConfirm}
-          disabled={barcodeCount === null}
+          disabled={
+            barcodeCount === null ||
+            (barcodeMatch === false && !!params.productBarcode)
+          }
         >
           <Ionicons name="checkmark" size={20} color="#fff" />
           <Text style={[styles.actionButtonText, { color: "#fff" }]}>
@@ -664,6 +808,44 @@ const styles = StyleSheet.create({
   image: {
     width: "100%",
     height: "100%",
+  },
+  fullscreenHint: {
+    position: "absolute",
+    top: 10,
+    right: 10,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    backgroundColor: "rgba(0,0,0,0.55)",
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 16,
+  },
+  fullscreenHintText: {
+    color: "#fff",
+    fontSize: 12,
+    fontWeight: "500",
+  },
+  fullscreenContainer: {
+    flex: 1,
+    backgroundColor: "#000",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  fullscreenImage: {
+    width: "100%",
+    height: "100%",
+  },
+  fullscreenClose: {
+    position: "absolute",
+    top: 52,
+    right: 16,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: "rgba(0,0,0,0.6)",
+    justifyContent: "center",
+    alignItems: "center",
   },
   infoCard: {
     borderRadius: 12,
@@ -726,6 +908,19 @@ const styles = StyleSheet.create({
   },
   processingTimeText: {
     fontSize: 12,
+  },
+  barcodeMatchBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 20,
+    marginTop: 8,
+  },
+  barcodeMatchText: {
+    fontSize: 13,
+    fontWeight: "600",
   },
   emptyResult: {
     alignItems: "center",

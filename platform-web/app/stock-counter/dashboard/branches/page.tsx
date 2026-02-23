@@ -113,6 +113,24 @@ export default function BranchesPage() {
           },
         );
 
+        // Fetch user count for managed branches
+        if (managedIds.length > 0) {
+          const usersSnapshot = await getDocs(
+            query(collection(db, "users"), where("branchId", "in", managedIds)),
+          );
+          const branchUserCount: Record<string, number> = {};
+          usersSnapshot.forEach((doc) => {
+            const data = doc.data() as any;
+            if (data.branchId) {
+              branchUserCount[data.branchId] =
+                (branchUserCount[data.branchId] || 0) + 1;
+            }
+          });
+          branchesData.forEach((b) => {
+            b.userCount = branchUserCount[b.id] || 0;
+          });
+        }
+
         setBranches(branchesData);
         setLoading(false);
         return;
@@ -479,7 +497,7 @@ export default function BranchesPage() {
           >
             {/* Clickable Card Area */}
             <Link
-              href={`/dashboard/branches/${branch.id}`}
+              href={`/stock-counter/dashboard/branches/${branch.id}`}
               className="block p-5 pb-0"
             >
               <div className="flex items-start justify-between mb-4">
@@ -539,7 +557,7 @@ export default function BranchesPage() {
 
             {/* Footer */}
             <Link
-              href={`/dashboard/branches/${branch.id}`}
+              href={`/stock-counter/dashboard/branches/${branch.id}`}
               className="block px-5 pb-5"
             >
               <div className="flex items-center justify-between pt-3 border-t border-gray-200 dark:border-gray-700">

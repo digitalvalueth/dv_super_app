@@ -2,7 +2,7 @@
 
 import { db } from "@/lib/firebase";
 import { useAuthStore } from "@/stores/auth.store";
-import { doc, updateDoc } from "firebase/firestore";
+import { doc, getDoc, updateDoc } from "firebase/firestore";
 import {
   Building2,
   Mail,
@@ -19,6 +19,7 @@ export default function ProfilePage() {
   const { userData } = useAuthStore();
   const [isEditing, setIsEditing] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [companyName, setCompanyName] = useState("");
 
   const [formData, setFormData] = useState({
     name: "",
@@ -33,6 +34,45 @@ export default function ProfilePage() {
         displayName: userData.displayName || "",
         phoneNumber: userData.phoneNumber || "",
       });
+
+      // Fetch company name from Firestore
+      const resolveCompanyName = async () => {
+        // 1. Try companyId directly
+        const cid = userData.companyId;
+        if (cid) {
+          const snap = await getDoc(doc(db, "companies", cid));
+          if (snap.exists()) {
+            setCompanyName(snap.data()?.name || "");
+            return;
+          }
+        }
+        // 2. Try branchId or first managedBranchId
+        const bid = userData.branchId || userData.managedBranchIds?.[0];
+        if (bid) {
+          const branchSnap = await getDoc(doc(db, "branches", bid));
+          if (branchSnap.exists()) {
+            const branchData = branchSnap.data();
+            if (branchData?.companyId) {
+              const compSnap = await getDoc(
+                doc(db, "companies", branchData.companyId),
+              );
+              if (compSnap.exists()) {
+                setCompanyName(compSnap.data()?.name || "");
+                return;
+              }
+            }
+            if (branchData?.companyName) {
+              setCompanyName(branchData.companyName);
+              return;
+            }
+          }
+        }
+        // 3. Fallback to stored companyName on user doc
+        if (userData.companyName) {
+          setCompanyName(userData.companyName);
+        }
+      };
+      resolveCompanyName().catch(console.error);
     }
   }, [userData]);
 
@@ -310,10 +350,12 @@ export default function ProfilePage() {
                 บริษัท
               </label>
               <p className="text-gray-900">
-                {userData.companyName || userData.role === "super_admin" ? (
+                {userData.role === "super_admin" ? (
                   <span className="text-purple-600 font-semibold">
                     ผู้ดูแลระบบ (ทุกบริษัท)
                   </span>
+                ) : companyName ? (
+                  <span className="font-medium">{companyName}</span>
                 ) : (
                   <span className="text-gray-400">ไม่ระบุ</span>
                 )}
