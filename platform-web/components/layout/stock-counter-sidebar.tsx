@@ -7,6 +7,7 @@ import {
   Building2,
   ChevronLeft,
   ChevronRight,
+  ClipboardCheck,
   ClipboardList,
   Clock,
   DollarSign,
@@ -63,6 +64,11 @@ const navigation = [
     name: "ข้อมูลการนับ",
     href: "/stock-counter/dashboard/counting",
     icon: ClipboardList,
+  },
+  {
+    name: "สรุปการนับ",
+    href: "/stock-counter/dashboard/counting-summary",
+    icon: ClipboardCheck,
   },
   {
     name: "เช็คชื่อพนักงาน",
