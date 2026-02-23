@@ -95,6 +95,7 @@ export interface CountingExportItem {
     timestamp?: string;
     employeeName?: string;
     employeeId?: string;
+    branchName?: string;
   };
   createdAt?: Date;
 }
@@ -137,6 +138,7 @@ export function parseWatermarkFromRemarks(
       timestamp: data.timestamp,
       employeeName: data.employeeName,
       employeeId: data.employeeId,
+      branchName: data.branchName,
     };
   } catch {
     return undefined;
