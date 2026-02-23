@@ -1,10 +1,11 @@
 /**
- * Script to copy branches and products from (default) dev database
+ * Script to copy branches and products from fittsuperapp-dev database
  * to fittsuperapp-prod production database.
  *
  * Usage:
- *   npm run copy:prod                        # copy everything
- *   npm run copy:prod -- <companyId>         # copy only specific company
+ *   npm run copy:prod                                    # copy everything
+ *   npm run copy:prod -- <devCompanyId>                  # copy specific company (same ID in prod)
+ *   npm run copy:prod -- <devCompanyId> <prodCompanyId>  # copy and remap companyId
  */
 
 import * as admin from "firebase-admin";
@@ -12,6 +13,7 @@ import * as fs from "fs";
 import * as path from "path";
 
 const companyId = process.argv[2] || null;
+const targetCompanyId = process.argv[3] || companyId; // remap companyId in prod if provided
 
 console.log("🔑 Initializing Firebase Admin SDK...");
 
@@ -49,6 +51,9 @@ console.log(
 );
 if (companyId) {
   console.log(`📌 Filtering by companyId: ${companyId}`);
+  if (targetCompanyId !== companyId) {
+    console.log(`🔄 Remapping companyId → ${targetCompanyId}`);
+  }
 } else {
   console.log("📌 Copying all companies");
 }
@@ -80,7 +85,12 @@ async function copyCollection(collectionName: string) {
 
   for (const doc of snapshot.docs) {
     const destRef = prodDb.collection(collectionName).doc(doc.id);
-    batch.set(destRef, doc.data());
+    const data = doc.data();
+    // Remap companyId if needed
+    if (targetCompanyId && data.companyId === companyId) {
+      data.companyId = targetCompanyId;
+    }
+    batch.set(destRef, data);
     batchCount++;
     count++;
 
