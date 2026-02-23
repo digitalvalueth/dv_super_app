@@ -12,7 +12,8 @@
     "seed": "tsx scripts/seed-data.ts",
     "seed:companies": "tsx scripts/seed-companies.ts",
     "seed:branches": "tsx scripts/seed-branches.ts",
-    "seed:products": "tsx scripts/seed-products.ts"
+    "seed:products": "tsx scripts/seed-products.ts",
+    "copy:prod": "tsx scripts/copy-to-prod.ts"
   },
   "dependencies": {
     "@expo/vector-icons": "^15.0.3",
