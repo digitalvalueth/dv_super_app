@@ -162,7 +162,14 @@ export type AssignmentStatus = "pending" | "in_progress" | "completed";
 
 // ==================== Counting Session ====================
 
-export type CountingSessionStatus = "pending" | "analyzed" | "completed";
+export type CountingSessionStatus =
+  | "pending"
+  | "analyzed"
+  | "mismatch"
+  | "completed"
+  | "pending-review"
+  | "approved"
+  | "rejected";
 
 export interface CountingSession {
   id: string;
