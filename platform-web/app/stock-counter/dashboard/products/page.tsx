@@ -57,6 +57,7 @@ export default function ProductsPage() {
   const [showAddModal, setShowAddModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [showAssignConfirm, setShowAssignConfirm] = useState(false);
   const [formData, setFormData] = useState({
     productId: "",
     name: "",
@@ -374,12 +375,7 @@ export default function ProductsPage() {
   // Function to assign all products to all employees
   const handleAssignAllProducts = async () => {
     if (!userData) return;
-
-    const confirmAssign = confirm(
-      `คุณต้องการมอบหมายสินค้าทั้งหมด (${products.length} รายการ) ให้พนักงานทุกคนใช่หรือไม่?`,
-    );
-    if (!confirmAssign) return;
-
+    setShowAssignConfirm(false);
     setAssigningAll(true);
 
     try {
@@ -536,7 +532,7 @@ export default function ProductsPage() {
             </Link>
           )}
           <button
-            onClick={handleAssignAllProducts}
+            onClick={() => setShowAssignConfirm(true)}
             disabled={assigningAll || products.length === 0}
             className="inline-flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           >
@@ -835,6 +831,37 @@ export default function ProductsPage() {
                 className="flex-1 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700"
               >
                 ลบ
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showAssignConfirm && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white dark:bg-gray-800 rounded-xl max-w-sm w-full p-6">
+            <h2 className="text-xl font-semibold text-gray-900 dark:text-white mb-2">
+              ยืนยันการมอบหมาย
+            </h2>
+            <p className="text-gray-600 dark:text-gray-400 mb-6">
+              คุณต้องการมอบหมายสินค้าทั้งหมด{" "}
+              <strong className="text-gray-900 dark:text-white">
+                ({products.length} รายการ)
+              </strong>{" "}
+              ให้พนักงานทุกคนใช่หรือไม่?
+            </p>
+            <div className="flex gap-3">
+              <button
+                onClick={() => setShowAssignConfirm(false)}
+                className="flex-1 px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700"
+              >
+                ยกเลิก
+              </button>
+              <button
+                onClick={handleAssignAllProducts}
+                className="flex-1 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700"
+              >
+                ยืนยัน
               </button>
             </div>
           </div>
