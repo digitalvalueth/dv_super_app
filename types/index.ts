@@ -15,7 +15,7 @@ export interface User {
   role?: UserRole; // Optional until admin assigns
   supervisorId?: string; // ID of supervisor (for employees)
   supervisorName?: string; // Name of supervisor
-  photoURL?: string;
+  photoURL?: string; // Profile picture URL from Firebase Auth
   createdAt: Timestamp;
   updatedAt: Timestamp;
 }
