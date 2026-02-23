@@ -8,6 +8,7 @@ import { router, useLocalSearchParams } from "expo-router";
 import { useEffect, useState } from "react";
 import {
   ActivityIndicator,
+  Modal,
   ScrollView,
   StatusBar,
   StyleSheet,
@@ -24,6 +25,7 @@ export default function CompletedProductScreen() {
   const [sessions, setSessions] = useState<CountingSession[]>([]);
   const [imageLoading, setImageLoading] = useState(true);
   const [imageError, setImageError] = useState(false);
+  const [isFullscreen, setIsFullscreen] = useState(false);
 
   const productId = params.productId as string;
   const productName = params.productName as string;
@@ -50,7 +52,10 @@ export default function CompletedProductScreen() {
 
   const getLatestSession = () => {
     if (sessions.length === 0) return null;
-    return sessions[0]; // Already sorted by createdAt desc
+    // Prefer completed sessions, then most recently updated
+    const completed = sessions.filter((s) => s.status === "completed");
+    if (completed.length > 0) return completed[0]; // already sorted by updatedAt desc
+    return sessions[0];
   };
 
   const latestSession = getLatestSession();
@@ -60,6 +65,27 @@ export default function CompletedProductScreen() {
       style={[styles.safeArea, { backgroundColor: colors.background }]}
       edges={["top"]}
     >
+      {/* Fullscreen Image Modal */}
+      <Modal
+        visible={isFullscreen}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setIsFullscreen(false)}
+      >
+        <View style={styles.fullscreenContainer}>
+          <Image
+            source={{ uri: latestSession?.imageUrl }}
+            style={styles.fullscreenImage}
+            contentFit="contain"
+          />
+          <TouchableOpacity
+            style={styles.fullscreenClose}
+            onPress={() => setIsFullscreen(false)}
+          >
+            <Ionicons name="close" size={24} color="#fff" />
+          </TouchableOpacity>
+        </View>
+      </Modal>
       <StatusBar
         barStyle={isDark ? "light-content" : "dark-content"}
         backgroundColor={colors.background}
@@ -133,10 +159,42 @@ export default function CompletedProductScreen() {
           </View>
 
           {/* Status Badge */}
-          <View style={[styles.statusBadge, { backgroundColor: "#10B981" }]}>
-            <Ionicons name="checkmark-circle" size={20} color="#fff" />
-            <Text style={styles.statusText}>นับสินค้าเรียบร้อยแล้ว</Text>
-          </View>
+          {(() => {
+            const hasCompleted = sessions.some(
+              (s) => s.status === "completed" || s.status === "approved",
+            );
+            const hasAnalyzed = sessions.some((s) => s.status === "analyzed");
+            if (hasCompleted) {
+              return (
+                <View
+                  style={[styles.statusBadge, { backgroundColor: "#10B981" }]}
+                >
+                  <Ionicons name="checkmark-circle" size={20} color="#fff" />
+                  <Text style={styles.statusText}>นับสินค้าเรียบร้อยแล้ว</Text>
+                </View>
+              );
+            } else if (hasAnalyzed) {
+              return (
+                <View
+                  style={[styles.statusBadge, { backgroundColor: "#f59e0b" }]}
+                >
+                  <Ionicons name="time-outline" size={20} color="#fff" />
+                  <Text style={styles.statusText}>
+                    วิเคราะห์แล้ว — รอยืนยัน
+                  </Text>
+                </View>
+              );
+            } else {
+              return (
+                <View
+                  style={[styles.statusBadge, { backgroundColor: "#6b7280" }]}
+                >
+                  <Ionicons name="camera-outline" size={20} color="#fff" />
+                  <Text style={styles.statusText}>ยังไม่ได้นับ</Text>
+                </View>
+              );
+            }
+          })()}
 
           {/* Latest Count Result */}
           {latestSession && (
@@ -183,20 +241,31 @@ export default function CompletedProductScreen() {
                       </Text>
                     </View>
                   ) : (
-                    <Image
-                      source={{ uri: latestSession.imageUrl }}
-                      style={styles.countingImage}
-                      resizeMode="cover"
-                      onLoadStart={() => {
-                        setImageLoading(true);
-                        setImageError(false);
-                      }}
-                      onLoadEnd={() => setImageLoading(false)}
-                      onError={() => {
-                        setImageLoading(false);
-                        setImageError(true);
-                      }}
-                    />
+                    <TouchableOpacity
+                      activeOpacity={0.9}
+                      onPress={() => setIsFullscreen(true)}
+                    >
+                      <Image
+                        source={{ uri: latestSession.imageUrl }}
+                        style={styles.countingImage}
+                        resizeMode="cover"
+                        onLoadStart={() => {
+                          setImageLoading(true);
+                          setImageError(false);
+                        }}
+                        onLoadEnd={() => setImageLoading(false)}
+                        onError={() => {
+                          setImageLoading(false);
+                          setImageError(true);
+                        }}
+                      />
+                      <View style={styles.fullscreenHint}>
+                        <Ionicons name="expand" size={12} color="#fff" />
+                        <Text style={styles.fullscreenHintText}>
+                          ดูรูปเต็มจอ
+                        </Text>
+                      </View>
+                    </TouchableOpacity>
                   )}
                 </View>
               ) : (
@@ -558,6 +627,44 @@ const styles = StyleSheet.create({
     width: "100%",
     height: 200,
     marginBottom: 16,
+  },
+  fullscreenHint: {
+    position: "absolute",
+    top: 8,
+    right: 8,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    backgroundColor: "rgba(0,0,0,0.55)",
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 12,
+  },
+  fullscreenHintText: {
+    color: "#fff",
+    fontSize: 11,
+    fontWeight: "500",
+  },
+  fullscreenContainer: {
+    flex: 1,
+    backgroundColor: "#000",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  fullscreenImage: {
+    width: "100%",
+    height: "100%",
+  },
+  fullscreenClose: {
+    position: "absolute",
+    top: 52,
+    right: 16,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: "rgba(0,0,0,0.6)",
+    justifyContent: "center",
+    alignItems: "center",
   },
   countingImage: {
     width: "100%",

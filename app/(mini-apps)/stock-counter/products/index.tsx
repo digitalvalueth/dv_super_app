@@ -614,7 +614,9 @@ export default function HomeScreen() {
         onEndReached={handleLoadMore}
         onEndReachedThreshold={0.5}
         ListFooterComponent={
-          pagination.hasMore && filteredProducts.length > 0 ? (
+          pagination.hasMore &&
+          filteredProducts.length > 0 &&
+          filteredProducts.length < (counts[filter] ?? counts.all) ? (
             <View style={styles.loadMoreContainer}>
               <ActivityIndicator size="small" color={colors.primary} />
               <Text

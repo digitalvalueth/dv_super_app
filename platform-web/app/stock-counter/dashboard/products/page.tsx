@@ -125,6 +125,7 @@ export default function ProductsPage() {
           beforeCount: data.beforeCount,
           // Support both imageUrl and imageURL for backward compatibility
           imageUrl: data.imageUrl || data.imageURL,
+          sellerCode: data.sellerCode || null,
           createdAt: data.createdAt?.toDate(),
           updatedAt: data.updatedAt?.toDate(),
         });
@@ -524,7 +525,7 @@ export default function ProductsPage() {
         <div className="flex flex-wrap gap-2">
           {pendingCount > 0 && (
             <Link
-              href="/dashboard/products/pending"
+              href="/stock-counter/dashboard/products/pending"
               className="inline-flex items-center gap-2 px-4 py-2 bg-orange-500 text-white rounded-lg hover:bg-orange-600 transition-colors"
             >
               <Clock className="w-5 h-5" />
@@ -650,6 +651,9 @@ export default function ProductsPage() {
                   รหัส/บาร์โค้ด
                 </th>
                 <th className="hidden lg:table-cell px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
+                  Seller Code
+                </th>
+                <th className="hidden lg:table-cell px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
                   หมวดหมู่
                 </th>
                 <th className="hidden sm:table-cell px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
@@ -700,6 +704,11 @@ export default function ProductsPage() {
                         {product.barcode || "-"}
                       </p>
                     </div>
+                  </td>
+                  <td className="hidden lg:table-cell px-6 py-4">
+                    <p className="text-sm font-mono text-blue-600 dark:text-blue-400">
+                      {product.sellerCode || "-"}
+                    </p>
                   </td>
                   <td className="hidden lg:table-cell px-6 py-4">
                     {product.category ? (

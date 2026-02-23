@@ -79,8 +79,15 @@ export default function ProductDetailsScreen() {
 
     try {
       const sessions = await getProductCountingSessions(productId);
-      // แสดงทั้ง pending (draft) และ completed
-      setCountingSessions(sessions);
+      // แสดง completed/approved และ analyzed (ยังไม่ยืนยัน) ใน "รูปที่แนบแล้ว" — ไม่รวม pending/mismatch
+      setCountingSessions(
+        sessions.filter(
+          (s) =>
+            s.status === "completed" ||
+            s.status === "approved" ||
+            s.status === "analyzed",
+        ),
+      );
     } catch (error) {
       console.error("Error fetching counting sessions:", error);
     }
@@ -159,8 +166,7 @@ export default function ProductDetailsScreen() {
 
       const result = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: "images",
-        allowsEditing: true,
-        aspect: [4, 3],
+        allowsEditing: false,
         quality: 0.8,
         base64: true, // Important: Request base64 encoding
         exif: true, // Required for metadata validation
@@ -248,6 +254,7 @@ export default function ProductDetailsScreen() {
         const watermarkData = await createWatermarkMetadata(
           user?.name || "Unknown",
           user?.uid || "",
+          user?.branchName || "",
           productName,
           productBarcode,
           locationOverride,
@@ -557,7 +564,7 @@ export default function ProductDetailsScreen() {
               style={[styles.viewAllButton, { borderColor: colors.border }]}
               onPress={() => {
                 router.push({
-                  pathname: "/(tabs)/products/completed",
+                  pathname: "/(mini-apps)/stock-counter/products/completed",
                   params: {
                     productId,
                     productName,

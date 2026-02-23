@@ -216,26 +216,66 @@ export default function CountingPage() {
               className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
             >
               <option value="all">ทั้งหมด</option>
+              <option value="pending">รอดำเนินการ</option>
               <option value="pending-review">รอตรวจสอบ</option>
               <option value="approved">อนุมัติแล้ว</option>
-              <option value="rejected">ปฏิเสธแล้ว</option>
+              <option value="rejected">ป๏ิเสธแล้ว</option>
               <option value="completed">เสร็จสิ้น</option>
+              <option value="analyzed">วิเคราะห์แล้ว (ยังไม่ยืนยัน)</option>
+              <option value="mismatch">บาร์โค้ดไม่ตรง</option>
             </select>
           </div>
         </div>
 
-        <div className="mt-4 flex gap-2">
-          <div className="px-4 py-2 bg-gray-100 rounded-lg text-sm">
+        <div className="mt-4 flex flex-wrap gap-2">
+          <button
+            onClick={() => setFilterStatus("all")}
+            className={`px-4 py-2 rounded-lg text-sm cursor-pointer transition-all ${filterStatus === "all" ? "ring-2 ring-gray-400" : ""} bg-gray-100`}
+          >
             <span className="font-semibold">ทั้งหมด:</span> {sessions.length}
-          </div>
-          <div className="px-4 py-2 bg-yellow-100 rounded-lg text-sm">
+          </button>
+          <button
+            onClick={() => setFilterStatus("pending")}
+            className={`px-4 py-2 rounded-lg text-sm cursor-pointer transition-all ${filterStatus === "pending" ? "ring-2 ring-blue-400" : ""} bg-blue-100`}
+          >
+            <span className="font-semibold">รอดำเนินการ:</span>{" "}
+            {sessions.filter((s) => s.status === "pending").length}
+          </button>
+          <button
+            onClick={() => setFilterStatus("pending-review")}
+            className={`px-4 py-2 rounded-lg text-sm cursor-pointer transition-all ${filterStatus === "pending-review" ? "ring-2 ring-yellow-400" : ""} bg-yellow-100`}
+          >
             <span className="font-semibold">รอตรวจสอบ:</span>{" "}
             {sessions.filter((s) => s.status === "pending-review").length}
-          </div>
-          <div className="px-4 py-2 bg-green-100 rounded-lg text-sm">
+          </button>
+          <button
+            onClick={() => setFilterStatus("approved")}
+            className={`px-4 py-2 rounded-lg text-sm cursor-pointer transition-all ${filterStatus === "approved" ? "ring-2 ring-green-400" : ""} bg-green-100`}
+          >
             <span className="font-semibold">อนุมัติแล้ว:</span>{" "}
             {sessions.filter((s) => s.status === "approved").length}
-          </div>
+          </button>
+          <button
+            onClick={() => setFilterStatus("completed")}
+            className={`px-4 py-2 rounded-lg text-sm cursor-pointer transition-all ${filterStatus === "completed" ? "ring-2 ring-gray-500" : ""} bg-gray-200`}
+          >
+            <span className="font-semibold">เสร็จสิ้น:</span>{" "}
+            {sessions.filter((s) => s.status === "completed").length}
+          </button>
+          <button
+            onClick={() => setFilterStatus("analyzed")}
+            className={`px-4 py-2 rounded-lg text-sm cursor-pointer transition-all ${filterStatus === "analyzed" ? "ring-2 ring-orange-400" : ""} bg-orange-100`}
+          >
+            <span className="font-semibold">ยังไม่ยืนยัน:</span>{" "}
+            {sessions.filter((s) => s.status === "analyzed").length}
+          </button>
+          <button
+            onClick={() => setFilterStatus("mismatch")}
+            className={`px-4 py-2 rounded-lg text-sm cursor-pointer transition-all ${filterStatus === "mismatch" ? "ring-2 ring-red-400" : ""} bg-red-100`}
+          >
+            <span className="font-semibold">บาร์โค้ดไม่ตรง:</span>{" "}
+            {sessions.filter((s) => s.status === "mismatch").length}
+          </button>
         </div>
       </div>
 
@@ -376,6 +416,7 @@ function SessionDetailModal({
             timestamp?: string;
             employeeName?: string;
             employeeId?: string;
+            branchName?: string;
             deviceModel?: string;
           };
         }
@@ -518,8 +559,10 @@ function SessionDetailModal({
                         )}
                       {watermarkData.employeeName && (
                         <span>
-                          👤 {watermarkData.employeeName} (
-                          {watermarkData.employeeId})
+                          👤 {watermarkData.employeeName}
+                          {watermarkData.branchName || watermarkData.employeeId
+                            ? ` (${watermarkData.branchName || watermarkData.employeeId})`
+                            : ""}
                         </span>
                       )}
                       {watermarkData.deviceModel && (
@@ -611,10 +654,18 @@ function StatusBadge({ status }: { status: string }) {
     },
     approved: { label: "อนุมัติ", className: "bg-green-100 text-green-800" },
     rejected: { label: "ปฏิเสธ", className: "bg-red-100 text-red-800" },
+    analyzed: {
+      label: "วิเคราะห์แล้ว (ยังไม่ยืนยัน)",
+      className: "bg-orange-100 text-orange-800",
+    },
+    mismatch: { label: "บาร์โค้ดไม่ตรง", className: "bg-red-100 text-red-700" },
+    pending: { label: "รอดำเนินการ", className: "bg-blue-100 text-blue-800" },
   };
 
-  const config =
-    statusConfig[status as keyof typeof statusConfig] || statusConfig.completed;
+  const config = statusConfig[status as keyof typeof statusConfig] || {
+    label: status,
+    className: "bg-gray-100 text-gray-600",
+  };
 
   return (
     <span

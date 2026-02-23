@@ -102,7 +102,7 @@ export default function BranchDetailPage() {
       const branchDoc = await getDoc(doc(db, "branches", branchId));
       if (!branchDoc.exists()) {
         toast.error("ไม่พบสาขา");
-        router.push("/dashboard/branches");
+        router.push("/stock-counter/dashboard/branches");
         return;
       }
 
@@ -669,7 +669,7 @@ export default function BranchDetailPage() {
         <Building2 className="w-12 h-12 text-gray-400 mx-auto mb-4" />
         <p className="text-gray-500 dark:text-gray-400">ไม่พบข้อมูลสาขา</p>
         <Link
-          href="/dashboard/branches"
+          href="/stock-counter/dashboard/branches"
           className="mt-4 text-blue-600 dark:text-blue-400 hover:underline"
         >
           กลับไปหน้าสาขา
@@ -683,7 +683,7 @@ export default function BranchDetailPage() {
       {/* Header */}
       <div className="flex items-center gap-4">
         <Link
-          href="/dashboard/branches"
+          href="/stock-counter/dashboard/branches"
           className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
         >
           <ArrowLeft className="w-5 h-5 text-gray-600 dark:text-gray-400" />

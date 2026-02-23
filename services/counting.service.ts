@@ -251,11 +251,21 @@ export const getProductCountingSessions = async (
       (doc) => ({ id: doc.id, ...doc.data() }) as CountingSession,
     );
 
-    // Sort by createdAt descending
+    // Sort: completed first, then by updatedAt desc (fallback createdAt)
     sessions.sort((a, b) => {
-      const dateA = a.createdAt?.toDate?.() || new Date(0);
-      const dateB = b.createdAt?.toDate?.() || new Date(0);
-      return dateB.getTime() - dateA.getTime();
+      // Prefer completed over pending
+      if (a.status === "completed" && b.status !== "completed") return -1;
+      if (b.status === "completed" && a.status !== "completed") return 1;
+      // Within same status, sort by updatedAt desc first, then createdAt
+      const updatedA =
+        (a as any).updatedAt?.toDate?.() ||
+        a.createdAt?.toDate?.() ||
+        new Date(0);
+      const updatedB =
+        (b as any).updatedAt?.toDate?.() ||
+        b.createdAt?.toDate?.() ||
+        new Date(0);
+      return updatedB.getTime() - updatedA.getTime();
     });
 
     return sessions;

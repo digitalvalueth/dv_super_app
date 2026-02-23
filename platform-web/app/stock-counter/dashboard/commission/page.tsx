@@ -127,6 +127,15 @@ export default function CommissionPage() {
 
       sessionsSnapshot.forEach((docSnapshot) => {
         const data = docSnapshot.data() as any;
+        // Only include completed/approved sessions — skip pending/analyzed (not yet confirmed)
+        const sessionStatus = data.status;
+        if (
+          sessionStatus !== "completed" &&
+          sessionStatus !== "approved" &&
+          sessionStatus !== "paid"
+        ) {
+          return;
+        }
         sessions.push({
           id: docSnapshot.id,
           userId: data.userId,

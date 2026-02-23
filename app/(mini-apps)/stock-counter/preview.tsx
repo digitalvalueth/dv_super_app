@@ -11,7 +11,7 @@ import { useAuthStore } from "@/stores/auth.store";
 import { useTheme } from "@/stores/theme.store";
 import { formatTimestamp, WatermarkData } from "@/utils/watermark";
 import { Ionicons } from "@expo/vector-icons";
-import * as FileSystem from "expo-file-system";
+import * as FileSystem from "expo-file-system/legacy";
 import { router, useLocalSearchParams } from "expo-router";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
@@ -97,9 +97,14 @@ export default function PreviewScreen() {
         return;
       }
 
-      // ถ้ามี existingSessionId และไม่มี imageBase64 แสดงว่ามาจากหน้า details กดดูรูปที่มีอยู่แล้ว
-      // ต้องโหลด base64 จาก URL เพื่อวิเคราะห์ AI
-      if (params.existingSessionId && !params.imageBase64) {
+      // ถ้ามี existingSessionId และไม่มี imageBase64 และ imageUri เป็น Firebase URL
+      // = มาจากหน้า details กดดูรูปเก่า → โหลด base64 จาก URL
+      // (ถ้า imageUri เป็น local file = กด ถ่ายใหม่ → ผ่านไปให้ upload logic ด้านล่างจัดการ)
+      if (
+        params.existingSessionId &&
+        !params.imageBase64 &&
+        params.imageUri?.startsWith("https://")
+      ) {
         // Fix URL encoding สำหรับ Firebase Storage
         const fixedImageUrl = fixFirebaseStorageUrl(params.imageUri);
 
@@ -233,6 +238,7 @@ export default function PreviewScreen() {
                     watermarkData.timestamp || new Date().toISOString(),
                   employeeName: watermarkData.employeeName || user.name || "",
                   employeeId: user.uid,
+                  branchName: watermarkData.branchName || user.branchName || "",
                   deviceModel: watermarkData.deviceModel || "Unknown",
                 })
               : "",
@@ -282,7 +288,7 @@ export default function PreviewScreen() {
         }
         // Read from local file — fast disk I/O, no network needed
         base64ForAI = await FileSystem.readAsStringAsync(localUri, {
-          encoding: FileSystem.EncodingType.Base64,
+          encoding: "base64",
         });
         setImageBase64(base64ForAI);
       }
@@ -328,21 +334,25 @@ export default function PreviewScreen() {
       const { db } = await import("@/config/firebase");
 
       const beforeQty = parseInt(params.beforeQty || "0");
-      const variance = beforeQty - result.count;
+      // ถ้าบาร์โค้ดไม่ตรง อย่าบันทึกจำนวนของสินค้าอื่น ให้ count = 0
+      const isMismatch = !!params.productBarcode && !result.barcodeMatch;
+      const countToSave = isMismatch ? 0 : result.count;
+      const variance = beforeQty - countToSave;
 
       await updateDoc(doc(db, "countingSessions", sessionId), {
-        currentCountQty: result.count,
+        currentCountQty: countToSave,
         variance: variance,
-        aiCount: result.count,
+        aiCount: countToSave,
         aiConfidence: 0.95,
-        manualCount: result.count,
-        finalCount: result.count,
+        manualCount: countToSave,
+        finalCount: countToSave,
         discrepancy: Math.abs(variance),
         processingTime: result.processingTime || 0,
         barcodeMatch: result.barcodeMatch,
         detectedBarcodes: result.detectedBarcodes,
         matchedBarcode: result.matchedBarcode || null,
-        status: "analyzed", // เปลี่ยนจาก pending เป็น analyzed (วิเคราะห์แล้ว แต่ยังไม่ยืนยัน)
+        // mismatch = ถ่ายผิดสินค้า, analyzed = วิเคราะห์แล้วรอยืนยัน
+        status: isMismatch ? "mismatch" : "analyzed",
         updatedAt: new Date(),
       });
     } catch (error) {
@@ -668,19 +678,13 @@ export default function PreviewScreen() {
             style={[
               styles.analyzeButton,
               { backgroundColor: colors.primary },
-              (isProcessing ||
-                isUploading ||
-                isLoadingImage ||
-                !sessionId ||
-                !imageBase64) && { opacity: 0.6 },
+              (isProcessing || isUploading || isLoadingImage || !sessionId) && {
+                opacity: 0.6,
+              },
             ]}
             onPress={handleAnalyze}
             disabled={
-              isProcessing ||
-              isUploading ||
-              isLoadingImage ||
-              !sessionId ||
-              !imageBase64
+              isProcessing || isUploading || isLoadingImage || !sessionId
             }
           >
             {isUploading ? (
@@ -732,11 +736,22 @@ export default function PreviewScreen() {
           style={[
             styles.actionButton,
             styles.confirmButton,
-            { backgroundColor: colors.primary },
-            barcodeCount === null && { opacity: 0.5 },
+            {
+              backgroundColor:
+                barcodeMatch === false && !!params.productBarcode
+                  ? "#dc2626"
+                  : colors.primary,
+            },
+            (barcodeCount === null ||
+              (barcodeMatch === false && !!params.productBarcode)) && {
+              opacity: 0.5,
+            },
           ]}
           onPress={handleConfirm}
-          disabled={barcodeCount === null}
+          disabled={
+            barcodeCount === null ||
+            (barcodeMatch === false && !!params.productBarcode)
+          }
         >
           <Ionicons name="checkmark" size={20} color="#fff" />
           <Text style={[styles.actionButtonText, { color: "#fff" }]}>

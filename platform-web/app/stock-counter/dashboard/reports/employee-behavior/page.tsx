@@ -308,7 +308,7 @@ export default function EmployeeBehaviorPage() {
       {/* Header */}
       <div className="flex items-center gap-4">
         <Link
-          href="/dashboard/reports"
+          href="/stock-counter/dashboard/reports"
           className="p-2 hover:bg-gray-100 rounded-lg"
         >
           <ArrowLeft className="w-5 h-5" />

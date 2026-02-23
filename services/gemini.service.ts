@@ -1,10 +1,38 @@
 import { GeminiCountResult } from "@/types";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 
-const GEMINI_API_KEY = process.env.EXPO_PUBLIC_GEMINI_API_KEY || "";
+// --- Runtime API key fetching ---
+// Key is cached for 5 minutes to avoid hitting Firestore on every request.
+// To update urgently: Firebase console → Firestore → appConfig/gemini → apiKey
+let _cachedKey: string | null = null;
+let _cacheExpiry = 0;
 
-// Initialize Gemini AI
-const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
+const getGeminiApiKey = async (): Promise<string> => {
+  const now = Date.now();
+  if (_cachedKey && now < _cacheExpiry) return _cachedKey;
+
+  try {
+    const { getDoc, doc } = await import("firebase/firestore");
+    const { db } = await import("@/config/firebase");
+    const snap = await getDoc(doc(db, "appConfig", "gemini"));
+    if (snap.exists()) {
+      const remoteKey = snap.data()?.apiKey as string | undefined;
+      if (remoteKey) {
+        _cachedKey = remoteKey;
+        _cacheExpiry = now + 5 * 60 * 1000; // cache 5 min
+        return _cachedKey;
+      }
+    }
+  } catch {
+    // Firestore unavailable — fall through to env var
+  }
+
+  // Fallback: use baked-in env var
+  const envKey = process.env.EXPO_PUBLIC_GEMINI_API_KEY || "";
+  _cachedKey = envKey;
+  _cacheExpiry = now + 5 * 60 * 1000;
+  return envKey;
+};
 
 export interface BarcodeCountResult {
   count: number;
@@ -34,6 +62,9 @@ export const countBarcodesInImage = async (
       );
     }
 
+    const apiKey = await getGeminiApiKey();
+    const genAI = new GoogleGenerativeAI(apiKey);
+
     const model = genAI.getGenerativeModel(
       { model: "gemini-2.5-flash-lite" },
       { apiVersion: "v1beta" },
@@ -53,34 +84,44 @@ export const countBarcodesInImage = async (
 
 EXPECTED BARCODE: ${expectedBarcode}${productName ? ` (${productName})` : ""}
 
-STEP 1 — VERIFY PRODUCT:
-barcodeMatch = true if any barcode in the image matches the expected barcode, or packaging visually looks the same.
-barcodeMatch = false ONLY if clearly a different product or a screen/monitor.
+STEP 1 — VERIFY BARCODE (STRICT):
+Read all barcode numbers visible in the image.
+barcodeMatch = true ONLY if the digits "${expectedBarcode}" appear as a printed barcode in the image.
+barcodeMatch = false if the barcode digits do NOT match, even if the packaging looks similar.
+barcodeMatch = false if showing a screen/monitor.
+NEVER guess based on visual appearance — only match on exact barcode digits.
 
-STEP 2 — COUNT UNITS (pick one method):
+STEP 2 — COUNT UNITS using BOTH methods:
 
-METHOD A — OCR count (use if barcodes are readable):
-Count how many times the digits "${expectedBarcode}" appear printed in the image.
-Each occurrence = 1 unit. Set ocrCount = that number.
-EAN-13 tip: "8 859109 898023" and "8859109898023" are the same barcode — count as 1 occurrence per unit.
-Do NOT list all text — just return the COUNT number.
+METHOD A — Visual count (PRIMARY):
+Count distinct physical product units visible in the image.
+Each box/package = 1 unit, even if you can see the barcode label on multiple sides of the same box.
+Group products into visual columns, count each column separately → columnCounts array.
 
-METHOD B — Visual column count (use if ocrCount = 0):
-Divide image into vertical columns, count units per column, list in columnCounts.
+METHOD B — OCR barcode count (SECONDARY):
+Count how many PHYSICAL POSITIONS the barcode "${expectedBarcode}" appears at.
+IMPORTANT: If the same physical box shows the barcode on two visible sides, count it as 1 unit (not 2).
+EAN-13 tip: "8 859109 898023" and "8859109898023" are the same barcode.
+→ Set ocrCount = number of physical units identified by barcode position.
 
-STEP 3 — FINAL COUNT:
-If ocrCount > 0 → count = ocrCount, leave columnCounts = []
-If ocrCount = 0 → count = sum of columnCounts
+STEP 3 — CROSS-VALIDATE:
+columnSum = sum of columnCounts
+If ocrCount > 0 AND columnSum > 0:
+  - If they differ by more than 30%, trust the LOWER number (ocrCount overcounts if same box shows barcode twice)
+  - If they roughly agree (within 30%), use ocrCount
+If only one method works, use that method's result.
+Set count = final agreed number.
 
 FRAUD: screen/monitor showing barcode → barcodeMatch false, count 0.
 
 RESPOND WITH SHORT VALID JSON ONLY:
 {
   "barcodeMatch": true,
-  "matchedBarcode": "${expectedBarcode}",
-  "ocrCount": 16,
-  "columnCounts": [],
-  "count": 16
+  "matchedBarcode": "actual barcode digits you read from image, or null if not found",
+  "detectedBarcodes": ["every barcode number you can read from the image"],
+  "ocrCount": 11,
+  "columnCounts": [5, 6],
+  "count": 11
 }`;
     } else {
       prompt = `You are an inventory counting expert. Analyze this product image carefully.
@@ -107,14 +148,7 @@ RESPOND WITH VALID JSON ONLY, no markdown, no explanation:
     }
 
     const TIMEOUT_MS = 45_000;
-    const timeoutPromise = new Promise<never>((_, reject) =>
-      setTimeout(
-        () => reject(new Error("Gemini API timeout after 45s")),
-        TIMEOUT_MS,
-      ),
-    );
-
-    const result = await Promise.race([
+    const makeRequest = () =>
       model.generateContent({
         contents: [
           {
@@ -126,9 +160,29 @@ RESPOND WITH VALID JSON ONLY, no markdown, no explanation:
           },
         ],
         generationConfig,
-      }),
-      timeoutPromise,
-    ]);
+      });
+
+    const timeoutPromise = new Promise<never>((_, reject) =>
+      setTimeout(
+        () => reject(new Error("Gemini API timeout after 45s")),
+        TIMEOUT_MS,
+      ),
+    );
+
+    // Auto-retry once on 503 (server overload)
+    let result;
+    try {
+      result = await Promise.race([makeRequest(), timeoutPromise]);
+    } catch (firstErr: any) {
+      const is503 = String(firstErr?.message || "").includes("503");
+      if (is503) {
+        console.log("[Gemini] 503 received — retrying in 3s...");
+        await new Promise((r) => setTimeout(r, 3000));
+        result = await Promise.race([makeRequest(), timeoutPromise]);
+      } else {
+        throw firstErr;
+      }
+    }
 
     const response = await result.response;
     const text = response.text().trim();
@@ -165,10 +219,22 @@ RESPOND WITH VALID JSON ONLY, no markdown, no explanation:
       const ocrCount = parseInt(parsed.ocrCount, 10) || 0;
       const visualCount = parseInt(parsed.visualCount, 10) || 0;
 
-      // Priority: ocrCount (most accurate) > columnSum > visualCount > raw count
+      // Priority: cross-validate ocrCount vs columnSum — use lower if they disagree >30%
       let parsedCount: number;
       let countMethod: string;
-      if (ocrCount > 0) {
+      if (ocrCount > 0 && columnSum > 0) {
+        const ratio =
+          Math.max(ocrCount, columnSum) / Math.min(ocrCount, columnSum);
+        if (ratio > 1.3) {
+          // They disagree significantly — trust the lower value (ocrCount overcounts same-box dual labels)
+          parsedCount = Math.min(ocrCount, columnSum);
+          countMethod = `cross-validate (disagreement ${ocrCount} vs ${columnSum}) → min`;
+        } else {
+          // They agree — use ocrCount (barcode-based is more precise)
+          parsedCount = ocrCount;
+          countMethod = "cross-validate (agree) → OCR";
+        }
+      } else if (ocrCount > 0) {
         parsedCount = ocrCount;
         countMethod = "OCR text match";
       } else if (columnSum > 0) {
@@ -214,18 +280,35 @@ RESPOND WITH VALID JSON ONLY, no markdown, no explanation:
       let aiMatch = Boolean(parsed.barcodeMatch);
       let matchedBarcode: string = parsed.matchedBarcode || "";
       let fuzzyOverride = false;
-      if (expectedBarcode && !aiMatch) {
-        // AI said no match — double-check with fuzzy logic
-        const fuzzyHit = detectedBarcodes.find((b) =>
-          fuzzyMatch(b, expectedBarcode),
-        );
-        if (fuzzyHit) {
-          aiMatch = true;
-          matchedBarcode = fuzzyHit;
-          fuzzyOverride = true; // AI contradicted itself — barcode IS in image but AI said false
-          console.log(
-            "[Gemini] Fuzzy override: barcode found in detectedBarcodes but AI said barcodeMatch=false",
+
+      if (expectedBarcode) {
+        // Hard code-level check: AI said match, but verify matchedBarcode actually equals expectedBarcode
+        if (aiMatch) {
+          const codeMatches =
+            fuzzyMatch(matchedBarcode, expectedBarcode) ||
+            detectedBarcodes.some((b) => fuzzyMatch(b, expectedBarcode));
+          if (!codeMatches) {
+            // AI lied / hallucinated — force reject
+            aiMatch = false;
+            console.log(
+              `[Gemini] Hard reject: AI said barcodeMatch=true but matchedBarcode="${matchedBarcode}" does NOT match expected "${expectedBarcode}"`,
+            );
+          }
+        }
+
+        if (!aiMatch) {
+          // AI said no match (or we forced false) — double-check with fuzzy logic on detectedBarcodes
+          const fuzzyHit = detectedBarcodes.find((b) =>
+            fuzzyMatch(b, expectedBarcode),
           );
+          if (fuzzyHit) {
+            aiMatch = true;
+            matchedBarcode = fuzzyHit;
+            fuzzyOverride = true;
+            console.log(
+              "[Gemini] Fuzzy override: barcode found in detectedBarcodes but AI said barcodeMatch=false",
+            );
+          }
         }
       }
 
@@ -275,6 +358,10 @@ export const countProductsInImage = async (
 ): Promise<GeminiCountResult> => {
   try {
     const startTime = Date.now();
+
+    // Get API key dynamically
+    const apiKey = await getGeminiApiKey();
+    const genAI = new GoogleGenerativeAI(apiKey);
 
     // Get generative model
     const model = genAI.getGenerativeModel({

@@ -4,6 +4,7 @@ import * as Location from "expo-location";
 export interface WatermarkData {
   employeeName: string;
   employeeId: string;
+  branchName?: string;
   deviceName: string;
   deviceModel: string;
   location: string;
@@ -162,6 +163,7 @@ export const generateWatermarkLines = (data: WatermarkData): string[] => {
 export const createWatermarkMetadata = async (
   employeeName: string,
   employeeId: string,
+  branchName?: string,
   productName?: string,
   productBarcode?: string,
   locationOverride?: {
@@ -176,6 +178,7 @@ export const createWatermarkMetadata = async (
   return {
     employeeName,
     employeeId,
+    branchName,
     deviceName,
     deviceModel,
     location: address,

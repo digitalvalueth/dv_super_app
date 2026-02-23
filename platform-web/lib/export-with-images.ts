@@ -189,8 +189,10 @@ async function addWatermarkToImage(
           );
         }
         if (watermarkData?.employeeName) {
+          const branchLabel =
+            watermarkData?.branchName || watermarkData?.employeeId || "";
           lines.push(
-            `👤 ${watermarkData.employeeName} (${watermarkData?.employeeId || ""})`,
+            `👤 ${watermarkData.employeeName}${branchLabel ? ` (${branchLabel})` : ""}`,
           );
         }
 
@@ -827,8 +829,10 @@ async function fetchImageWithWatermark(
             );
           }
           if (watermarkData?.employeeName) {
+            const branchLabel =
+              watermarkData?.branchName || watermarkData?.employeeId || "";
             lines.push(
-              `👤 ${watermarkData.employeeName}${watermarkData?.employeeId ? ` (${watermarkData.employeeId})` : ""}`,
+              `👤 ${watermarkData.employeeName}${branchLabel ? ` (${branchLabel})` : ""}`,
             );
           }
 

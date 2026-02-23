@@ -89,6 +89,7 @@ export default function CameraScreen() {
       const watermarkPromise = createWatermarkMetadata(
         user?.name || "Unknown",
         user?.uid || "",
+        user?.branchName || "",
         params.productName,
         params.productBarcode,
         prefetchedLocation ?? undefined,
@@ -197,6 +198,7 @@ export default function CameraScreen() {
       const watermarkData = await createWatermarkMetadata(
         user?.name || "Unknown",
         user?.uid || "",
+        user?.branchName || "",
         params.productName,
         params.productBarcode,
         prefetchedLocation ?? undefined,
