@@ -133,7 +133,7 @@ export function StockCounterSidebar() {
       <aside
         className={`
           fixed lg:static inset-y-0 left-0 z-40
-          ${collapsed ? "w-[72px]" : "w-64"} 
+          ${collapsed ? "w-18" : "w-64"} 
           bg-white dark:bg-gray-800 border-r border-gray-200 dark:border-gray-700 
           transition-all duration-300 ease-in-out
           ${

@@ -1,5 +1,5 @@
 import { db, storage } from "@/config/firebase";
-import { compressProductImage } from "@/services/image.service";
+import { compressBarcodeImage } from "@/services/image.service";
 import { CountingHistory, CountingSession } from "@/types";
 import {
   addDoc,
@@ -24,8 +24,8 @@ export const uploadCountingImage = async (
   imageUri: string,
 ): Promise<string> => {
   try {
-    // Compress image before upload (reduces ~50% size)
-    const compressed = await compressProductImage(imageUri);
+    // Compress image — preserves aspect ratio, high quality for barcode AI accuracy
+    const compressed = await compressBarcodeImage(imageUri);
     console.log(
       `📸 Compressed image: ${compressed.width}x${compressed.height}`,
     );

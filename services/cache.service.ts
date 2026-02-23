@@ -10,7 +10,7 @@ interface CacheEntry<T> {
 }
 
 // Cache version - increment when data structure changes
-const CACHE_VERSION = 1;
+const CACHE_VERSION = 2;
 
 /**
  * Get cached data with TTL validation

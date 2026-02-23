@@ -211,6 +211,43 @@ export async function POST(request: NextRequest) {
       .collection("invitations")
       .add(invitationData);
 
+    // Send in-app notification if the invited user already exists in the system
+    try {
+      let targetUserId: string | null = null;
+
+      // Re-use existingUserSnapshot already fetched above
+      if (!existingUserSnapshot.empty) {
+        const existingUser = existingUserSnapshot.docs[0];
+        const existingUserData = existingUser.data();
+        // Use uid field (Firebase Auth UID) or document ID
+        targetUserId = existingUserData.uid || existingUser.id;
+      }
+
+      if (targetUserId) {
+        await db.collection("notifications").add({
+          userId: targetUserId,
+          type: "company_invite",
+          title: "คำเชิญเข้าร่วมบริษัท",
+          message: `คุณได้รับคำเชิญให้เข้าร่วม${companyName ? `บริษัท ${companyName}` : ""}${branchName ? ` สาขา ${branchName}` : ""}`,
+          data: {
+            invitationId: invitationRef.id,
+            companyId: effectiveCompanyId,
+            companyName: companyName,
+            branchId: branchId || null,
+            branchName: branchName,
+            role: role,
+            actionRequired: true,
+            actionType: "accept_reject",
+          },
+          read: false,
+          createdAt: new Date(),
+        });
+      }
+    } catch (notifError) {
+      // Don't fail the request if notification creation fails
+      console.error("Error creating in-app notification:", notifError);
+    }
+
     // Send invitation email
     const baseUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
     const invitationLink = `${baseUrl}/invitation/${invitationToken}`;

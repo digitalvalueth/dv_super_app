@@ -135,7 +135,7 @@ interface RecentActivity {
   status: string;
   finalCount: number;
   discrepancy: number;
-  createdAt: Date;
+  createdAt: Date | string; // may be string when restored from JSON cache
 }
 
 export default function HomeScreen() {
@@ -324,9 +324,12 @@ export default function HomeScreen() {
     }
   };
 
-  const formatTimeAgo = (date: Date) => {
+  const formatTimeAgo = (date: Date | string | undefined | null) => {
+    if (!date) return "";
+    const d = date instanceof Date ? date : new Date(date);
+    if (isNaN(d.getTime())) return "";
     const now = new Date();
-    const diffMs = now.getTime() - date.getTime();
+    const diffMs = now.getTime() - d.getTime();
     const diffMins = Math.floor(diffMs / 60000);
     const diffHours = Math.floor(diffMs / 3600000);
     const diffDays = Math.floor(diffMs / 86400000);

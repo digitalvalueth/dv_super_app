@@ -3,11 +3,15 @@ import {
   updateAssignmentStatus,
   uploadCountingImage,
 } from "@/services/counting.service";
-import { countBarcodesInImage } from "@/services/gemini.service";
+import {
+  BarcodeCountResult,
+  countBarcodesInImage,
+} from "@/services/gemini.service";
 import { useAuthStore } from "@/stores/auth.store";
 import { useTheme } from "@/stores/theme.store";
 import { formatTimestamp, WatermarkData } from "@/utils/watermark";
 import { Ionicons } from "@expo/vector-icons";
+import * as FileSystem from "expo-file-system";
 import { router, useLocalSearchParams } from "expo-router";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
@@ -49,12 +53,15 @@ export default function PreviewScreen() {
     assignmentId?: string;
     beforeQty?: string;
     existingSessionId?: string; // ถ้ามี แสดงว่ามี session อยู่แล้ว ให้อัพเดทแทนสร้างใหม่
+    nativeScannedBarcode?: string; // barcode ที่สแกนด้วย native scanner (แม่นยำ 100%)
   }>();
 
   const [isProcessing, setIsProcessing] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
   const [isLoadingImage, setIsLoadingImage] = useState(false);
   const [barcodeCount, setBarcodeCount] = useState<number | null>(null);
+  const [barcodeMatch, setBarcodeMatch] = useState<boolean | null>(null);
+  const [detectedBarcodes, setDetectedBarcodes] = useState<string[]>([]);
   const [processingTime, setProcessingTime] = useState<number | null>(null);
   const [sessionId, setSessionId] = useState<string | null>(
     params.existingSessionId || null,
@@ -252,12 +259,6 @@ export default function PreviewScreen() {
   ]);
 
   const handleAnalyze = useCallback(async () => {
-    // ใช้รูปปกติ (ไม่มี watermark) สำหรับ AI วิเคราะห์
-    if (!imageBase64) {
-      Alert.alert("เกิดข้อผิดพลาด", "ไม่พบข้อมูลรูปภาพ กรุณารอโหลดรูปสักครู่");
-      return;
-    }
-
     if (!sessionId) {
       Alert.alert("กรุณารอสักครู่", "กำลังอัพโหลดรูปภาพ...");
       return;
@@ -267,11 +268,48 @@ export default function PreviewScreen() {
       setIsProcessing(true);
       setBarcodeCount(null);
 
-      // 1. วิเคราะห์รูปด้วย AI (ใช้รูปปกติ ไม่มี watermark)
-      const result = await countBarcodesInImage(imageBase64);
+      // Read base64 lazily — only when AI analysis is actually needed
+      let base64ForAI = imageBase64;
+      if (!base64ForAI) {
+        const localUri = params.imageUri;
+        if (!localUri) {
+          Alert.alert("เกิดข้อผิดพลาด", "ไม่พบข้อมูลรูปภาพ");
+          return;
+        }
+        // Read from local file — fast disk I/O, no network needed
+        base64ForAI = await FileSystem.readAsStringAsync(localUri, {
+          encoding: FileSystem.EncodingType.Base64,
+        });
+        setImageBase64(base64ForAI);
+      }
+
+      // 1. วิเคราะห์รูปด้วย AI พร้อม barcode validation
+      // ใช้ nativeScannedBarcode ถ้ามี (แม่นยำกว่า) มิฉะนั้นใช้ productBarcode จากระบบ
+      // AI จะตรวจบาร์โค้ดในรูปเสมอ — ป้องกัน fraud (สแกนสินค้าถูก แต่ถ่ายรูปสินค้าผิด)
+      const effectiveExpectedBarcode =
+        params.nativeScannedBarcode || params.productBarcode || undefined;
+
+      const result: BarcodeCountResult = await countBarcodesInImage(
+        base64ForAI,
+        effectiveExpectedBarcode,
+        params.productName || undefined,
+      );
 
       setBarcodeCount(result.count);
+      setBarcodeMatch(result.barcodeMatch);
+      setDetectedBarcodes(result.detectedBarcodes);
       setProcessingTime(result.processingTime);
+
+      // Warning if barcode doesn't match (only when product has a barcode)
+      if (params.productBarcode && !result.barcodeMatch) {
+        Alert.alert(
+          "⚠️ บาร์โค้ดไม่ตรง",
+          result.detectedBarcodes.length > 0
+            ? `พบบาร์โค้ด: ${result.detectedBarcodes.join(", ")}\nแต่ต้องการ: ${params.productBarcode || "-"}\n\nกรุณาถ่ายรูปสินค้าที่ถูกต้อง`
+            : `ไม่พบบาร์โค้ดในรูปภาพ\nกรุณาถ่ายรูปสินค้าให้เห็นบาร์โค้ดชัดเจน`,
+          [{ text: "ตกลง" }],
+        );
+      }
 
       // 2. อัพเดท session ที่มีอยู่แล้วด้วยผลวิเคราะห์
       const { updateDoc, doc } = await import("firebase/firestore");
@@ -289,6 +327,9 @@ export default function PreviewScreen() {
         finalCount: result.count,
         discrepancy: Math.abs(variance),
         processingTime: result.processingTime || 0,
+        barcodeMatch: result.barcodeMatch,
+        detectedBarcodes: result.detectedBarcodes,
+        matchedBarcode: result.matchedBarcode || null,
         status: "analyzed", // เปลี่ยนจาก pending เป็น analyzed (วิเคราะห์แล้ว แต่ยังไม่ยืนยัน)
         updatedAt: new Date(),
       });
@@ -298,7 +339,7 @@ export default function PreviewScreen() {
     } finally {
       setIsProcessing(false);
     }
-  }, [imageBase64, sessionId, params.beforeQty]);
+  }, [imageBase64, sessionId, params.beforeQty, params.imageUri]);
 
   const handleRetake = () => {
     router.back();
@@ -511,6 +552,37 @@ export default function PreviewScreen() {
                   Barcode
                 </Text>
               </View>
+
+              {/* Barcode match status badge */}
+              {params.productBarcode ? (
+                <View
+                  style={[
+                    styles.barcodeMatchBadge,
+                    {
+                      backgroundColor: barcodeMatch ? "#16a34a20" : "#dc262620",
+                    },
+                  ]}
+                >
+                  <Ionicons
+                    name={barcodeMatch ? "checkmark-circle" : "close-circle"}
+                    size={18}
+                    color={barcodeMatch ? "#16a34a" : "#dc2626"}
+                  />
+                  <Text
+                    style={[
+                      styles.barcodeMatchText,
+                      { color: barcodeMatch ? "#16a34a" : "#dc2626" },
+                    ]}
+                  >
+                    {barcodeMatch
+                      ? "บาร์โค้ดตรงกัน"
+                      : detectedBarcodes.length > 0
+                        ? `ไม่ตรง (พบ: ${detectedBarcodes[0]})`
+                        : "ไม่พบบาร์โค้ด"}
+                  </Text>
+                </View>
+              ) : null}
+
               {processingTime && (
                 <Text
                   style={[
@@ -726,6 +798,19 @@ const styles = StyleSheet.create({
   },
   processingTimeText: {
     fontSize: 12,
+  },
+  barcodeMatchBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 20,
+    marginTop: 8,
+  },
+  barcodeMatchText: {
+    fontSize: 13,
+    fontWeight: "600",
   },
   emptyResult: {
     alignItems: "center",

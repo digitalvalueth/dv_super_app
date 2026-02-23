@@ -17,6 +17,7 @@ import {
   ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   TouchableOpacity,
   View,
 } from "react-native";
@@ -49,6 +50,7 @@ export default function HomeScreen() {
   const [filter, setFilter] = useState<
     "all" | "pending" | "in_progress" | "completed"
   >("all");
+  const [searchTerm, setSearchTerm] = useState("");
 
   // Pagination for better performance
   const pagination = usePaginationState<ProductWithAssignment>(20);
@@ -82,6 +84,7 @@ export default function HomeScreen() {
         setLoading(false);
         setRefreshing(false);
       },
+      user.companyId || undefined,
     );
 
     // Cleanup on unmount
@@ -198,10 +201,24 @@ export default function HomeScreen() {
 
   // Filter products first, then paginate
   const filteredProducts = pagination.data.filter((product) => {
-    if (filter === "all") return true;
-    if (filter === "pending")
-      return !product.status || product.status === "pending";
-    return product.status === filter;
+    // Status filter
+    const matchesStatus =
+      filter === "all"
+        ? true
+        : filter === "pending"
+          ? !product.status || product.status === "pending"
+          : product.status === filter;
+
+    // Search filter
+    if (!matchesStatus) return false;
+    if (!searchTerm.trim()) return true;
+    const term = searchTerm.toLowerCase().trim();
+    return (
+      product.name?.toLowerCase().includes(term) ||
+      product.sku?.toLowerCase().includes(term) ||
+      product.productId?.toLowerCase().includes(term) ||
+      product.barcode?.toLowerCase().includes(term)
+    );
   });
 
   // Handle load more for infinite scroll
@@ -513,6 +530,34 @@ export default function HomeScreen() {
           { backgroundColor: colors.card, borderBottomColor: colors.border },
         ]}
       >
+        {/* Search Bar */}
+        <View
+          style={[
+            styles.searchContainer,
+            { backgroundColor: colors.background, borderColor: colors.border },
+          ]}
+        >
+          <Ionicons name="search" size={18} color={colors.textSecondary} />
+          <TextInput
+            style={[styles.searchInput, { color: colors.text }]}
+            placeholder="ค้นหาชื่อ, รหัส, บาร์โค้ด..."
+            placeholderTextColor={colors.textSecondary}
+            value={searchTerm}
+            onChangeText={setSearchTerm}
+            returnKeyType="search"
+            clearButtonMode="while-editing"
+          />
+          {searchTerm.length > 0 && (
+            <TouchableOpacity onPress={() => setSearchTerm("")}>
+              <Ionicons
+                name="close-circle"
+                size={18}
+                color={colors.textSecondary}
+              />
+            </TouchableOpacity>
+          )}
+        </View>
+
         {/* Filter Buttons */}
         <ScrollView
           horizontal
@@ -906,5 +951,20 @@ const styles = StyleSheet.create({
   },
   loadMoreText: {
     fontSize: 14,
+  },
+  searchContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    borderWidth: 1,
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    gap: 8,
+    marginBottom: 10,
+  },
+  searchInput: {
+    flex: 1,
+    fontSize: 14,
+    paddingVertical: 0,
   },
 });

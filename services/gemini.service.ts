@@ -6,20 +6,30 @@ const GEMINI_API_KEY = process.env.EXPO_PUBLIC_GEMINI_API_KEY || "";
 // Initialize Gemini AI
 const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
 
+export interface BarcodeCountResult {
+  count: number;
+  detectedBarcodes: string[]; // all barcodes AI could read from image
+  barcodeMatch: boolean; // at least one barcode matches expectedBarcode
+  matchedBarcode: string; // the barcode that matched (if any)
+  processingTime: number;
+}
+
 /**
- * Count barcodes in image using Gemini AI
- * Returns only the count as a number
+ * Count product units in image using Gemini AI
+ * Also reads and validates barcode against expected value
  */
 export const countBarcodesInImage = async (
-  imageBase64: string
-): Promise<{ count: number; processingTime: number }> => {
+  imageBase64: string,
+  expectedBarcode?: string,
+  productName?: string,
+): Promise<BarcodeCountResult> => {
   try {
     const startTime = Date.now();
 
     // Validate base64
     if (!imageBase64 || imageBase64.length < 100) {
       throw new Error(
-        "Invalid image data - please try capturing the image again"
+        "Invalid image data - please try capturing the image again",
       );
     }
 
@@ -27,28 +37,67 @@ export const countBarcodesInImage = async (
       model: "gemini-2.5-flash",
     });
 
-    const prompt = `You are a product counting expert for inventory management. Your job is to count the NUMBER OF PRODUCT UNITS (physical items) in this image.
+    // Build prompt depending on whether we have an expected barcode
+    let prompt: string;
+    if (expectedBarcode) {
+      prompt = `You are an inventory counting expert. Analyze this product image carefully.
 
-IMPORTANT RULES:
-1. Count PHYSICAL PRODUCT UNITS (packages, boxes, bottles, bags, etc.)
-2. Each individual product package = 1 unit
-3. DO NOT count barcodes - count actual products
-4. If you see 3 identical packages, count = 3
-5. If you see 1 package with multiple barcodes, count = 1
-6. Count only the main products, ignore background items
+EXPECTED BARCODE: ${expectedBarcode}${productName ? ` (${productName})` : ""}
 
-Examples:
-- 3 bottles of shampoo = 3
-- 1 box with barcode = 1
-- 5 packets of snacks = 5
-- 1 product photographed from multiple angles = 1
+STEP 1 - READ ALL BARCODES:
+Scan the entire image and read every barcode number you can find.
+List ALL barcode numbers visible in the image.
 
-Look at the image carefully and count the product units.
+CRITICAL EAN-13 RULE:
+- EAN-13 barcodes are ALWAYS exactly 13 digits
+- The first digit ("number system" digit) appears to the LEFT of the barcode bars, slightly separated
+- Do NOT skip the leftmost digit — include it. Example: "8 888336 044156" = "8888336044156"
+- If you read 12 digits, you almost certainly missed the first digit — look again
+- UPC-A is 12 digits (no leading digit). EAN-8 is 8 digits.
 
-RETURN ONLY A SINGLE NUMBER.
-No text, no explanation, just the number.
+STEP 2 - VERIFY MATCH:
+- Match = true if any detected barcode EXACTLY equals the EXPECTED BARCODE
+- Also match = true if detected barcode + a leading digit = expected barcode (partial read)
+- Match = false if no barcode in the image reasonably matches (wrong product, screen photo, etc.)
 
-If unclear or no products visible, return 0.`;
+STEP 3 - COUNT UNITS:
+- If match = true: Count the physical product units of this product visible
+- If match = false: Set count = 0
+
+FRAUD PREVENTION:
+- A screen/monitor displaying a barcode is NOT a real product — set match = false
+- Do NOT count products that visibly have a different barcode
+
+RESPOND WITH VALID JSON ONLY, no markdown, no explanation:
+{
+  "detectedBarcodes": ["barcode1", "barcode2"],
+  "barcodeMatch": true,
+  "matchedBarcode": "barcode1",
+  "count": 5
+}`;
+    } else {
+      prompt = `You are an inventory counting expert. Analyze this product image carefully.
+
+STEP 1 - READ ALL BARCODES:
+Scan the entire image and read every barcode number you can find (EAN-13, EAN-8, UPC, etc.).
+List ALL barcode numbers visible in the image.
+
+STEP 2 - COUNT UNITS:
+Count the number of physical product units visible in the image.
+
+RULES:
+- Count only physical product units (packages, boxes, bottles, bags)
+- Do NOT count reflections, shadows, or duplicates from angles
+- A product photographed once = 1 unit even if it has multiple barcodes on the package
+
+RESPOND WITH VALID JSON ONLY, no markdown, no explanation:
+{
+  "detectedBarcodes": ["barcode1", "barcode2"],
+  "barcodeMatch": true,
+  "matchedBarcode": "",
+  "count": 5
+}`;
+    }
 
     const result = await model.generateContent([
       prompt,
@@ -62,12 +111,74 @@ If unclear or no products visible, return 0.`;
 
     const response = await result.response;
     const text = response.text().trim();
-
-    // Parse count from response
-    const count = parseInt(text, 10) || 0;
     const processingTime = Date.now() - startTime;
 
-    return { count, processingTime };
+    try {
+      // Strip markdown code fences if present
+      const cleaned = text.replace(/^```[\w]*\n?|```$/gm, "").trim();
+      const parsed = JSON.parse(cleaned);
+
+      const detectedBarcodes: string[] = Array.isArray(parsed.detectedBarcodes)
+        ? parsed.detectedBarcodes
+        : [];
+
+      // Fuzzy barcode match: handle common AI misread of EAN-13 leading digit
+      // e.g. AI reads "888336044156" but expected is "8888336044156"
+      const fuzzyMatch = (detected: string, expected: string): boolean => {
+        if (detected === expected) return true;
+        // Missing first digit: "888..." vs "8888..." — try prepending each digit 0-9
+        if (detected.length === expected.length - 1) {
+          for (let d = 0; d <= 9; d++) {
+            if (`${d}${detected}` === expected) return true;
+          }
+        }
+        // Missing last digit (rare)
+        if (detected.length === expected.length - 1) {
+          for (let d = 0; d <= 9; d++) {
+            if (`${detected}${d}` === expected) return true;
+          }
+        }
+        return false;
+      };
+
+      // Determine if any detected barcode matches expected (exact or fuzzy)
+      let aiMatch = Boolean(parsed.barcodeMatch);
+      let matchedBarcode: string = parsed.matchedBarcode || "";
+      if (expectedBarcode && !aiMatch) {
+        // AI said no match — double-check with fuzzy logic
+        const fuzzyHit = detectedBarcodes.find((b) =>
+          fuzzyMatch(b, expectedBarcode),
+        );
+        if (fuzzyHit) {
+          aiMatch = true;
+          matchedBarcode = fuzzyHit;
+        }
+      }
+
+      // When no expectedBarcode, use parsed count directly; otherwise require match
+      const finalCount = !expectedBarcode
+        ? parseInt(parsed.count, 10) || 0
+        : aiMatch
+          ? parseInt(parsed.count, 10) || 0
+          : 0;
+
+      return {
+        count: finalCount,
+        detectedBarcodes,
+        barcodeMatch: aiMatch,
+        matchedBarcode,
+        processingTime,
+      };
+    } catch {
+      // Fallback: if JSON parse fails, return safe default
+      return {
+        count: 0,
+        detectedBarcodes: [],
+        barcodeMatch: false,
+        matchedBarcode: "",
+        processingTime,
+      };
+    }
   } catch (error) {
     console.error("Error counting products with Gemini:", error);
     throw error;
@@ -80,7 +191,7 @@ If unclear or no products visible, return 0.`;
 export const countProductsInImage = async (
   imageUrl: string,
   productName: string,
-  productDescription?: string
+  productDescription?: string,
 ): Promise<GeminiCountResult> => {
   try {
     const startTime = Date.now();
@@ -131,7 +242,7 @@ export const countProductsInImage = async (
  */
 const constructCountingPrompt = (
   productName: string,
-  productDescription?: string
+  productDescription?: string,
 ): string => {
   return `You are an expert product counter. Count the total number of "${productName}" products visible in this image.
 
@@ -201,7 +312,7 @@ export const validateImage = (imageUri: string): boolean => {
   // Check if it's a valid image format
   const validFormats = [".jpg", ".jpeg", ".png", ".webp"];
   const hasValidFormat = validFormats.some((format) =>
-    imageUri.toLowerCase().includes(format)
+    imageUri.toLowerCase().includes(format),
   );
 
   return hasValidFormat;

@@ -39,6 +39,17 @@ const HIGH_QUALITY_OPTIONS: ImageCompressionOptions = {
 };
 
 /**
+ * Barcode counting — preserves original aspect ratio (portrait 9:16 etc.)
+ * Only constrains the LONG side to avoid squashing barcodes.
+ * High quality for accurate AI barcode recognition.
+ */
+const BARCODE_COUNTING_OPTIONS: ImageCompressionOptions = {
+  maxWidth: 1920, // long side cap — portrait photos become ~1920x1080 equivalent
+  quality: 0.92, // high quality keeps barcode lines sharp
+  format: "jpeg",
+};
+
+/**
  * Compress an image before uploading
  * @param imageUri - Local URI of the image
  * @param options - Compression options
@@ -58,13 +69,14 @@ export async function compressImage(
     const actions: ImageManipulator.Action[] = [];
 
     // Add resize action if needed
+    // Only pass ONE dimension when the other is not set,
+    // so expo-image-manipulator preserves the original aspect ratio.
     if (maxWidth || maxHeight) {
-      actions.push({
-        resize: {
-          width: maxWidth,
-          height: maxHeight,
-        },
-      });
+      const resizeAction: { width?: number; height?: number } = {};
+      if (maxWidth) resizeAction.width = maxWidth;
+      if (maxHeight && !maxWidth) resizeAction.height = maxHeight;
+      // When both are provided, use only the long-side cap (maxWidth) to keep aspect ratio
+      actions.push({ resize: resizeAction });
     }
 
     // Manipulate the image
@@ -96,6 +108,14 @@ export async function compressImage(
       height: 0,
     };
   }
+}
+
+/**
+ * Compress image for barcode counting — preserves aspect ratio, high quality
+ * Use this for all images that will be sent to AI for barcode recognition.
+ */
+export async function compressBarcodeImage(imageUri: string) {
+  return compressImage(imageUri, BARCODE_COUNTING_OPTIONS);
 }
 
 /**
