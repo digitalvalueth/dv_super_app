@@ -168,9 +168,7 @@ export interface CountingSession {
     | "approved"
     | "rejected"
     | "pending"
-    | "in_progress"
-    | "analyzed"
-    | "mismatch";
+    | "in_progress";
   remarks?: string;
   adminRemarks?: string;
 
