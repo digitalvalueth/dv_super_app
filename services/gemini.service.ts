@@ -12,6 +12,7 @@ export interface BarcodeCountResult {
   barcodeMatch: boolean; // at least one barcode matches expectedBarcode
   matchedBarcode: string; // the barcode that matched (if any)
   processingTime: number;
+  needsRecount?: boolean; // true when barcode found in image but AI gave inconsistent count
 }
 
 /**
@@ -33,47 +34,53 @@ export const countBarcodesInImage = async (
       );
     }
 
-    const model = genAI.getGenerativeModel({
-      model: "gemini-2.5-flash",
-    });
+    const model = genAI.getGenerativeModel(
+      { model: "gemini-2.5-flash-lite" },
+      { apiVersion: "v1beta" },
+    );
+
+    const generationConfig = {
+      temperature: 0, // fully deterministic — no randomness
+      responseMimeType: "application/json" as const,
+      // Disable thinking mode — gemini-2.5-flash-lite thinks by default which causes long delays
+      thinkingConfig: { thinkingBudget: 0 },
+    };
 
     // Build prompt depending on whether we have an expected barcode
     let prompt: string;
     if (expectedBarcode) {
-      prompt = `You are an inventory counting expert. Analyze this product image carefully.
+      prompt = `You are an inventory counting expert. Analyze this product image.
 
 EXPECTED BARCODE: ${expectedBarcode}${productName ? ` (${productName})` : ""}
 
-STEP 1 - READ ALL BARCODES:
-Scan the entire image and read every barcode number you can find.
-List ALL barcode numbers visible in the image.
+STEP 1 — VERIFY PRODUCT:
+barcodeMatch = true if any barcode in the image matches the expected barcode, or packaging visually looks the same.
+barcodeMatch = false ONLY if clearly a different product or a screen/monitor.
 
-CRITICAL EAN-13 RULE:
-- EAN-13 barcodes are ALWAYS exactly 13 digits
-- The first digit ("number system" digit) appears to the LEFT of the barcode bars, slightly separated
-- Do NOT skip the leftmost digit — include it. Example: "8 888336 044156" = "8888336044156"
-- If you read 12 digits, you almost certainly missed the first digit — look again
-- UPC-A is 12 digits (no leading digit). EAN-8 is 8 digits.
+STEP 2 — COUNT UNITS (pick one method):
 
-STEP 2 - VERIFY MATCH:
-- Match = true if any detected barcode EXACTLY equals the EXPECTED BARCODE
-- Also match = true if detected barcode + a leading digit = expected barcode (partial read)
-- Match = false if no barcode in the image reasonably matches (wrong product, screen photo, etc.)
+METHOD A — OCR count (use if barcodes are readable):
+Count how many times the digits "${expectedBarcode}" appear printed in the image.
+Each occurrence = 1 unit. Set ocrCount = that number.
+EAN-13 tip: "8 859109 898023" and "8859109898023" are the same barcode — count as 1 occurrence per unit.
+Do NOT list all text — just return the COUNT number.
 
-STEP 3 - COUNT UNITS:
-- If match = true: Count the physical product units of this product visible
-- If match = false: Set count = 0
+METHOD B — Visual column count (use if ocrCount = 0):
+Divide image into vertical columns, count units per column, list in columnCounts.
 
-FRAUD PREVENTION:
-- A screen/monitor displaying a barcode is NOT a real product — set match = false
-- Do NOT count products that visibly have a different barcode
+STEP 3 — FINAL COUNT:
+If ocrCount > 0 → count = ocrCount, leave columnCounts = []
+If ocrCount = 0 → count = sum of columnCounts
 
-RESPOND WITH VALID JSON ONLY, no markdown, no explanation:
+FRAUD: screen/monitor showing barcode → barcodeMatch false, count 0.
+
+RESPOND WITH SHORT VALID JSON ONLY:
 {
-  "detectedBarcodes": ["barcode1", "barcode2"],
   "barcodeMatch": true,
-  "matchedBarcode": "barcode1",
-  "count": 5
+  "matchedBarcode": "${expectedBarcode}",
+  "ocrCount": 16,
+  "columnCounts": [],
+  "count": 16
 }`;
     } else {
       prompt = `You are an inventory counting expert. Analyze this product image carefully.
@@ -99,19 +106,38 @@ RESPOND WITH VALID JSON ONLY, no markdown, no explanation:
 }`;
     }
 
-    const result = await model.generateContent([
-      prompt,
-      {
-        inlineData: {
-          data: imageBase64,
-          mimeType: "image/jpeg",
-        },
-      },
+    const TIMEOUT_MS = 45_000;
+    const timeoutPromise = new Promise<never>((_, reject) =>
+      setTimeout(
+        () => reject(new Error("Gemini API timeout after 45s")),
+        TIMEOUT_MS,
+      ),
+    );
+
+    const result = await Promise.race([
+      model.generateContent({
+        contents: [
+          {
+            role: "user",
+            parts: [
+              { text: prompt },
+              { inlineData: { data: imageBase64, mimeType: "image/jpeg" } },
+            ],
+          },
+        ],
+        generationConfig,
+      }),
+      timeoutPromise,
     ]);
 
     const response = await result.response;
     const text = response.text().trim();
     const processingTime = Date.now() - startTime;
+
+    // Log raw AI response for debugging
+    console.log("[Gemini] Raw AI response:", text);
+    console.log("[Gemini] Expected barcode:", expectedBarcode || "(none)");
+    console.log("[Gemini] Processing time:", processingTime, "ms");
 
     try {
       // Strip markdown code fences if present
@@ -121,6 +147,49 @@ RESPOND WITH VALID JSON ONLY, no markdown, no explanation:
       const detectedBarcodes: string[] = Array.isArray(parsed.detectedBarcodes)
         ? parsed.detectedBarcodes
         : [];
+
+      // Log OCR text found (for debugging barcode text recognition)
+      if (
+        Array.isArray(parsed.allTextFound) &&
+        parsed.allTextFound.length > 0
+      ) {
+        console.log("[Gemini] All text found by OCR:", parsed.allTextFound);
+      }
+
+      // If AI returned columnCounts, use their sum — more reliable than a single "count" guess
+      const columnCounts: number[] = Array.isArray(parsed.columnCounts)
+        ? parsed.columnCounts.map((n: unknown) => parseInt(String(n), 10) || 0)
+        : [];
+      const columnSum = columnCounts.reduce((a, b) => a + b, 0);
+      const parsedCountRaw = parseInt(parsed.count, 10) || 0;
+      const ocrCount = parseInt(parsed.ocrCount, 10) || 0;
+      const visualCount = parseInt(parsed.visualCount, 10) || 0;
+
+      // Priority: ocrCount (most accurate) > columnSum > visualCount > raw count
+      let parsedCount: number;
+      let countMethod: string;
+      if (ocrCount > 0) {
+        parsedCount = ocrCount;
+        countMethod = "OCR text match";
+      } else if (columnSum > 0) {
+        parsedCount = columnSum;
+        countMethod = "column grid sum";
+      } else if (visualCount > 0) {
+        parsedCount = visualCount;
+        countMethod = "visual fallback";
+      } else {
+        parsedCount = parsedCountRaw;
+        countMethod = "raw AI count";
+      }
+
+      console.log(
+        `[Gemini] Count method: ${countMethod} → ${parsedCount}`,
+        ocrCount > 0 ? `| OCR occurrences: ${ocrCount}` : "",
+        columnCounts.length > 0
+          ? `| columns: [${columnCounts}] sum=${columnSum}`
+          : "",
+        `| raw: ${parsedCountRaw}`,
+      );
 
       // Fuzzy barcode match: handle common AI misread of EAN-13 leading digit
       // e.g. AI reads "888336044156" but expected is "8888336044156"
@@ -144,6 +213,7 @@ RESPOND WITH VALID JSON ONLY, no markdown, no explanation:
       // Determine if any detected barcode matches expected (exact or fuzzy)
       let aiMatch = Boolean(parsed.barcodeMatch);
       let matchedBarcode: string = parsed.matchedBarcode || "";
+      let fuzzyOverride = false;
       if (expectedBarcode && !aiMatch) {
         // AI said no match — double-check with fuzzy logic
         const fuzzyHit = detectedBarcodes.find((b) =>
@@ -152,14 +222,23 @@ RESPOND WITH VALID JSON ONLY, no markdown, no explanation:
         if (fuzzyHit) {
           aiMatch = true;
           matchedBarcode = fuzzyHit;
+          fuzzyOverride = true; // AI contradicted itself — barcode IS in image but AI said false
+          console.log(
+            "[Gemini] Fuzzy override: barcode found in detectedBarcodes but AI said barcodeMatch=false",
+          );
         }
       }
 
+      // When fuzzy override happened and AI count=0 (AI set 0 because it thought no match),
+      // the count is unreliable — flag needsRecount so UI asks user to retry
+      const aiCount = parsedCount;
+      const needsRecount = fuzzyOverride && aiCount === 0;
+
       // When no expectedBarcode, use parsed count directly; otherwise require match
       const finalCount = !expectedBarcode
-        ? parseInt(parsed.count, 10) || 0
-        : aiMatch
-          ? parseInt(parsed.count, 10) || 0
+        ? aiCount
+        : aiMatch && !needsRecount
+          ? aiCount
           : 0;
 
       return {
@@ -168,6 +247,7 @@ RESPOND WITH VALID JSON ONLY, no markdown, no explanation:
         barcodeMatch: aiMatch,
         matchedBarcode,
         processingTime,
+        needsRecount,
       };
     } catch {
       // Fallback: if JSON parse fails, return safe default

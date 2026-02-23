@@ -137,18 +137,13 @@ export default function CameraScreen() {
         mediaTypes: ["images"],
         allowsEditing: false,
         quality: 0.8,
-        base64: true,
-        exif: true, // Required for metadata validation
+        // No base64: true here — read lazily in preview when AI is triggered (same as camera capture)
+        exif: true, // Required for metadata validation only
       });
 
       if (result.canceled || !result.assets?.[0]) return;
 
       const asset = result.assets[0];
-
-      if (!asset.base64) {
-        Alert.alert("เกิดข้อผิดพลาด", "ไม่สามารถอ่านรูปภาพได้");
-        return;
-      }
 
       // Validate EXIF metadata from the gallery image
       const exifResult = validateImageExif(
@@ -212,7 +207,7 @@ export default function CameraScreen() {
         pathname: "/(mini-apps)/stock-counter/preview",
         params: {
           imageUri: asset.uri,
-          imageBase64: asset.base64,
+          imageBase64: "", // lazy read in preview, same as camera capture
           watermarkData: JSON.stringify(watermarkData),
           productId: params.productId,
           productName: params.productName,
@@ -220,6 +215,7 @@ export default function CameraScreen() {
           assignmentId: params.assignmentId,
           beforeQty: params.beforeQty,
           existingSessionId: params.existingSessionId || "",
+          nativeScannedBarcode: scannedBarcode || "",
         },
       });
     } catch (error) {

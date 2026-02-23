@@ -18,6 +18,7 @@ import {
   ActivityIndicator,
   Alert,
   Image,
+  Modal,
   ScrollView,
   StyleSheet,
   Text,
@@ -59,9 +60,11 @@ export default function PreviewScreen() {
   const [isProcessing, setIsProcessing] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
   const [isLoadingImage, setIsLoadingImage] = useState(false);
+  const [isFullscreen, setIsFullscreen] = useState(false);
   const [barcodeCount, setBarcodeCount] = useState<number | null>(null);
   const [barcodeMatch, setBarcodeMatch] = useState<boolean | null>(null);
   const [detectedBarcodes, setDetectedBarcodes] = useState<string[]>([]);
+  const [needsRecount, setNeedsRecount] = useState<boolean>(false);
   const [processingTime, setProcessingTime] = useState<number | null>(null);
   const [sessionId, setSessionId] = useState<string | null>(
     params.existingSessionId || null,
@@ -267,6 +270,7 @@ export default function PreviewScreen() {
     try {
       setIsProcessing(true);
       setBarcodeCount(null);
+      setNeedsRecount(false);
 
       // Read base64 lazily — only when AI analysis is actually needed
       let base64ForAI = imageBase64;
@@ -298,10 +302,18 @@ export default function PreviewScreen() {
       setBarcodeCount(result.count);
       setBarcodeMatch(result.barcodeMatch);
       setDetectedBarcodes(result.detectedBarcodes);
+      setNeedsRecount(result.needsRecount ?? false);
       setProcessingTime(result.processingTime);
 
-      // Warning if barcode doesn't match (only when product has a barcode)
-      if (params.productBarcode && !result.barcodeMatch) {
+      // needsRecount = AI detected correct barcode but gave inconsistent count=0 (hallucination)
+      if (result.needsRecount) {
+        Alert.alert(
+          "🔄 วิเคราะห์ไม่สมบูรณ์",
+          `AI พบบาร์โค้ดถูกต้อง (${result.matchedBarcode}) แต่นับจำนวนไม่สมบูรณ์\nกรุณากดวิเคราะห์อีกครั้ง`,
+          [{ text: "วิเคราะห์อีกครั้ง" }],
+        );
+      } else if (params.productBarcode && !result.barcodeMatch) {
+        // Warning if barcode doesn't match (only when product has a barcode)
         Alert.alert(
           "⚠️ บาร์โค้ดไม่ตรง",
           result.detectedBarcodes.length > 0
@@ -422,13 +434,46 @@ export default function PreviewScreen() {
               </Text>
             </View>
           ) : (
-            <Image
-              source={{ uri: displayImageUri || params.imageUri }}
-              style={styles.image}
-              resizeMode="cover"
-            />
+            <TouchableOpacity
+              activeOpacity={0.95}
+              onPress={() => setIsFullscreen(true)}
+            >
+              <Image
+                source={{ uri: displayImageUri || params.imageUri }}
+                style={styles.image}
+                resizeMode="cover"
+              />
+              {/* Fullscreen hint */}
+              <View style={styles.fullscreenHint}>
+                <Ionicons name="expand" size={16} color="#fff" />
+                <Text style={styles.fullscreenHintText}>ดูรูปเต็มจอ</Text>
+              </View>
+            </TouchableOpacity>
           )}
         </View>
+
+        {/* Fullscreen Modal */}
+        <Modal
+          visible={isFullscreen}
+          transparent={false}
+          animationType="fade"
+          statusBarTranslucent
+          onRequestClose={() => setIsFullscreen(false)}
+        >
+          <View style={styles.fullscreenContainer}>
+            <Image
+              source={{ uri: displayImageUri || params.imageUri }}
+              style={styles.fullscreenImage}
+              resizeMode="contain"
+            />
+            <TouchableOpacity
+              style={styles.fullscreenClose}
+              onPress={() => setIsFullscreen(false)}
+            >
+              <Ionicons name="close" size={28} color="#fff" />
+            </TouchableOpacity>
+          </View>
+        </Modal>
 
         {/* Product Info */}
         {params.productName && (
@@ -554,7 +599,19 @@ export default function PreviewScreen() {
               </View>
 
               {/* Barcode match status badge */}
-              {params.productBarcode ? (
+              {needsRecount ? (
+                <View
+                  style={[
+                    styles.barcodeMatchBadge,
+                    { backgroundColor: "#d9770620" },
+                  ]}
+                >
+                  <Ionicons name="refresh-circle" size={18} color="#d97706" />
+                  <Text style={[styles.barcodeMatchText, { color: "#d97706" }]}>
+                    พบบาร์โค้ดถูกต้องแต่นับไม่สมบูรณ์ — วิเคราะห์อีกครั้ง
+                  </Text>
+                </View>
+              ) : params.productBarcode ? (
                 <View
                   style={[
                     styles.barcodeMatchBadge,
@@ -736,6 +793,44 @@ const styles = StyleSheet.create({
   image: {
     width: "100%",
     height: "100%",
+  },
+  fullscreenHint: {
+    position: "absolute",
+    top: 10,
+    right: 10,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    backgroundColor: "rgba(0,0,0,0.55)",
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 16,
+  },
+  fullscreenHintText: {
+    color: "#fff",
+    fontSize: 12,
+    fontWeight: "500",
+  },
+  fullscreenContainer: {
+    flex: 1,
+    backgroundColor: "#000",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  fullscreenImage: {
+    width: "100%",
+    height: "100%",
+  },
+  fullscreenClose: {
+    position: "absolute",
+    top: 52,
+    right: 16,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: "rgba(0,0,0,0.6)",
+    justifyContent: "center",
+    alignItems: "center",
   },
   infoCard: {
     borderRadius: 12,
