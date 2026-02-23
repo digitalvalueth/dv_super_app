@@ -91,6 +91,8 @@ export default function CommissionPage() {
           variance: data.variance,
           status: data.status,
           remarks: data.remarks,
+          errorRemark: data.errorRemark,
+          userReportedCount: data.userReportedCount,
           createdAt: data.createdAt?.toDate(),
         });
       });
@@ -175,6 +177,8 @@ export default function CommissionPage() {
         status: s.status || "pending",
         imageUrl: s.imageUrl,
         remarks: s.remarks,
+        errorRemark: s.errorRemark,
+        userReportedCount: s.userReportedCount,
         createdAt: s.createdAt ? format(s.createdAt, "yyyy-MM-dd HH:mm") : "",
       }));
 
@@ -264,6 +268,8 @@ export default function CommissionPage() {
         status: s.status || "pending",
         imageUrl: s.imageUrl,
         remarks: s.remarks,
+        errorRemark: s.errorRemark,
+        userReportedCount: s.userReportedCount,
         createdAt: s.createdAt ? format(s.createdAt, "yyyy-MM-dd HH:mm") : "",
       }));
 

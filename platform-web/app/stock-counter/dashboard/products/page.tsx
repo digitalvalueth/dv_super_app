@@ -63,6 +63,7 @@ export default function ProductsPage() {
     name: "",
     description: "",
     barcode: "",
+    sellerCode: "",
     category: "",
     series: "",
     beforeCount: 0,
@@ -242,6 +243,7 @@ export default function ProductsPage() {
         name: formData.name.trim(),
         description: formData.description.trim() || null,
         barcode: formData.barcode.trim() || null,
+        sellerCode: formData.sellerCode.trim() || null,
         category: formData.category.trim() || null,
         series: formData.series.trim() || null,
         beforeCount: formData.beforeCount || 0,
@@ -271,6 +273,7 @@ export default function ProductsPage() {
       name: product.name,
       description: product.description || "",
       barcode: product.barcode || "",
+      sellerCode: product.sellerCode || "",
       category: product.category || "",
       series: product.series || "",
       beforeCount: product.beforeCount || 0,
@@ -320,6 +323,7 @@ export default function ProductsPage() {
         name: formData.name.trim(),
         description: formData.description.trim() || null,
         barcode: formData.barcode.trim() || null,
+        sellerCode: formData.sellerCode.trim() || null,
         category: formData.category.trim() || null,
         series: formData.series.trim() || null,
         beforeCount: formData.beforeCount || 0,
@@ -362,6 +366,7 @@ export default function ProductsPage() {
       name: "",
       description: "",
       barcode: "",
+      sellerCode: "",
       category: "",
       series: "",
       beforeCount: 0,
@@ -879,6 +884,7 @@ interface ProductModalProps {
     name: string;
     description: string;
     barcode: string;
+    sellerCode: string;
     category: string;
     series: string;
     beforeCount: number;
@@ -1070,6 +1076,21 @@ function ProductModal({
                 setFormData({ ...formData, barcode: e.target.value })
               }
               placeholder="8859109897033"
+              className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+              Seller Code
+            </label>
+            <input
+              type="text"
+              value={formData.sellerCode}
+              onChange={(e) =>
+                setFormData({ ...formData, sellerCode: e.target.value })
+              }
+              placeholder="เช่น 302016"
               className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
             />
           </div>

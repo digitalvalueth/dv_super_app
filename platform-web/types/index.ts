@@ -173,6 +173,8 @@ export interface CountingSession {
     | "mismatch";
   remarks?: string;
   adminRemarks?: string;
+  errorRemark?: string;
+  userReportedCount?: number;
 
   // Metadata
   deviceInfo?: string;

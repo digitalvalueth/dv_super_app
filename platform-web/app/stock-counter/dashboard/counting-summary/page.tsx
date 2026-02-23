@@ -1,5 +1,9 @@
 "use client";
 
+import {
+  exportSummaryToExcelWithImages,
+  exportSummaryToPDFWithImages,
+} from "@/lib/export-with-images";
 import { db } from "@/lib/firebase";
 import { useAuthStore } from "@/stores/auth.store";
 import { CountingSession } from "@/types";
@@ -10,6 +14,8 @@ import {
   ChevronDown,
   Download,
   Eye,
+  FileSpreadsheet,
+  FileText,
   Hash,
   MapPin,
   Package,
@@ -35,6 +41,8 @@ interface SummaryRow {
   latestCount: number;
   latestDate?: Date;
   statuses: string[];
+  errorRemark?: string;
+  userReportedCount?: number;
 }
 
 export default function CountingSummaryPage() {
@@ -48,6 +56,8 @@ export default function CountingSummaryPage() {
   const [selectedSession, setSelectedSession] =
     useState<CountingSession | null>(null);
   const [showExportMenu, setShowExportMenu] = useState(false);
+  const [showExcelImageMenu, setShowExcelImageMenu] = useState(false);
+  const [showPdfImageMenu, setShowPdfImageMenu] = useState(false);
   const [exporting, setExporting] = useState(false);
 
   useEffect(() => {
@@ -94,6 +104,8 @@ export default function CountingSummaryPage() {
           status: d.status,
           remarks: d.remarks,
           adminRemarks: d.adminRemarks,
+          errorRemark: d.errorRemark,
+          userReportedCount: d.userReportedCount,
           createdAt: d.createdAt?.toDate(),
         });
       });
@@ -125,12 +137,14 @@ export default function CountingSummaryPage() {
           "อีเมล",
           "สาขา",
           "สินค้า",
-          "SKU",
+          "Barcode",
           "จำนวนที่นับได้",
           "AI Count",
           "วันที่เสร็จสิ้น",
           "ตำแหน่งที่อยู่",
           "พิกัด",
+          "แจ้งความผิดพลาด AI",
+          "พนักงานรายงาน",
         ],
         ...data.map((s) => {
           let location = "";
@@ -155,6 +169,8 @@ export default function CountingSummaryPage() {
             s.createdAt ? format(s.createdAt, "dd/MM/yyyy HH:mm") : "",
             location,
             coords,
+            s.errorRemark || "",
+            s.userReportedCount != null ? s.userReportedCount : "",
           ];
         }),
       ];
@@ -195,6 +211,178 @@ export default function CountingSummaryPage() {
     } catch (e) {
       console.error("Export error:", e);
       toast.error("Export ไม่สำเร็จ");
+    } finally {
+      setExporting(false);
+    }
+  };
+
+  // Build export data for image exports (shared by Excel & PDF with images)
+  const buildImageExportData = () => {
+    let filtered = sessions.filter((s) => s.status === "completed");
+    if (filterBranch !== "all")
+      filtered = filtered.filter(
+        (s) => s.branchName === filterBranch || s.branchId === filterBranch,
+      );
+    if (filterEmployee !== "all")
+      filtered = filtered.filter(
+        (s) => s.userName === filterEmployee || s.userId === filterEmployee,
+      );
+    if (searchTerm) {
+      const term = searchTerm.toLowerCase();
+      filtered = filtered.filter(
+        (s) =>
+          (s.productName || "").toLowerCase().includes(term) ||
+          (s.productSKU || "").toLowerCase().includes(term) ||
+          (s.userName || "").toLowerCase().includes(term),
+      );
+    }
+    return filtered.map((s) => ({
+      id: s.id,
+      productSKU: s.productSKU || "",
+      productName: s.productName || "",
+      branchName: s.branchName || "",
+      userName: s.userName || "",
+      finalCount: s.finalCount ?? s.aiCount ?? 0,
+      imageUrl: s.imageUrl,
+      remarks: s.remarks,
+      errorRemark: s.errorRemark,
+      userReportedCount: s.userReportedCount,
+      createdAt: s.createdAt ? format(s.createdAt, "yyyy-MM-dd HH:mm") : "",
+    }));
+  };
+
+  const handleExportExcelWithImages = async (
+    mode: "all" | "branch" | "employee",
+  ) => {
+    setShowExcelImageMenu(false);
+    const allData = buildImageExportData();
+    if (allData.length === 0) {
+      toast.error("ไม่มีข้อมูลให้ส่งออก");
+      return;
+    }
+    if (exporting) return;
+    try {
+      setExporting(true);
+      toast.info("กำลังเตรียมไฟล์ Excel พร้อมรูปภาพ... กรุณารอสักครู่");
+      const dateStr = format(new Date(), "yyyyMMdd-HHmm");
+      const baseMeta = {
+        companyName: userData?.companyName || "",
+        date: format(new Date(), "dd/MM/yyyy", { locale: th }),
+        exportedBy: userData?.name || userData?.email || "",
+      };
+
+      if (mode === "all") {
+        await exportSummaryToExcelWithImages(
+          allData,
+          `counting-summary-images-${dateStr}.xlsx`,
+          {
+            ...baseMeta,
+            location: filterBranch !== "all" ? filterBranch : "ทุกสาขา",
+          },
+        );
+      } else if (mode === "branch") {
+        const branches = [...new Set(allData.map((d) => d.branchName))].filter(
+          Boolean,
+        );
+        for (const branch of branches) {
+          const branchData = allData.filter((d) => d.branchName === branch);
+          await exportSummaryToExcelWithImages(
+            branchData,
+            `counting-summary-${branch}-${dateStr}.xlsx`,
+            { ...baseMeta, location: branch },
+          );
+        }
+      } else {
+        const employees = [...new Set(allData.map((d) => d.userName))].filter(
+          Boolean,
+        );
+        for (const emp of employees) {
+          const empData = allData.filter((d) => d.userName === emp);
+          await exportSummaryToExcelWithImages(
+            empData,
+            `counting-summary-${emp}-${dateStr}.xlsx`,
+            {
+              ...baseMeta,
+              location: filterBranch !== "all" ? filterBranch : "ทุกสาขา",
+              exportedBy: emp,
+            },
+          );
+        }
+      }
+      toast.success("ส่งออก Excel พร้อมรูปภาพสำเร็จ");
+    } catch (error) {
+      console.error("Export Excel with images error:", error);
+      toast.error("เกิดข้อผิดพลาดในการส่งออก Excel");
+    } finally {
+      setExporting(false);
+    }
+  };
+
+  const handleExportPDFWithImages = async (
+    mode: "all" | "branch" | "employee",
+  ) => {
+    setShowPdfImageMenu(false);
+    const allData = buildImageExportData();
+    if (allData.length === 0) {
+      toast.error("ไม่มีข้อมูลให้ส่งออก");
+      return;
+    }
+    if (exporting) return;
+    try {
+      setExporting(true);
+      toast.info("กำลังเตรียมไฟล์ PDF พร้อมรูปภาพ... กรุณารอสักครู่");
+      const dateStr = format(new Date(), "yyyyMMdd-HHmm");
+      const baseMeta = {
+        date: format(new Date(), "dd/MM/yyyy", { locale: th }),
+        exportedBy: userData?.name || userData?.email || "",
+      };
+      const companyName = userData?.companyName || "";
+
+      if (mode === "all") {
+        await exportSummaryToPDFWithImages(
+          allData,
+          companyName,
+          `counting-summary-images-${dateStr}.pdf`,
+          {
+            ...baseMeta,
+            location: filterBranch !== "all" ? filterBranch : "ทุกสาขา",
+          },
+        );
+      } else if (mode === "branch") {
+        const branches = [...new Set(allData.map((d) => d.branchName))].filter(
+          Boolean,
+        );
+        for (const branch of branches) {
+          const branchData = allData.filter((d) => d.branchName === branch);
+          await exportSummaryToPDFWithImages(
+            branchData,
+            companyName,
+            `counting-summary-${branch}-${dateStr}.pdf`,
+            { ...baseMeta, location: branch },
+          );
+        }
+      } else {
+        const employees = [...new Set(allData.map((d) => d.userName))].filter(
+          Boolean,
+        );
+        for (const emp of employees) {
+          const empData = allData.filter((d) => d.userName === emp);
+          await exportSummaryToPDFWithImages(
+            empData,
+            companyName,
+            `counting-summary-${emp}-${dateStr}.pdf`,
+            {
+              ...baseMeta,
+              location: filterBranch !== "all" ? filterBranch : "ทุกสาขา",
+              exportedBy: emp,
+            },
+          );
+        }
+      }
+      toast.success("ส่งออก PDF พร้อมรูปภาพสำเร็จ");
+    } catch (error) {
+      console.error("Export PDF with images error:", error);
+      toast.error("เกิดข้อผิดพลาดในการส่งออก PDF");
     } finally {
       setExporting(false);
     }
@@ -252,6 +440,8 @@ export default function CountingSummaryPage() {
           latestCount: s.finalCount ?? s.aiCount ?? 0,
           latestDate: s.createdAt,
           statuses: ["completed"],
+          errorRemark: s.errorRemark,
+          userReportedCount: s.userReportedCount,
         });
       }
     });
@@ -379,7 +569,7 @@ export default function CountingSummaryPage() {
       <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4">
         <div className="flex flex-wrap gap-3 items-end">
           {/* Search */}
-          <div className="flex-1 min-w-[200px]">
+          <div className="flex-1 min-w-50">
             <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">
               ค้นหา
             </label>
@@ -396,7 +586,7 @@ export default function CountingSummaryPage() {
           </div>
 
           {/* Branch filter */}
-          <div className="min-w-[160px]">
+          <div className="min-w-40">
             <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">
               สาขา
             </label>
@@ -415,7 +605,7 @@ export default function CountingSummaryPage() {
           </div>
 
           {/* Employee filter */}
-          <div className="min-w-[160px]">
+          <div className="min-w-40">
             <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">
               พนักงาน
             </label>
@@ -452,7 +642,11 @@ export default function CountingSummaryPage() {
           {/* Export dropdown */}
           <div className="relative">
             <button
-              onClick={() => setShowExportMenu((v) => !v)}
+              onClick={() => {
+                setShowExportMenu((v) => !v);
+                setShowExcelImageMenu(false);
+                setShowPdfImageMenu(false);
+              }}
               disabled={exporting}
               className="flex items-center gap-2 px-3 py-2 text-sm font-medium bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-60 transition-colors"
             >
@@ -476,6 +670,83 @@ export default function CountingSummaryPage() {
                 </button>
                 <button
                   onClick={() => handleExport("employee")}
+                  className="w-full text-left px-4 py-3 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors border-t border-gray-100 dark:border-gray-700"
+                >
+                  แยกตามพนักงาน
+                </button>
+              </div>
+            )}
+          </div>
+
+          {/* Export with images dropdowns */}
+          <div className="relative">
+            <button
+              onClick={() => {
+                setShowExcelImageMenu((v) => !v);
+                setShowPdfImageMenu(false);
+                setShowExportMenu(false);
+              }}
+              disabled={exporting}
+              className="flex items-center gap-2 px-3 py-2 text-sm font-medium bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 disabled:opacity-60 transition-colors"
+            >
+              <FileSpreadsheet className="w-4 h-4" />
+              Excel พร้อมรูป
+              <ChevronDown className="w-3 h-3" />
+            </button>
+            {showExcelImageMenu && (
+              <div className="absolute right-0 top-full mt-1 w-52 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg z-20 overflow-hidden">
+                <button
+                  onClick={() => handleExportExcelWithImages("all")}
+                  className="w-full text-left px-4 py-3 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+                >
+                  ทุกสาขา
+                </button>
+                <button
+                  onClick={() => handleExportExcelWithImages("branch")}
+                  className="w-full text-left px-4 py-3 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors border-t border-gray-100 dark:border-gray-700"
+                >
+                  แยกตามสาขา
+                </button>
+                <button
+                  onClick={() => handleExportExcelWithImages("employee")}
+                  className="w-full text-left px-4 py-3 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors border-t border-gray-100 dark:border-gray-700"
+                >
+                  แยกตามพนักงาน
+                </button>
+              </div>
+            )}
+          </div>
+
+          <div className="relative">
+            <button
+              onClick={() => {
+                setShowPdfImageMenu((v) => !v);
+                setShowExcelImageMenu(false);
+                setShowExportMenu(false);
+              }}
+              disabled={exporting}
+              className="flex items-center gap-2 px-3 py-2 text-sm font-medium bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-60 transition-colors"
+            >
+              <FileText className="w-4 h-4" />
+              PDF พร้อมรูป
+              <ChevronDown className="w-3 h-3" />
+            </button>
+            {showPdfImageMenu && (
+              <div className="absolute right-0 top-full mt-1 w-52 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg z-20 overflow-hidden">
+                <button
+                  onClick={() => handleExportPDFWithImages("all")}
+                  className="w-full text-left px-4 py-3 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+                >
+                  ทุกสาขา
+                </button>
+                <button
+                  onClick={() => handleExportPDFWithImages("branch")}
+                  className="w-full text-left px-4 py-3 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors border-t border-gray-100 dark:border-gray-700"
+                >
+                  แยกตามสาขา
+                </button>
+                <button
+                  onClick={() => handleExportPDFWithImages("employee")}
                   className="w-full text-left px-4 py-3 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors border-t border-gray-100 dark:border-gray-700"
                 >
                   แยกตามพนักงาน
@@ -559,6 +830,18 @@ export default function CountingSummaryPage() {
                         <span className="text-xs text-gray-500 dark:text-gray-400 ml-1">
                           ชิ้น
                         </span>
+                        {(row.errorRemark || row.userReportedCount) && (
+                          <div className="mt-1">
+                            <span
+                              className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-orange-100 dark:bg-orange-900/40 text-orange-700 dark:text-orange-400 text-xs font-medium"
+                              title={row.errorRemark || ""}
+                            >
+                              {row.userReportedCount != null
+                                ? `⚠ พนักงานรายงาน: ${row.userReportedCount}`
+                                : "⚠ แจ้งความผิดพลาด"}
+                            </span>
+                          </div>
+                        )}
                       </td>
                       <td className="px-6 py-4 text-sm text-gray-600 dark:text-gray-400">
                         {row.latestDate
@@ -668,6 +951,18 @@ export default function CountingSummaryPage() {
                         <span className="text-xs text-gray-500 dark:text-gray-400 ml-1">
                           ชิ้น
                         </span>
+                        {(s.errorRemark || s.userReportedCount) && (
+                          <div className="mt-1">
+                            <span
+                              className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-orange-100 dark:bg-orange-900/40 text-orange-700 dark:text-orange-400 text-xs font-medium"
+                              title={s.errorRemark || ""}
+                            >
+                              {s.userReportedCount != null
+                                ? `⚠ พนักงานรายงาน: ${s.userReportedCount}`
+                                : "⚠ แจ้งความผิดพลาด"}
+                            </span>
+                          </div>
+                        )}
                       </td>
                       <td className="px-6 py-4">
                         <StatusBadge status={s.status} />
@@ -953,6 +1248,36 @@ function SessionDetailModal({
               <p className="text-sm text-gray-600 dark:text-gray-400 bg-red-50 dark:bg-red-900/30 p-4 rounded-lg">
                 {session.adminRemarks}
               </p>
+            </div>
+          )}
+
+          {(session.errorRemark || session.userReportedCount) && (
+            <div>
+              <h3 className="font-semibold text-orange-700 dark:text-orange-400 mb-2 flex items-center gap-2">
+                ⚠ แจ้งความผิดพลาดจาก AI (จากพนักงาน)
+              </h3>
+              {session.userReportedCount != null && (
+                <div className="flex items-center gap-4 mb-3 p-3 bg-orange-50 dark:bg-orange-900/30 border border-orange-200 dark:border-orange-700 rounded-lg">
+                  <div className="text-center">
+                    <div className="text-xs text-gray-500">AI นับได้</div>
+                    <div className="text-2xl font-bold text-red-600">
+                      {session.finalCount ?? session.aiCount ?? 0}
+                    </div>
+                  </div>
+                  <span className="text-orange-400 text-lg">&#8594;</span>
+                  <div className="text-center">
+                    <div className="text-xs text-gray-500">พนักงานรายงาน</div>
+                    <div className="text-2xl font-bold text-green-600">
+                      {session.userReportedCount}
+                    </div>
+                  </div>
+                </div>
+              )}
+              {session.errorRemark && (
+                <p className="text-sm text-orange-800 dark:text-orange-300 bg-orange-50 dark:bg-orange-900/30 border border-orange-200 dark:border-orange-700 p-4 rounded-lg">
+                  {session.errorRemark}
+                </p>
+              )}
             </div>
           )}
         </div>

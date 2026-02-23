@@ -8,19 +8,23 @@ import { Smartphone } from "lucide-react";
 import Link from "next/link";
 import { ReactNode, useEffect, useState } from "react";
 
-export default function StockCounterDashboardLayout({ children }: { children: ReactNode }) {
+export default function StockCounterDashboardLayout({
+  children,
+}: {
+  children: ReactNode;
+}) {
   const { userData } = useAuthStore();
   const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
-    setMounted(true);
+    setMounted(true); // eslint-disable-line react-hooks/set-state-in-effect
   }, []);
 
   // Block staff from accessing the web platform
   // Only check this after hydration to prevent SSG/SSR errors
   if (mounted && userData?.role === "staff") {
     return (
-      <div className="flex flex-col items-center justify-center min-h-screen bg-gradient-to-br from-gray-900 via-blue-950 to-gray-900 p-4 text-center">
+      <div className="flex flex-col items-center justify-center min-h-screen bg-linear-to-br from-gray-900 via-blue-950 to-gray-900 p-4 text-center">
         <div className="bg-white/10 p-6 rounded-3xl backdrop-blur-xl border border-white/20 mb-8 shadow-2xl">
           <Smartphone className="w-16 h-16 text-blue-400 mx-auto" />
         </div>
@@ -28,7 +32,8 @@ export default function StockCounterDashboardLayout({ children }: { children: Re
           กรุณาใช้งานผ่าน Mobile App
         </h1>
         <p className="text-gray-300 max-w-md mb-8 text-lg">
-          ระบบ Stock Counter สำหรับพนักงานถูกออกแบบมาให้ใช้งานบนแอปพลิเคชันมือถือเท่านั้น
+          ระบบ Stock Counter
+          สำหรับพนักงานถูกออกแบบมาให้ใช้งานบนแอปพลิเคชันมือถือเท่านั้น
         </p>
         <Link
           href="/"
@@ -52,4 +57,3 @@ export default function StockCounterDashboardLayout({ children }: { children: Re
     </ModuleGuard>
   );
 }
-
