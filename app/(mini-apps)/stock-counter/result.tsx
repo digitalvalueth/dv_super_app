@@ -26,7 +26,7 @@ export default function ResultScreen() {
   const user = useAuthStore((state) => state.user);
   const [isSaving, setIsSaving] = useState(false);
   const params = useLocalSearchParams<{
-    sessionId?: string; // เพิ่ม sessionId สำหรับกรณีที่มี session อยู่แล้ว
+    sessionId?: string;
     imageUri: string;
     barcodeCount: string;
     processingTime: string;
@@ -36,12 +36,19 @@ export default function ResultScreen() {
     watermarkData?: string;
     assignmentId?: string;
     beforeQty?: string;
+    userReportedCount?: string;
+    disputeRemark?: string;
   }>();
 
   const barcodeCount = parseInt(params.barcodeCount || "0", 10);
   const processingTime = parseInt(params.processingTime || "0", 10);
   const beforeQty = parseInt(params.beforeQty || "0", 10);
   const variance = beforeQty - barcodeCount;
+  const userReportedCount = params.userReportedCount?.trim()
+    ? parseInt(params.userReportedCount, 10)
+    : null;
+  const disputeRemark = params.disputeRemark?.trim() || null;
+  const hasDispute = userReportedCount !== null || !!disputeRemark;
 
   const watermarkData: WatermarkData | null = useMemo(() => {
     try {
@@ -75,10 +82,12 @@ export default function ResultScreen() {
         const { db } = await import("@/config/firebase");
 
         await updateDoc(doc(db, "countingSessions", params.sessionId), {
-          status: "completed", // เปลี่ยนจาก pending เป็น completed
+          status: "completed",
           finalCount: barcodeCount,
           manualCount: barcodeCount,
           updatedAt: new Date(),
+          ...(disputeRemark && { errorRemark: disputeRemark }),
+          ...(userReportedCount !== null && { userReportedCount }),
         });
 
         // อัพเดท assignment status เป็น completed
@@ -142,7 +151,9 @@ export default function ResultScreen() {
         finalCount: barcodeCount,
         standardCount: beforeQty,
         discrepancy: Math.abs(variance),
-        status: "completed", // เปลี่ยนเป็น completed เลย
+        status: "completed",
+        ...(disputeRemark && { errorRemark: disputeRemark }),
+        ...(userReportedCount !== null && { userReportedCount }),
         ...(watermarkData && {
           remarks: JSON.stringify({
             location: watermarkData.location,
@@ -289,6 +300,45 @@ export default function ResultScreen() {
                 </Text>
               </View>
             )}
+          </View>
+        )}
+
+        {/* Dispute / AI Error Report Summary */}
+        {hasDispute && (
+          <View
+            style={[
+              styles.disputeCard,
+              { backgroundColor: "#fffbeb", borderColor: "#fcd34d" },
+            ]}
+          >
+            <View style={styles.disputeHeader}>
+              <Ionicons name="warning" size={20} color="#f59e0b" />
+              <Text style={styles.disputeTitle}>แจ้งความผิดพลาด AI</Text>
+            </View>
+            <View style={styles.disputeRow}>
+              <View style={styles.disputeBox}>
+                <Text style={styles.disputeBoxLabel}>AI นับได้</Text>
+                <Text style={[styles.disputeBoxValue, { color: "#dc2626" }]}>
+                  {barcodeCount}
+                </Text>
+              </View>
+              <Ionicons name="arrow-forward" size={20} color="#92400e" />
+              <View style={styles.disputeBox}>
+                <Text style={styles.disputeBoxLabel}>คุณรายงาน</Text>
+                <Text style={[styles.disputeBoxValue, { color: "#16a34a" }]}>
+                  {userReportedCount ?? "-"}
+                </Text>
+              </View>
+            </View>
+            {disputeRemark && (
+              <View style={styles.disputeRemarkBox}>
+                <Text style={styles.disputeRemarkLabel}>เหตุผล:</Text>
+                <Text style={styles.disputeRemarkText}>{disputeRemark}</Text>
+              </View>
+            )}
+            <Text style={styles.disputeSaved}>
+              ข้อมูลนี้จะถูกบันทึกไว้ให้ผู้ดูแลตรวจสอบ
+            </Text>
           </View>
         )}
 
@@ -538,5 +588,60 @@ const styles = StyleSheet.create({
   actionButtonText: {
     fontSize: 16,
     fontWeight: "600",
+  },
+  disputeCard: {
+    borderRadius: 16,
+    padding: 16,
+    borderWidth: 1.5,
+    gap: 12,
+  },
+  disputeHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  disputeTitle: {
+    fontSize: 15,
+    fontWeight: "600",
+    color: "#f59e0b",
+    flex: 1,
+  },
+  disputeRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-around",
+  },
+  disputeBox: {
+    alignItems: "center",
+    gap: 4,
+  },
+  disputeBoxLabel: {
+    fontSize: 12,
+    color: "#92400e",
+  },
+  disputeBoxValue: {
+    fontSize: 36,
+    fontWeight: "700",
+  },
+  disputeRemarkBox: {
+    backgroundColor: "#fff",
+    borderRadius: 8,
+    padding: 10,
+    gap: 4,
+  },
+  disputeRemarkLabel: {
+    fontSize: 12,
+    fontWeight: "600",
+    color: "#92400e",
+  },
+  disputeRemarkText: {
+    fontSize: 14,
+    color: "#78350f",
+  },
+  disputeSaved: {
+    fontSize: 12,
+    color: "#16a34a",
+    fontWeight: "500",
+    textAlign: "center",
   },
 });

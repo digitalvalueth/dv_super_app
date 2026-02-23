@@ -66,84 +66,64 @@ export const countBarcodesInImage = async (
     const genAI = new GoogleGenerativeAI(apiKey);
 
     const model = genAI.getGenerativeModel(
-      { model: "gemini-2.5-flash-lite" },
+      { model: "gemini-2.5-flash" },
       { apiVersion: "v1beta" },
     );
 
     const generationConfig = {
       temperature: 0, // fully deterministic — no randomness
       responseMimeType: "application/json" as const,
-      // Disable thinking mode — gemini-2.5-flash-lite thinks by default which causes long delays
-      thinkingConfig: { thinkingBudget: 0 },
     };
 
     // Build prompt depending on whether we have an expected barcode
     let prompt: string;
     if (expectedBarcode) {
-      prompt = `You are an inventory counting expert. Analyze this product image.
+      prompt = `You are a barcode scanner, NOT a product counter.
+
+Your ONLY task is to detect PHYSICAL barcode stickers visible in the image.
 
 EXPECTED BARCODE: ${expectedBarcode}${productName ? ` (${productName})` : ""}
 
-STEP 1 — VERIFY BARCODE (STRICT):
-Read all barcode numbers visible in the image.
-barcodeMatch = true ONLY if the digits "${expectedBarcode}" appear as a printed barcode in the image.
-barcodeMatch = false if the barcode digits do NOT match, even if the packaging looks similar.
-barcodeMatch = false if showing a screen/monitor.
-NEVER guess based on visual appearance — only match on exact barcode digits.
+STRICT RULES:
+1. Each physical barcode sticker = ONE entry in detectedBarcodes.
+2. Even if all barcodes show the SAME digits, list them separately (one entry per sticker).
+3. DO NOT estimate. DO NOT guess hidden items.
+4. DO NOT count boxes without visible barcode stickers.
+5. DO NOT assume grid patterns or infer hidden products.
+6. Only include stickers that are PHYSICALLY VISIBLE in the image.
+7. If part of a barcode is visible but clearly a real sticker, include it.
+8. barcodeMatch = true ONLY if "${expectedBarcode}" matches any detected sticker.
+9. barcodeMatch = false if showing a screen/monitor (FRAUD).
 
-STEP 2 — COUNT UNITS using BOTH methods:
+CRITICAL: If unsure whether something is a barcode sticker, DO NOT include it.
 
-METHOD A — Visual count (PRIMARY):
-Count distinct physical product units visible in the image.
-Each box/package = 1 unit, even if you can see the barcode label on multiple sides of the same box.
-Group products into visual columns, count each column separately → columnCounts array.
-
-METHOD B — OCR barcode count (SECONDARY):
-Count how many PHYSICAL POSITIONS the barcode "${expectedBarcode}" appears at.
-IMPORTANT: If the same physical box shows the barcode on two visible sides, count it as 1 unit (not 2).
-EAN-13 tip: "8 859109 898023" and "8859109898023" are the same barcode.
-→ Set ocrCount = number of physical units identified by barcode position.
-
-STEP 3 — CROSS-VALIDATE:
-columnSum = sum of columnCounts
-If ocrCount > 0 AND columnSum > 0:
-  - If they differ by more than 30%, trust the LOWER number (ocrCount overcounts if same box shows barcode twice)
-  - If they roughly agree (within 30%), use ocrCount
-If only one method works, use that method's result.
-Set count = final agreed number.
-
-FRAUD: screen/monitor showing barcode → barcodeMatch false, count 0.
-
-RESPOND WITH SHORT VALID JSON ONLY:
+Return ONLY valid JSON:
 {
   "barcodeMatch": true,
-  "matchedBarcode": "actual barcode digits you read from image, or null if not found",
-  "detectedBarcodes": ["every barcode number you can read from the image"],
-  "ocrCount": 11,
-  "columnCounts": [5, 6],
-  "count": 11
+  "matchedBarcode": "<matched digits>",
+  "detectedBarcodes": ["<digits per sticker>"]
 }`;
     } else {
-      prompt = `You are an inventory counting expert. Analyze this product image carefully.
+      prompt = `You are a barcode scanner, NOT a product counter.
 
-STEP 1 - READ ALL BARCODES:
-Scan the entire image and read every barcode number you can find (EAN-13, EAN-8, UPC, etc.).
-List ALL barcode numbers visible in the image.
+Your ONLY task is to detect PHYSICAL barcode stickers visible in the image.
 
-STEP 2 - COUNT UNITS:
-Count the number of physical product units visible in the image.
+STRICT RULES:
+1. Each physical barcode sticker = ONE entry in detectedBarcodes.
+2. Even if all barcodes show the SAME digits, list them separately (one entry per sticker).
+3. DO NOT estimate. DO NOT guess hidden items.
+4. DO NOT count boxes without visible barcode stickers.
+5. DO NOT assume grid patterns or infer hidden products.
+6. Only include stickers that are PHYSICALLY VISIBLE in the image.
+7. If part of a barcode is visible but clearly a real sticker, include it.
 
-RULES:
-- Count only physical product units (packages, boxes, bottles, bags)
-- Do NOT count reflections, shadows, or duplicates from angles
-- A product photographed once = 1 unit even if it has multiple barcodes on the package
+CRITICAL: If unsure whether something is a barcode sticker, DO NOT include it.
 
-RESPOND WITH VALID JSON ONLY, no markdown, no explanation:
+Return ONLY valid JSON:
 {
-  "detectedBarcodes": ["barcode1", "barcode2"],
   "barcodeMatch": true,
   "matchedBarcode": "",
-  "count": 5
+  "detectedBarcodes": ["<digits per sticker>"]
 }`;
     }
 
@@ -210,51 +190,15 @@ RESPOND WITH VALID JSON ONLY, no markdown, no explanation:
         console.log("[Gemini] All text found by OCR:", parsed.allTextFound);
       }
 
-      // If AI returned columnCounts, use their sum — more reliable than a single "count" guess
-      const columnCounts: number[] = Array.isArray(parsed.columnCounts)
-        ? parsed.columnCounts.map((n: unknown) => parseInt(String(n), 10) || 0)
-        : [];
-      const columnSum = columnCounts.reduce((a, b) => a + b, 0);
-      const parsedCountRaw = parseInt(parsed.count, 10) || 0;
-      const ocrCount = parseInt(parsed.ocrCount, 10) || 0;
-      const visualCount = parseInt(parsed.visualCount, 10) || 0;
-
-      // Priority: cross-validate ocrCount vs columnSum — use lower if they disagree >30%
-      let parsedCount: number;
-      let countMethod: string;
-      if (ocrCount > 0 && columnSum > 0) {
-        const ratio =
-          Math.max(ocrCount, columnSum) / Math.min(ocrCount, columnSum);
-        if (ratio > 1.3) {
-          // They disagree significantly — trust the lower value (ocrCount overcounts same-box dual labels)
-          parsedCount = Math.min(ocrCount, columnSum);
-          countMethod = `cross-validate (disagreement ${ocrCount} vs ${columnSum}) → min`;
-        } else {
-          // They agree — use ocrCount (barcode-based is more precise)
-          parsedCount = ocrCount;
-          countMethod = "cross-validate (agree) → OCR";
-        }
-      } else if (ocrCount > 0) {
-        parsedCount = ocrCount;
-        countMethod = "OCR text match";
-      } else if (columnSum > 0) {
-        parsedCount = columnSum;
-        countMethod = "column grid sum";
-      } else if (visualCount > 0) {
-        parsedCount = visualCount;
-        countMethod = "visual fallback";
-      } else {
-        parsedCount = parsedCountRaw;
-        countMethod = "raw AI count";
-      }
+      // COUNTING DECISION ENGINE — Scanner mode:
+      // Source of truth = number of physically detected barcode stickers.
+      // AI lists one entry per visible sticker; code does all the counting.
+      const barcodeCount = detectedBarcodes.length;
+      const parsedCount = barcodeCount;
 
       console.log(
-        `[Gemini] Count method: ${countMethod} → ${parsedCount}`,
-        ocrCount > 0 ? `| OCR occurrences: ${ocrCount}` : "",
-        columnCounts.length > 0
-          ? `| columns: [${columnCounts}] sum=${columnSum}`
-          : "",
-        `| raw: ${parsedCountRaw}`,
+        `[Gemini] Scanner result: ${parsedCount} sticker(s) detected`,
+        `| barcodes: [${detectedBarcodes.join(", ")}]`,
       );
 
       // Fuzzy barcode match: handle common AI misread of EAN-13 leading digit
@@ -317,11 +261,18 @@ RESPOND WITH VALID JSON ONLY, no markdown, no explanation:
       const aiCount = parsedCount;
       const needsRecount = fuzzyOverride && aiCount === 0;
 
-      // When no expectedBarcode, use parsed count directly; otherwise require match
+      // Scanner mode: when expectedBarcode is set, count ONLY stickers matching that barcode.
+      // When no expectedBarcode, use total detected sticker count.
+      const matchingCount = expectedBarcode
+        ? detectedBarcodes.filter((b) => fuzzyMatch(b, expectedBarcode)).length
+        : detectedBarcodes.length;
+
       const finalCount = !expectedBarcode
         ? aiCount
         : aiMatch && !needsRecount
-          ? aiCount
+          ? matchingCount > 0
+            ? matchingCount
+            : aiCount
           : 0;
 
       return {
