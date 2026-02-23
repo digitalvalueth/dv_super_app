@@ -45,7 +45,7 @@ const HIGH_QUALITY_OPTIONS: ImageCompressionOptions = {
  */
 const BARCODE_COUNTING_OPTIONS: ImageCompressionOptions = {
   maxWidth: 1920, // long side cap — portrait photos become ~1920x1080 equivalent
-  quality: 0.92, // high quality keeps barcode lines sharp
+  quality: 1, // high quality keeps barcode lines sharp
   format: "jpeg",
 };
 

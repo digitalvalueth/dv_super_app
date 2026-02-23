@@ -76,6 +76,8 @@ export interface SimpleCountingExportItem {
   status: string;
   imageUrl?: string;
   remarks?: string;
+  errorRemark?: string;
+  userReportedCount?: number;
   createdAt: string;
 }
 
@@ -906,6 +908,7 @@ export async function exportCountingToExcelWithImages(
     { width: 12 }, // H: VARIANCE
     { width: 14 }, // I: REMARKS
     { width: 25 }, // J: IMAGE
+    { width: 35 }, // K: ERROR REPORT
   ];
 
   // Header metadata (row 1-4)
@@ -945,6 +948,8 @@ export async function exportCountingToExcelWithImages(
     "VARIANCE",
     "REMARKS",
     "IMAGE",
+    "\u0e41\u0e08\u0e49\u0e07\u0e04\u0e27\u0e32\u0e21\u0e1c\u0e34\u0e14\u0e1e\u0e25\u0e32\u0e14",
+    "\u0e1e\u0e19\u0e31\u0e01\u0e07\u0e32\u0e19\u0e23\u0e32\u0e22\u0e07\u0e32\u0e19",
   ];
   headerRow.font = { bold: true };
   headerRow.fill = {
@@ -993,6 +998,8 @@ export async function exportCountingToExcelWithImages(
       calculatedVariance, // Use calculated variance
       remarks,
       "", // IMAGE placeholder
+      item.errorRemark || "", // K: Employee error report
+      item.userReportedCount != null ? item.userReportedCount : "", // L: Employee reported count
     ];
 
     // Set row height for images (60 pixels for compact view)
@@ -1010,6 +1017,18 @@ export async function exportCountingToExcelWithImages(
     const remarksCell = row.getCell(9);
     if (calculatedVariance < 0) {
       remarksCell.font = { color: { argb: "FFFF0000" } }; // Red for loss
+    }
+
+    // Style error report cell (K) — red background if filled
+    if (item.errorRemark) {
+      const errorCell = row.getCell(11);
+      errorCell.font = { bold: true, color: { argb: "FFCC0000" } };
+      errorCell.fill = {
+        type: "pattern",
+        pattern: "solid",
+        fgColor: { argb: "FFFFF0F0" }, // Light red background
+      };
+      errorCell.alignment = { vertical: "middle", wrapText: true };
     }
 
     // Center align cells
@@ -1399,5 +1418,448 @@ export async function exportCountingToPDFWithImages(
   );
 
   // Save
+  doc.save(filename);
+}
+
+// ============================================================================
+// COUNTING SUMMARY EXPORTS — simplified: count + image only, no variance
+// ============================================================================
+
+export interface SummaryExportItem {
+  id: string;
+  productSKU: string;
+  productName: string;
+  branchName: string;
+  userName: string;
+  finalCount: number;
+  imageUrl?: string;
+  remarks?: string;
+  errorRemark?: string;
+  userReportedCount?: number;
+  createdAt: string;
+}
+
+/**
+ * Counting-summary Excel export: count + image (no variance)
+ */
+export async function exportSummaryToExcelWithImages(
+  data: SummaryExportItem[],
+  filename: string = "counting-summary.xlsx",
+  metadata?: {
+    companyName?: string;
+    location?: string;
+    date?: string;
+    exportedBy?: string;
+  },
+) {
+  const workbook = new ExcelJS.Workbook();
+  const worksheet = workbook.addWorksheet("Counting Summary");
+
+  worksheet.columns = [
+    { width: 6 }, // A: #
+    { width: 15 }, // B: SKU
+    { width: 35 }, // C: Product
+    { width: 18 }, // D: Branch
+    { width: 15 }, // E: Employee
+    { width: 12 }, // F: Count
+    { width: 25 }, // G: Image
+    { width: 18 }, // H: Date
+    { width: 30 }, // I: Error Report
+    { width: 14 }, // J: Employee Report
+  ];
+
+  // Header metadata (rows 1-3)
+  worksheet.getCell("A1").value = "\u0e1a\u0e23\u0e34\u0e29\u0e31\u0e17:";
+  worksheet.getCell("B1").value = metadata?.companyName || "";
+  worksheet.getCell("A2").value = "\u0e2a\u0e16\u0e32\u0e19\u0e17\u0e35\u0e48:";
+  worksheet.getCell("B2").value =
+    metadata?.location || "\u0e17\u0e38\u0e01\u0e2a\u0e32\u0e02\u0e32";
+  worksheet.getCell("A3").value =
+    "\u0e27\u0e31\u0e19\u0e17\u0e35\u0e48\u0e2a\u0e48\u0e07\u0e2d\u0e2d\u0e01:";
+  worksheet.getCell("B3").value =
+    metadata?.date || new Date().toLocaleDateString("th-TH");
+  if (metadata?.exportedBy) {
+    worksheet.getCell("D1").value =
+      "\u0e1c\u0e39\u0e49\u0e2a\u0e48\u0e07\u0e2d\u0e2d\u0e01:";
+    worksheet.getCell("E1").value = metadata.exportedBy;
+    worksheet.getCell("D1").font = { bold: true };
+  }
+  ["A1", "A2", "A3"].forEach((c) => {
+    worksheet.getCell(c).font = { bold: true };
+  });
+
+  // Column headers (row 5)
+  const hRow = worksheet.getRow(5);
+  hRow.values = [
+    "#",
+    "SKU",
+    "\u0e2a\u0e34\u0e19\u0e04\u0e49\u0e32",
+    "\u0e2a\u0e32\u0e02\u0e32",
+    "\u0e1c\u0e39\u0e49\u0e19\u0e31\u0e1a",
+    "\u0e08\u0e33\u0e19\u0e27\u0e19\u0e17\u0e35\u0e48\u0e19\u0e31\u0e1a\u0e44\u0e14\u0e49",
+    "\u0e23\u0e39\u0e1b\u0e20\u0e32\u0e1e",
+    "\u0e27\u0e31\u0e19\u0e17\u0e35\u0e48",
+    "\u0e41\u0e08\u0e49\u0e07\u0e04\u0e27\u0e32\u0e21\u0e1c\u0e34\u0e14\u0e1e\u0e25\u0e32\u0e14",
+    "\u0e1e\u0e19\u0e31\u0e01\u0e07\u0e32\u0e19\u0e23\u0e32\u0e22\u0e07\u0e32\u0e19",
+  ];
+  hRow.font = { bold: true, color: { argb: "FFFFFFFF" } };
+  hRow.fill = {
+    type: "pattern",
+    pattern: "solid",
+    fgColor: { argb: "FF2563EB" },
+  };
+  hRow.alignment = { vertical: "middle", horizontal: "center" };
+  hRow.height = 22;
+  hRow.eachCell((cell) => {
+    cell.border = {
+      top: { style: "thin" },
+      left: { style: "thin" },
+      bottom: { style: "thin" },
+      right: { style: "thin" },
+    };
+  });
+
+  for (let i = 0; i < data.length; i++) {
+    const item = data[i];
+    const rowIndex = 6 + i;
+    const row = worksheet.getRow(rowIndex);
+
+    row.values = [
+      i + 1,
+      item.productSKU,
+      item.productName,
+      item.branchName,
+      item.userName,
+      item.finalCount,
+      "", // image placeholder
+      item.createdAt,
+      item.errorRemark || "",
+      item.userReportedCount != null ? item.userReportedCount : "",
+    ];
+    row.height = 60;
+
+    // Style count cell
+    const countCell = row.getCell(6);
+    countCell.font = { bold: true, size: 14 };
+
+    // Style error report cell
+    if (item.errorRemark) {
+      const errorCell = row.getCell(9);
+      errorCell.font = { bold: true, color: { argb: "FFCC0000" } };
+      errorCell.fill = {
+        type: "pattern",
+        pattern: "solid",
+        fgColor: { argb: "FFFFF0F0" },
+      };
+      errorCell.alignment = { vertical: "middle", wrapText: true };
+    }
+
+    row.eachCell((cell, colNumber) => {
+      cell.alignment = {
+        vertical: "middle",
+        horizontal: colNumber <= 1 || colNumber >= 6 ? "center" : "left",
+      };
+      cell.border = {
+        top: { style: "thin" },
+        left: { style: "thin" },
+        bottom: { style: "thin" },
+        right: { style: "thin" },
+      };
+    });
+
+    // Add image with watermark
+    if (item.imageUrl) {
+      try {
+        const watermarkData = parseWatermarkFromRemarks(item.remarks);
+        const base64Image = await fetchImageWithWatermark(item.imageUrl, {
+          location: item.branchName,
+          timestamp: item.createdAt,
+          employeeName: item.userName,
+          ...watermarkData,
+        });
+
+        if (base64Image) {
+          const base64Data = base64Image.split(",")[1];
+          const binaryString = atob(base64Data);
+          const bytes = new Uint8Array(binaryString.length);
+          for (let j = 0; j < binaryString.length; j++) {
+            bytes[j] = binaryString.charCodeAt(j);
+          }
+          const imageId = workbook.addImage({
+            // @ts-expect-error ExcelJS accepts Uint8Array but types expect Buffer
+            buffer: bytes,
+            extension: "jpeg",
+          });
+          worksheet.addImage(imageId, {
+            tl: { col: 6, row: rowIndex - 1 + 0.05 } as ExcelJS.Anchor,
+            br: { col: 7, row: rowIndex - 0.05 } as ExcelJS.Anchor,
+            editAs: "oneCell",
+          });
+        }
+      } catch (error) {
+        console.error(`Failed to add image for row ${rowIndex}:`, error);
+      }
+    }
+  }
+
+  // Summary
+  const summaryRowIdx = 6 + data.length + 1;
+  worksheet.getCell(`A${summaryRowIdx}`).value =
+    "\u0e23\u0e27\u0e21\u0e17\u0e31\u0e49\u0e07\u0e2b\u0e21\u0e14:";
+  worksheet.getCell(`A${summaryRowIdx}`).font = { bold: true };
+  const totalCount = data.reduce((s, d) => s + d.finalCount, 0);
+  worksheet.getCell(`F${summaryRowIdx}`).value = totalCount;
+  worksheet.getCell(`F${summaryRowIdx}`).font = { bold: true, size: 14 };
+
+  // Download
+  const buffer = await workbook.xlsx.writeBuffer();
+  const blob = new Blob([buffer], {
+    type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  });
+  const url = window.URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  link.click();
+  window.URL.revokeObjectURL(url);
+}
+
+/**
+ * Counting-summary PDF export: count + image (no variance)
+ */
+export async function exportSummaryToPDFWithImages(
+  data: SummaryExportItem[],
+  companyName: string = "",
+  filename: string = "counting-summary.pdf",
+  metadata?: {
+    location?: string;
+    date?: string;
+    exportedBy?: string;
+  },
+) {
+  const doc = new jsPDF();
+  const pageWidth = doc.internal.pageSize.getWidth();
+  const pageHeight = doc.internal.pageSize.getHeight();
+
+  const hasThaiFond = await registerThaiFont(doc);
+  const fontName = hasThaiFond ? "GoogleSans" : "helvetica";
+
+  // ===== Cover Page =====
+  doc.setFontSize(20);
+  doc.setFont(fontName, "normal");
+  doc.text(
+    "\u0e2a\u0e23\u0e38\u0e1b\u0e1c\u0e25\u0e01\u0e32\u0e23\u0e19\u0e31\u0e1a\u0e2a\u0e15\u0e47\u0e2d\u0e01",
+    pageWidth / 2,
+    25,
+    { align: "center" },
+  );
+
+  doc.setFontSize(11);
+  let hy = 45;
+  if (companyName) {
+    doc.text(`\u0e1a\u0e23\u0e34\u0e29\u0e31\u0e17: ${companyName}`, 15, hy);
+    hy += 7;
+  }
+  doc.text(
+    `\u0e2a\u0e16\u0e32\u0e19\u0e17\u0e35\u0e48: ${metadata?.location || "\u0e17\u0e38\u0e01\u0e2a\u0e32\u0e02\u0e32"}`,
+    15,
+    hy,
+  );
+  hy += 7;
+  doc.text(
+    `\u0e27\u0e31\u0e19\u0e17\u0e35\u0e48: ${metadata?.date || new Date().toLocaleDateString("th-TH")}`,
+    15,
+    hy,
+  );
+  hy += 7;
+  if (metadata?.exportedBy) {
+    doc.text(
+      `\u0e1c\u0e39\u0e49\u0e2a\u0e48\u0e07\u0e2d\u0e2d\u0e01: ${metadata.exportedBy}`,
+      15,
+      hy,
+    );
+    hy += 7;
+  }
+  doc.text(
+    `\u0e08\u0e33\u0e19\u0e27\u0e19\u0e23\u0e32\u0e22\u0e01\u0e32\u0e23: ${data.length}`,
+    15,
+    hy,
+  );
+  hy += 7;
+  const totalCountPdf = data.reduce((s, d) => s + d.finalCount, 0);
+  doc.text(
+    `\u0e08\u0e33\u0e19\u0e27\u0e19\u0e19\u0e31\u0e1a\u0e44\u0e14\u0e49\u0e23\u0e27\u0e21: ${totalCountPdf} \u0e0a\u0e34\u0e49\u0e19`,
+    15,
+    hy,
+  );
+  hy += 15;
+
+  // ===== Detail pages \u2014 3 items per page =====
+  const itemsPerPage = 3;
+  const itemHeight = (pageHeight - 40) / itemsPerPage;
+
+  for (let i = 0; i < data.length; i++) {
+    const item = data[i];
+    const posOnPage = i % itemsPerPage;
+    if (posOnPage === 0) doc.addPage();
+
+    const startY = 15 + posOnPage * itemHeight;
+    const imgSize = 50;
+    const imgX = 15;
+    const imgY = startY + 5;
+
+    doc.setDrawColor(200, 200, 200);
+    doc.rect(10, startY, pageWidth - 20, itemHeight - 5);
+
+    // Item number + SKU
+    doc.setFontSize(11);
+    doc.setFont(fontName, "normal");
+    doc.setTextColor(0, 0, 0);
+    doc.text(`#${i + 1}  ${item.productSKU}`, imgX, startY + 3);
+
+    // Image
+    if (item.imageUrl) {
+      try {
+        const watermarkData = parseWatermarkFromRemarks(item.remarks);
+        const base64Image = await fetchImageWithWatermark(item.imageUrl, {
+          location: item.branchName,
+          timestamp: item.createdAt,
+          employeeName: item.userName,
+          ...watermarkData,
+        });
+        if (base64Image) {
+          doc.addImage(base64Image, "JPEG", imgX, imgY, imgSize, imgSize);
+        } else {
+          doc.setDrawColor(180, 180, 180);
+          doc.setFillColor(245, 245, 245);
+          doc.rect(imgX, imgY, imgSize, imgSize, "FD");
+          doc.setFontSize(8);
+          doc.setTextColor(150, 150, 150);
+          doc.text("No Image", imgX + imgSize / 2, imgY + imgSize / 2, {
+            align: "center",
+          });
+        }
+      } catch {
+        doc.setDrawColor(180, 180, 180);
+        doc.setFillColor(245, 245, 245);
+        doc.rect(imgX, imgY, imgSize, imgSize, "FD");
+        doc.setFontSize(8);
+        doc.setTextColor(150, 150, 150);
+        doc.text("Error", imgX + imgSize / 2, imgY + imgSize / 2, {
+          align: "center",
+        });
+      }
+    } else {
+      doc.setDrawColor(180, 180, 180);
+      doc.setFillColor(245, 245, 245);
+      doc.rect(imgX, imgY, imgSize, imgSize, "FD");
+      doc.setFontSize(8);
+      doc.setTextColor(150, 150, 150);
+      doc.text("No Image", imgX + imgSize / 2, imgY + imgSize / 2, {
+        align: "center",
+      });
+    }
+
+    // Details on right
+    const dx = imgX + imgSize + 10;
+    let dy = imgY;
+
+    doc.setFontSize(10);
+    doc.setFont(fontName, "normal");
+    doc.setTextColor(0, 0, 0);
+
+    const maxLen = 45;
+    const pname =
+      item.productName.length > maxLen
+        ? item.productName.substring(0, maxLen) + "..."
+        : item.productName;
+    doc.text(`\u0e2a\u0e34\u0e19\u0e04\u0e49\u0e32: ${pname}`, dx, dy);
+    dy += 7;
+    doc.text(`\u0e2a\u0e32\u0e02\u0e32: ${item.branchName}`, dx, dy);
+    dy += 7;
+    doc.text(`\u0e1c\u0e39\u0e49\u0e19\u0e31\u0e1a: ${item.userName}`, dx, dy);
+    dy += 7;
+    doc.text(`\u0e27\u0e31\u0e19\u0e17\u0e35\u0e48: ${item.createdAt}`, dx, dy);
+    dy += 10;
+
+    // Count \u2014 large, prominent
+    doc.setFontSize(16);
+    doc.setFont(fontName, "normal");
+    doc.setTextColor(37, 99, 235); // blue-600
+    doc.text(
+      `\u0e08\u0e33\u0e19\u0e27\u0e19\u0e17\u0e35\u0e48\u0e19\u0e31\u0e1a\u0e44\u0e14\u0e49: ${item.finalCount}`,
+      dx,
+      dy,
+    );
+    dy += 10;
+
+    // Error remark
+    doc.setTextColor(0, 0, 0);
+    if (item.errorRemark || item.userReportedCount != null) {
+      doc.setFontSize(9);
+      doc.setTextColor(234, 88, 12); // orange-600
+      if (item.userReportedCount != null) {
+        doc.text(
+          `\u0e41\u0e08\u0e49\u0e07\u0e04\u0e27\u0e32\u0e21\u0e1c\u0e34\u0e14\u0e1e\u0e25\u0e32\u0e14 \u2014 AI: ${item.finalCount} | \u0e1e\u0e19\u0e31\u0e01\u0e07\u0e32\u0e19\u0e23\u0e32\u0e22\u0e07\u0e32\u0e19: ${item.userReportedCount}`,
+          dx,
+          dy,
+        );
+        dy += 5;
+      }
+      if (item.errorRemark) {
+        doc.text(
+          `\u0e40\u0e2b\u0e15\u0e38\u0e1c\u0e25: ${item.errorRemark}`,
+          dx,
+          dy,
+        );
+      }
+      doc.setTextColor(0, 0, 0);
+    }
+  }
+
+  // ===== Summary Page =====
+  doc.addPage();
+  doc.setFontSize(16);
+  doc.setFont(fontName, "normal");
+  doc.text(
+    "\u0e2a\u0e23\u0e38\u0e1b\u0e1c\u0e25\u0e01\u0e32\u0e23\u0e19\u0e31\u0e1a",
+    pageWidth / 2,
+    25,
+    { align: "center" },
+  );
+
+  const summaryTable = [
+    [
+      "\u0e08\u0e33\u0e19\u0e27\u0e19\u0e23\u0e32\u0e22\u0e01\u0e32\u0e23\u0e17\u0e31\u0e49\u0e07\u0e2b\u0e21\u0e14",
+      data.length.toString(),
+    ],
+    [
+      "\u0e08\u0e33\u0e19\u0e27\u0e19\u0e19\u0e31\u0e1a\u0e44\u0e14\u0e49\u0e23\u0e27\u0e21",
+      `${totalCountPdf} \u0e0a\u0e34\u0e49\u0e19`,
+    ],
+  ];
+
+  autoTable(doc, {
+    startY: 35,
+    body: summaryTable,
+    theme: "grid",
+    styles: { fontSize: 11, cellPadding: 6, font: fontName },
+    columnStyles: {
+      0: { cellWidth: 80 },
+      1: { cellWidth: 60, halign: "right" },
+    },
+  });
+
+  const footerY2 = doc.lastAutoTable.finalY + 20;
+  doc.setFontSize(8);
+  doc.setFont(fontName, "normal");
+  doc.setTextColor(128, 128, 128);
+  doc.text(
+    `\u0e2a\u0e23\u0e49\u0e32\u0e07\u0e40\u0e21\u0e37\u0e48\u0e2d ${new Date().toLocaleString("th-TH")}`,
+    pageWidth / 2,
+    footerY2,
+    { align: "center" },
+  );
+
   doc.save(filename);
 }

@@ -13,15 +13,19 @@ import { formatTimestamp, WatermarkData } from "@/utils/watermark";
 import { Ionicons } from "@expo/vector-icons";
 import * as FileSystem from "expo-file-system/legacy";
 import { router, useLocalSearchParams } from "expo-router";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
   Image,
+  Keyboard,
+  KeyboardAvoidingView,
   Modal,
+  Platform,
   ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   TouchableOpacity,
   View,
 } from "react-native";
@@ -75,6 +79,12 @@ export default function PreviewScreen() {
   const [displayImageUri, setDisplayImageUri] = useState<string>(
     params.imageUri || "",
   );
+
+  // Dispute / error-report state
+  const [showDisputeForm, setShowDisputeForm] = useState(false);
+  const scrollViewRef = useRef<ScrollView>(null);
+  const [disputeCount, setDisputeCount] = useState("");
+  const [disputeRemark, setDisputeRemark] = useState("");
 
   // Parse watermark data
   const watermarkData: WatermarkData | null = useMemo(() => {
@@ -376,11 +386,11 @@ export default function PreviewScreen() {
       return;
     }
 
-    // Navigate to result screen with session ID
+    // Navigate to result screen with session ID + dispute data
     router.push({
       pathname: "/(mini-apps)/stock-counter/result",
       params: {
-        sessionId: sessionId, // ส่ง session ID ไปเพื่ออัพเดท
+        sessionId: sessionId,
         imageUri: params.imageUri,
         barcodeCount: barcodeCount.toString(),
         processingTime: processingTime?.toString() || "0",
@@ -390,6 +400,9 @@ export default function PreviewScreen() {
         assignmentId: params.assignmentId,
         beforeQty: params.beforeQty,
         watermarkData: params.watermarkData,
+        // Dispute / error-report fields
+        userReportedCount: disputeCount.trim() || "",
+        disputeRemark: disputeRemark.trim() || "",
       },
     });
   };
@@ -415,350 +428,474 @@ export default function PreviewScreen() {
         <View style={styles.headerButton} />
       </View>
 
-      <ScrollView
-        style={styles.content}
-        contentContainerStyle={styles.contentContainer}
-        showsVerticalScrollIndicator={false}
+      <KeyboardAvoidingView
+        behavior={Platform.OS === "ios" ? "padding" : "height"}
+        style={{ flex: 1 }}
+        keyboardVerticalOffset={Platform.OS === "ios" ? 0 : 20}
       >
-        {/* Visible Image for Employee - รูปปกติไม่มี watermark */}
-        <View style={styles.imageContainer}>
-          {isLoadingImage ? (
-            <View
-              style={[
-                styles.image,
-                {
-                  justifyContent: "center",
-                  alignItems: "center",
-                  backgroundColor: colors.card,
-                },
-              ]}
-            >
-              <ActivityIndicator size="large" color={colors.primary} />
-              <Text
+        <ScrollView
+          ref={scrollViewRef}
+          style={styles.content}
+          contentContainerStyle={styles.contentContainer}
+          showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+        >
+          {/* Visible Image for Employee - รูปปกติไม่มี watermark */}
+          <View style={styles.imageContainer}>
+            {isLoadingImage ? (
+              <View
                 style={[
-                  styles.processingText,
-                  { color: colors.textSecondary, marginTop: 10 },
+                  styles.image,
+                  {
+                    justifyContent: "center",
+                    alignItems: "center",
+                    backgroundColor: colors.card,
+                  },
                 ]}
               >
-                กำลังโหลดรูปภาพ...
-              </Text>
-            </View>
-          ) : (
-            <TouchableOpacity
-              activeOpacity={0.95}
-              onPress={() => setIsFullscreen(true)}
-            >
+                <ActivityIndicator size="large" color={colors.primary} />
+                <Text
+                  style={[
+                    styles.processingText,
+                    { color: colors.textSecondary, marginTop: 10 },
+                  ]}
+                >
+                  กำลังโหลดรูปภาพ...
+                </Text>
+              </View>
+            ) : (
+              <TouchableOpacity
+                activeOpacity={0.95}
+                onPress={() => setIsFullscreen(true)}
+              >
+                <Image
+                  source={{ uri: displayImageUri || params.imageUri }}
+                  style={styles.image}
+                  resizeMode="cover"
+                />
+                {/* Fullscreen hint */}
+                <View style={styles.fullscreenHint}>
+                  <Ionicons name="expand" size={16} color="#fff" />
+                  <Text style={styles.fullscreenHintText}>ดูรูปเต็มจอ</Text>
+                </View>
+              </TouchableOpacity>
+            )}
+          </View>
+
+          {/* Fullscreen Modal */}
+          <Modal
+            visible={isFullscreen}
+            transparent={false}
+            animationType="fade"
+            statusBarTranslucent
+            onRequestClose={() => setIsFullscreen(false)}
+          >
+            <View style={styles.fullscreenContainer}>
               <Image
                 source={{ uri: displayImageUri || params.imageUri }}
-                style={styles.image}
-                resizeMode="cover"
+                style={styles.fullscreenImage}
+                resizeMode="contain"
               />
-              {/* Fullscreen hint */}
-              <View style={styles.fullscreenHint}>
-                <Ionicons name="expand" size={16} color="#fff" />
-                <Text style={styles.fullscreenHintText}>ดูรูปเต็มจอ</Text>
-              </View>
-            </TouchableOpacity>
-          )}
-        </View>
-
-        {/* Fullscreen Modal */}
-        <Modal
-          visible={isFullscreen}
-          transparent={false}
-          animationType="fade"
-          statusBarTranslucent
-          onRequestClose={() => setIsFullscreen(false)}
-        >
-          <View style={styles.fullscreenContainer}>
-            <Image
-              source={{ uri: displayImageUri || params.imageUri }}
-              style={styles.fullscreenImage}
-              resizeMode="contain"
-            />
-            <TouchableOpacity
-              style={styles.fullscreenClose}
-              onPress={() => setIsFullscreen(false)}
-            >
-              <Ionicons name="close" size={28} color="#fff" />
-            </TouchableOpacity>
-          </View>
-        </Modal>
-
-        {/* Product Info */}
-        {params.productName && (
-          <View style={[styles.infoCard, { backgroundColor: colors.card }]}>
-            <View style={styles.infoRow}>
-              <Ionicons name="cube-outline" size={20} color={colors.primary} />
-              <Text style={[styles.infoLabel, { color: colors.textSecondary }]}>
-                สินค้า:
-              </Text>
-              <Text style={[styles.infoValue, { color: colors.text }]}>
-                {params.productName}
-              </Text>
+              <TouchableOpacity
+                style={styles.fullscreenClose}
+                onPress={() => setIsFullscreen(false)}
+              >
+                <Ionicons name="close" size={28} color="#fff" />
+              </TouchableOpacity>
             </View>
-            {params.productBarcode && (
+          </Modal>
+
+          {/* Product Info */}
+          {params.productName && (
+            <View style={[styles.infoCard, { backgroundColor: colors.card }]}>
               <View style={styles.infoRow}>
                 <Ionicons
-                  name="barcode-outline"
+                  name="cube-outline"
                   size={20}
                   color={colors.primary}
                 />
                 <Text
                   style={[styles.infoLabel, { color: colors.textSecondary }]}
                 >
-                  Barcode:
+                  สินค้า:
                 </Text>
                 <Text style={[styles.infoValue, { color: colors.text }]}>
-                  {params.productBarcode}
+                  {params.productName}
                 </Text>
               </View>
-            )}
-          </View>
-        )}
-
-        {/* Watermark Info Card */}
-        <View style={[styles.infoCard, { backgroundColor: colors.card }]}>
-          <Text style={[styles.cardTitle, { color: colors.text }]}>
-            📋 ข้อมูลที่บันทึก
-          </Text>
-          {watermarkData && (
-            <>
-              <View style={styles.infoRow}>
-                <Ionicons
-                  name="person-outline"
-                  size={18}
-                  color={colors.textSecondary}
-                />
-                <Text
-                  style={[styles.infoText, { color: colors.textSecondary }]}
-                >
-                  {watermarkData.employeeName}
-                </Text>
-              </View>
-              <View style={styles.infoRow}>
-                <Ionicons
-                  name="phone-portrait-outline"
-                  size={18}
-                  color={colors.textSecondary}
-                />
-                <Text
-                  style={[styles.infoText, { color: colors.textSecondary }]}
-                >
-                  {watermarkData.deviceModel || "-"}
-                </Text>
-              </View>
-              <View style={styles.infoRow}>
-                <Ionicons
-                  name="location-outline"
-                  size={18}
-                  color={colors.textSecondary}
-                />
-                <Text
-                  style={[styles.infoText, { color: colors.textSecondary }]}
-                  numberOfLines={2}
-                >
-                  {watermarkData.location}
-                </Text>
-              </View>
-              <View style={styles.infoRow}>
-                <Ionicons
-                  name="time-outline"
-                  size={18}
-                  color={colors.textSecondary}
-                />
-                <Text
-                  style={[styles.infoText, { color: colors.textSecondary }]}
-                >
-                  {formatTimestamp(new Date(watermarkData.timestamp))}
-                </Text>
-              </View>
-            </>
-          )}
-        </View>
-
-        {/* AI Analysis Result */}
-        <View style={[styles.resultCard, { backgroundColor: colors.card }]}>
-          <Text style={[styles.cardTitle, { color: colors.text }]}>
-            🤖 ผลการวิเคราะห์ AI
-          </Text>
-
-          {isProcessing ? (
-            <View style={styles.processingContainer}>
-              <ActivityIndicator size="large" color={colors.primary} />
-              <Text
-                style={[styles.processingText, { color: colors.textSecondary }]}
-              >
-                กำลังนับจำนวน Barcode...
-              </Text>
-            </View>
-          ) : barcodeCount !== null ? (
-            <View style={styles.resultContainer}>
-              <View
-                style={[
-                  styles.countBadge,
-                  { backgroundColor: colors.primary + "20" },
-                ]}
-              >
-                <Text style={[styles.countNumber, { color: colors.primary }]}>
-                  {barcodeCount}
-                </Text>
-                <Text style={[styles.countLabel, { color: colors.primary }]}>
-                  Barcode
-                </Text>
-              </View>
-
-              {/* Barcode match status badge */}
-              {needsRecount ? (
-                <View
-                  style={[
-                    styles.barcodeMatchBadge,
-                    { backgroundColor: "#d9770620" },
-                  ]}
-                >
-                  <Ionicons name="refresh-circle" size={18} color="#d97706" />
-                  <Text style={[styles.barcodeMatchText, { color: "#d97706" }]}>
-                    พบบาร์โค้ดถูกต้องแต่นับไม่สมบูรณ์ — วิเคราะห์อีกครั้ง
-                  </Text>
-                </View>
-              ) : params.productBarcode ? (
-                <View
-                  style={[
-                    styles.barcodeMatchBadge,
-                    {
-                      backgroundColor: barcodeMatch ? "#16a34a20" : "#dc262620",
-                    },
-                  ]}
-                >
+              {params.productBarcode && (
+                <View style={styles.infoRow}>
                   <Ionicons
-                    name={barcodeMatch ? "checkmark-circle" : "close-circle"}
-                    size={18}
-                    color={barcodeMatch ? "#16a34a" : "#dc2626"}
+                    name="barcode-outline"
+                    size={20}
+                    color={colors.primary}
                   />
                   <Text
-                    style={[
-                      styles.barcodeMatchText,
-                      { color: barcodeMatch ? "#16a34a" : "#dc2626" },
-                    ]}
+                    style={[styles.infoLabel, { color: colors.textSecondary }]}
                   >
-                    {barcodeMatch
-                      ? "บาร์โค้ดตรงกัน"
-                      : detectedBarcodes.length > 0
-                        ? `ไม่ตรง (พบ: ${detectedBarcodes[0]})`
-                        : "ไม่พบบาร์โค้ด"}
+                    Barcode:
+                  </Text>
+                  <Text style={[styles.infoValue, { color: colors.text }]}>
+                    {params.productBarcode}
                   </Text>
                 </View>
-              ) : null}
+              )}
+            </View>
+          )}
 
-              {processingTime && (
+          {/* Watermark Info Card */}
+          <View style={[styles.infoCard, { backgroundColor: colors.card }]}>
+            <Text style={[styles.cardTitle, { color: colors.text }]}>
+              📋 ข้อมูลที่บันทึก
+            </Text>
+            {watermarkData && (
+              <>
+                <View style={styles.infoRow}>
+                  <Ionicons
+                    name="person-outline"
+                    size={18}
+                    color={colors.textSecondary}
+                  />
+                  <Text
+                    style={[styles.infoText, { color: colors.textSecondary }]}
+                  >
+                    {watermarkData.employeeName}
+                  </Text>
+                </View>
+                <View style={styles.infoRow}>
+                  <Ionicons
+                    name="phone-portrait-outline"
+                    size={18}
+                    color={colors.textSecondary}
+                  />
+                  <Text
+                    style={[styles.infoText, { color: colors.textSecondary }]}
+                  >
+                    {watermarkData.deviceModel || "-"}
+                  </Text>
+                </View>
+                <View style={styles.infoRow}>
+                  <Ionicons
+                    name="location-outline"
+                    size={18}
+                    color={colors.textSecondary}
+                  />
+                  <Text
+                    style={[styles.infoText, { color: colors.textSecondary }]}
+                    numberOfLines={2}
+                  >
+                    {watermarkData.location}
+                  </Text>
+                </View>
+                <View style={styles.infoRow}>
+                  <Ionicons
+                    name="time-outline"
+                    size={18}
+                    color={colors.textSecondary}
+                  />
+                  <Text
+                    style={[styles.infoText, { color: colors.textSecondary }]}
+                  >
+                    {formatTimestamp(new Date(watermarkData.timestamp))}
+                  </Text>
+                </View>
+              </>
+            )}
+          </View>
+
+          {/* AI Analysis Result */}
+          <View style={[styles.resultCard, { backgroundColor: colors.card }]}>
+            <Text style={[styles.cardTitle, { color: colors.text }]}>
+              🤖 ผลการวิเคราะห์ AI
+            </Text>
+
+            {isProcessing ? (
+              <View style={styles.processingContainer}>
+                <ActivityIndicator size="large" color={colors.primary} />
                 <Text
                   style={[
-                    styles.processingTimeText,
+                    styles.processingText,
                     { color: colors.textSecondary },
                   ]}
                 >
-                  ประมวลผลใน {processingTime}ms
+                  กำลังนับจำนวน Barcode...
                 </Text>
+              </View>
+            ) : barcodeCount !== null ? (
+              <View style={styles.resultContainer}>
+                <View
+                  style={[
+                    styles.countBadge,
+                    { backgroundColor: colors.primary + "20" },
+                  ]}
+                >
+                  <Text style={[styles.countNumber, { color: colors.primary }]}>
+                    {barcodeCount}
+                  </Text>
+                  <Text style={[styles.countLabel, { color: colors.primary }]}>
+                    Barcode
+                  </Text>
+                </View>
+
+                {/* Barcode match status badge */}
+                {needsRecount ? (
+                  <View
+                    style={[
+                      styles.barcodeMatchBadge,
+                      { backgroundColor: "#d9770620" },
+                    ]}
+                  >
+                    <Ionicons name="refresh-circle" size={18} color="#d97706" />
+                    <Text
+                      style={[styles.barcodeMatchText, { color: "#d97706" }]}
+                    >
+                      พบบาร์โค้ดถูกต้องแต่นับไม่สมบูรณ์ — วิเคราะห์อีกครั้ง
+                    </Text>
+                  </View>
+                ) : params.productBarcode ? (
+                  <View
+                    style={[
+                      styles.barcodeMatchBadge,
+                      {
+                        backgroundColor: barcodeMatch
+                          ? "#16a34a20"
+                          : "#dc262620",
+                      },
+                    ]}
+                  >
+                    <Ionicons
+                      name={barcodeMatch ? "checkmark-circle" : "close-circle"}
+                      size={18}
+                      color={barcodeMatch ? "#16a34a" : "#dc2626"}
+                    />
+                    <Text
+                      style={[
+                        styles.barcodeMatchText,
+                        { color: barcodeMatch ? "#16a34a" : "#dc2626" },
+                      ]}
+                    >
+                      {barcodeMatch
+                        ? "บาร์โค้ดตรงกัน"
+                        : detectedBarcodes.length > 0
+                          ? `ไม่ตรง (พบ: ${detectedBarcodes[0]})`
+                          : "ไม่พบบาร์โค้ด"}
+                    </Text>
+                  </View>
+                ) : null}
+
+                {processingTime && (
+                  <Text
+                    style={[
+                      styles.processingTimeText,
+                      { color: colors.textSecondary },
+                    ]}
+                  >
+                    ประมวลผลใน {processingTime}ms
+                  </Text>
+                )}
+
+                {/* ──── Dispute / Error-report form ──── */}
+                <TouchableOpacity
+                  style={[styles.disputeToggle, { borderColor: "#f59e0b" }]}
+                  onPress={() => {
+                    const willOpen = !showDisputeForm;
+                    setShowDisputeForm(willOpen);
+                    if (willOpen) {
+                      setDisputeCount("");
+                      setTimeout(
+                        () =>
+                          scrollViewRef.current?.scrollToEnd({
+                            animated: true,
+                          }),
+                        300,
+                      );
+                    }
+                  }}
+                >
+                  <Ionicons name="warning-outline" size={18} color="#f59e0b" />
+                  <Text style={styles.disputeToggleText}>
+                    {showDisputeForm
+                      ? "ยกเลิกการแจ้ง"
+                      : "AI นับผิด? แจ้งข้อผิดพลาด"}
+                  </Text>
+                  <Ionicons
+                    name={showDisputeForm ? "chevron-up" : "chevron-down"}
+                    size={16}
+                    color="#f59e0b"
+                  />
+                </TouchableOpacity>
+
+                {showDisputeForm && (
+                  <View style={styles.disputeForm}>
+                    <Text style={styles.disputeLabel}>
+                      🤖 AI นับได้:{" "}
+                      <Text style={styles.disputeAiCount}>{barcodeCount}</Text>{" "}
+                      รายการ
+                    </Text>
+
+                    <Text style={styles.disputeFieldLabel}>
+                      จำนวนที่คุณนับได้จริง
+                    </Text>
+                    <TextInput
+                      style={styles.disputeCountInput}
+                      value={disputeCount}
+                      onChangeText={(t) =>
+                        setDisputeCount(t.replace(/[^0-9]/g, ""))
+                      }
+                      placeholder="0"
+                      placeholderTextColor="#9ca3af"
+                      keyboardType="number-pad"
+                      returnKeyType="done"
+                      onSubmitEditing={() => Keyboard.dismiss()}
+                      onFocus={() =>
+                        setTimeout(
+                          () =>
+                            scrollViewRef.current?.scrollToEnd({
+                              animated: true,
+                            }),
+                          200,
+                        )
+                      }
+                    />
+
+                    <Text style={[styles.disputeFieldLabel, { marginTop: 10 }]}>
+                      เหตุผล / รายละเอียด
+                    </Text>
+                    <TextInput
+                      style={styles.disputeRemarkInput}
+                      value={disputeRemark}
+                      onChangeText={setDisputeRemark}
+                      placeholder="เช่น สินค้าหันหลังให้กล้อง, บาร์โค้ดบางส่วนถูกบัง..."
+                      placeholderTextColor="#9ca3af"
+                      multiline
+                      numberOfLines={3}
+                      textAlignVertical="top"
+                      onFocus={() =>
+                        setTimeout(
+                          () =>
+                            scrollViewRef.current?.scrollToEnd({
+                              animated: true,
+                            }),
+                          200,
+                        )
+                      }
+                    />
+
+                    {disputeCount.trim().length > 0 && (
+                      <Text style={styles.disputeHint}>
+                        ✓ จะบันทึก: AI={barcodeCount} | คุณรายงาน=
+                        {disputeCount}
+                      </Text>
+                    )}
+                  </View>
+                )}
+              </View>
+            ) : (
+              <View style={styles.emptyResult}>
+                <Ionicons
+                  name="scan-outline"
+                  size={48}
+                  color={colors.textSecondary}
+                />
+                <Text
+                  style={[styles.emptyText, { color: colors.textSecondary }]}
+                >
+                  กดปุ่มด้านล่างเพื่อวิเคราะห์
+                </Text>
+              </View>
+            )}
+
+            <TouchableOpacity
+              style={[
+                styles.analyzeButton,
+                { backgroundColor: colors.primary },
+                (isProcessing ||
+                  isUploading ||
+                  isLoadingImage ||
+                  !sessionId) && {
+                  opacity: 0.6,
+                },
+              ]}
+              onPress={handleAnalyze}
+              disabled={
+                isProcessing || isUploading || isLoadingImage || !sessionId
+              }
+            >
+              {isUploading ? (
+                <>
+                  <ActivityIndicator size="small" color="#fff" />
+                  <Text style={styles.analyzeButtonText}>
+                    กำลังอัพโหลดรูป...
+                  </Text>
+                </>
+              ) : isLoadingImage ? (
+                <>
+                  <ActivityIndicator size="small" color="#fff" />
+                  <Text style={styles.analyzeButtonText}>กำลังโหลดรูป...</Text>
+                </>
+              ) : (
+                <>
+                  <Ionicons name="sparkles" size={20} color="#fff" />
+                  <Text style={styles.analyzeButtonText}>
+                    {barcodeCount !== null
+                      ? "วิเคราะห์อีกครั้ง"
+                      : "วิเคราะห์ด้วย AI"}
+                  </Text>
+                </>
               )}
-            </View>
-          ) : (
-            <View style={styles.emptyResult}>
-              <Ionicons
-                name="scan-outline"
-                size={48}
-                color={colors.textSecondary}
-              />
-              <Text style={[styles.emptyText, { color: colors.textSecondary }]}>
-                กดปุ่มด้านล่างเพื่อวิเคราะห์
-              </Text>
-            </View>
-          )}
+            </TouchableOpacity>
+          </View>
+        </ScrollView>
+
+        {/* Bottom Actions */}
+        <View
+          style={[
+            styles.bottomActions,
+            { backgroundColor: colors.card, borderTopColor: colors.border },
+          ]}
+        >
+          <TouchableOpacity
+            style={[
+              styles.actionButton,
+              styles.retakeButton,
+              { borderColor: colors.border },
+            ]}
+            onPress={handleRetake}
+          >
+            <Ionicons name="camera-outline" size={20} color={colors.text} />
+            <Text style={[styles.actionButtonText, { color: colors.text }]}>
+              ถ่ายใหม่
+            </Text>
+          </TouchableOpacity>
 
           <TouchableOpacity
             style={[
-              styles.analyzeButton,
-              { backgroundColor: colors.primary },
-              (isProcessing || isUploading || isLoadingImage || !sessionId) && {
-                opacity: 0.6,
+              styles.actionButton,
+              styles.confirmButton,
+              {
+                backgroundColor:
+                  barcodeMatch === false && !!params.productBarcode
+                    ? "#dc2626"
+                    : colors.primary,
+              },
+              (barcodeCount === null ||
+                (barcodeMatch === false && !!params.productBarcode)) && {
+                opacity: 0.5,
               },
             ]}
-            onPress={handleAnalyze}
+            onPress={handleConfirm}
             disabled={
-              isProcessing || isUploading || isLoadingImage || !sessionId
+              barcodeCount === null ||
+              (barcodeMatch === false && !!params.productBarcode)
             }
           >
-            {isUploading ? (
-              <>
-                <ActivityIndicator size="small" color="#fff" />
-                <Text style={styles.analyzeButtonText}>กำลังอัพโหลดรูป...</Text>
-              </>
-            ) : isLoadingImage ? (
-              <>
-                <ActivityIndicator size="small" color="#fff" />
-                <Text style={styles.analyzeButtonText}>กำลังโหลดรูป...</Text>
-              </>
-            ) : (
-              <>
-                <Ionicons name="sparkles" size={20} color="#fff" />
-                <Text style={styles.analyzeButtonText}>
-                  {barcodeCount !== null
-                    ? "วิเคราะห์อีกครั้ง"
-                    : "วิเคราะห์ด้วย AI"}
-                </Text>
-              </>
-            )}
+            <Ionicons name="checkmark" size={20} color="#fff" />
+            <Text style={[styles.actionButtonText, { color: "#fff" }]}>
+              ยืนยัน
+            </Text>
           </TouchableOpacity>
         </View>
-      </ScrollView>
-
-      {/* Bottom Actions */}
-      <View
-        style={[
-          styles.bottomActions,
-          { backgroundColor: colors.card, borderTopColor: colors.border },
-        ]}
-      >
-        <TouchableOpacity
-          style={[
-            styles.actionButton,
-            styles.retakeButton,
-            { borderColor: colors.border },
-          ]}
-          onPress={handleRetake}
-        >
-          <Ionicons name="camera-outline" size={20} color={colors.text} />
-          <Text style={[styles.actionButtonText, { color: colors.text }]}>
-            ถ่ายใหม่
-          </Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={[
-            styles.actionButton,
-            styles.confirmButton,
-            {
-              backgroundColor:
-                barcodeMatch === false && !!params.productBarcode
-                  ? "#dc2626"
-                  : colors.primary,
-            },
-            (barcodeCount === null ||
-              (barcodeMatch === false && !!params.productBarcode)) && {
-              opacity: 0.5,
-            },
-          ]}
-          onPress={handleConfirm}
-          disabled={
-            barcodeCount === null ||
-            (barcodeMatch === false && !!params.productBarcode)
-          }
-        >
-          <Ionicons name="checkmark" size={20} color="#fff" />
-          <Text style={[styles.actionButtonText, { color: "#fff" }]}>
-            ยืนยัน
-          </Text>
-        </TouchableOpacity>
-      </View>
+      </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }
@@ -965,5 +1102,75 @@ const styles = StyleSheet.create({
   actionButtonText: {
     fontSize: 16,
     fontWeight: "600",
+  },
+  // Dispute / error-report
+  disputeToggle: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    alignSelf: "center",
+    borderWidth: 1.5,
+    borderRadius: 20,
+    paddingHorizontal: 14,
+    paddingVertical: 7,
+    marginTop: 4,
+  },
+  disputeToggleText: {
+    fontSize: 13,
+    fontWeight: "600",
+    color: "#f59e0b",
+  },
+  disputeForm: {
+    width: "100%",
+    backgroundColor: "#fffbeb",
+    borderRadius: 12,
+    padding: 14,
+    gap: 6,
+    borderWidth: 1,
+    borderColor: "#fcd34d",
+  },
+  disputeLabel: {
+    fontSize: 13,
+    color: "#92400e",
+    fontWeight: "500",
+    marginBottom: 4,
+  },
+  disputeAiCount: {
+    fontWeight: "700",
+    color: "#dc2626",
+  },
+  disputeFieldLabel: {
+    fontSize: 13,
+    fontWeight: "600",
+    color: "#78350f",
+  },
+  disputeCountInput: {
+    backgroundColor: "#fff",
+    borderWidth: 1,
+    borderColor: "#fcd34d",
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    fontSize: 24,
+    fontWeight: "700",
+    color: "#1f2937",
+    textAlign: "center",
+  },
+  disputeRemarkInput: {
+    backgroundColor: "#fff",
+    borderWidth: 1,
+    borderColor: "#fcd34d",
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    fontSize: 14,
+    color: "#1f2937",
+    minHeight: 80,
+  },
+  disputeHint: {
+    fontSize: 12,
+    color: "#16a34a",
+    fontWeight: "600",
+    textAlign: "center",
   },
 });
