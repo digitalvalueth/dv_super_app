@@ -276,8 +276,8 @@ components:
       in: header
       name: X-API-Key
       description: |
-        **Sandbox:** `wv_sandbox_ATyq62lN6bCPamLGR2PE6Ii4Vcaap0pr`
-        **Production:** `wv_prod_sjKzqLJwaEnbNNBRmGdh4Fbh846kwLEm`
+        **Sandbox:** `wv_sandbox_4Vcaap0pr`
+        **Production:** `wv_prod_sjKzqLEm`
 
   schemas:
     ExportSummary:

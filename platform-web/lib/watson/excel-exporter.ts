@@ -1,5 +1,5 @@
-import * as XLSX from "xlsx";
 import { RawRow } from "@/types/watson/invoice";
+import * as XLSX from "xlsx";
 
 // Internal calculation columns - not included in export
 // These are for display/debugging purposes only
@@ -17,6 +17,7 @@ const INTERNAL_COLUMNS = [
   "PL Remark",
   "PL Full Price",
   "PL Comm Price",
+  "PL Invoice62 IncV",
   "Total Comm",
   "Calc Log",
 ];
@@ -33,6 +34,7 @@ export interface ExportData {
   supplierCode: string;
   supplierName: string;
   reportDate: string;
+  fileName?: string;
   headers: string[];
   data: (string | number | null)[][];
   summary?: Record<string, unknown>;

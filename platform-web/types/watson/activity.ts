@@ -14,6 +14,7 @@ export type ActionType =
   | "validate"
   | "export_excel"
   | "export_report"
+  | "save_cloud"
   | "undo"
   | "redo";
 
@@ -37,6 +38,9 @@ export interface ActivityDetails {
   // For file imports
   fileName?: string;
   rowCount?: number;
+
+  // For cloud save
+  exportId?: string;
 
   // For cell edits
   rowIndex?: number;

@@ -31,6 +31,12 @@ import {
   CardTitle,
 } from "@/components/watson/ui/card";
 import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/watson/ui/dialog";
+import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
@@ -72,14 +78,17 @@ import {
   Calendar,
   CheckCircle,
   ChevronDown,
+  ChevronLeft,
   ChevronRight,
   Cloud,
   Download,
   FileJson,
   FileSpreadsheet,
+  Home,
   Library,
   Loader2,
   RotateCcw,
+  UploadCloud,
   Wand2,
 } from "lucide-react";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -222,6 +231,46 @@ export default function WatsonExcelValidatorPage() {
     null,
   );
 
+  // Confirmed exports shown on home page
+  const [confirmedExports, setConfirmedExports] = useState<
+    {
+      id: string;
+      supplierCode: string;
+      fileName?: string;
+      rowCount: number;
+      confirmedAt: string | null;
+      confirmedBy: string | null;
+      exportedAt: string;
+    }[]
+  >([]);
+  const [confirmedExportsTotal, setConfirmedExportsTotal] = useState(0);
+  const [confirmedExportsPage, setConfirmedExportsPage] = useState(0);
+  const CONFIRMED_PAGE_SIZE = 8;
+  const [isLoadingConfirmedExports, setIsLoadingConfirmedExports] =
+    useState(false);
+
+  const fetchConfirmedExports = useCallback((page: number) => {
+    setIsLoadingConfirmedExports(true);
+    const offset = page * CONFIRMED_PAGE_SIZE;
+    fetch(
+      `/api/exports?status=confirmed&limit=${CONFIRMED_PAGE_SIZE}&offset=${offset}`,
+    )
+      .then((r) => r.json())
+      .then((res) => {
+        if (res.success) {
+          setConfirmedExports(res.data || []);
+          setConfirmedExportsTotal(res.meta?.total ?? 0);
+        }
+      })
+      .catch(() => {})
+      .finally(() => setIsLoadingConfirmedExports(false));
+  }, []);
+
+  useEffect(() => {
+    if (data.length > 0) return;
+    fetchConfirmedExports(0);
+  }, [data.length, fetchConfirmedExports]);
+
   // User overrides for Std Qty / Promo Qty / QtyBuy1 / QtyPro (rowIndex -> overrides)
   const [qtyOverrides, setQtyOverrides] = useState<
     Map<
@@ -252,6 +301,7 @@ export default function WatsonExcelValidatorPage() {
     logAutoFix,
     logValidate,
     logExportExcel,
+    logSaveCloud,
     logExportReport,
     logUndo,
     logRedo,
@@ -308,6 +358,63 @@ export default function WatsonExcelValidatorPage() {
     uploadedAt: string;
     rowCount: number;
   } | null>(null);
+
+  // Confirm-save modal
+  const [confirmSaveOpen, setConfirmSaveOpen] = useState(false);
+
+  // --- Session Persistence (lightweight, keyed by recordId) ---
+  // Stores ONLY: validationResult, showPriceColumns, confirmedExportId, qtyOverrides
+  // Does NOT store data (too large → quota exceeded / corrupted JSON)
+  const SESSION_PREFIX = "watson_session_";
+
+  const saveSession = useCallback(
+    (recordId: string) => {
+      try {
+        sessionStorage.setItem(
+          SESSION_PREFIX + recordId,
+          JSON.stringify({
+            validationResult,
+            showPriceColumns,
+            confirmedExportId,
+            qtyOverrides: Array.from(qtyOverrides.entries()),
+          }),
+        );
+      } catch {
+        // Quota exceeded or unavailable — ignore
+      }
+    },
+    [validationResult, showPriceColumns, confirmedExportId, qtyOverrides],
+  );
+
+  useEffect(() => {
+    if (!currentRecordId) return;
+    saveSession(currentRecordId);
+  }, [currentRecordId, saveSession]);
+
+  const restoreSession = useCallback(
+    (recordId: string) => {
+      try {
+        const raw = sessionStorage.getItem(SESSION_PREFIX + recordId);
+        if (!raw) return false;
+        const parsed = JSON.parse(raw);
+        if (parsed.validationResult)
+          setValidationResult(parsed.validationResult);
+        if (parsed.showPriceColumns) setShowPriceColumns(true);
+        if (parsed.confirmedExportId)
+          setConfirmedExportId(parsed.confirmedExportId);
+        if (parsed.qtyOverrides) setQtyOverrides(new Map(parsed.qtyOverrides));
+        return true;
+      } catch {
+        // Corrupted — clear it
+        try {
+          sessionStorage.removeItem(SESSION_PREFIX + recordId);
+        } catch {}
+        return false;
+      }
+    },
+
+    [],
+  );
 
   // Derived display data - computed from source data
   // priceRecalcTrigger forces recalculation when user clicks "Recalculate"
@@ -840,6 +947,8 @@ export default function WatsonExcelValidatorPage() {
           } else {
             setConfirmedExportId(null);
           }
+          // Restore lightweight session state (overrides the resets above)
+          restoreSession(recordId);
           // Don't log - this is loading existing data, not a new import
         }
       } catch (error) {
@@ -849,7 +958,7 @@ export default function WatsonExcelValidatorPage() {
         setIsGlobalLoading(false);
       }
     },
-    [loadInvoiceUpload, setData, setFileName, setReportMeta],
+    [loadInvoiceUpload, setData, setFileName, setReportMeta, restoreSession],
   );
 
   // Helper to update URL
@@ -869,9 +978,10 @@ export default function WatsonExcelValidatorPage() {
   );
 
   // Effect: Load record from URL query param on mount
+  const isResettingRef = useRef(false);
   useEffect(() => {
     const id = searchParams.get("id");
-    if (id && !currentRecordId && !isGlobalLoading) {
+    if (id && !currentRecordId && !isGlobalLoading && !isResettingRef.current) {
       // Only load if we haven't loaded anything yet
       handleLoadFromHistoryWithUrl(id);
     }
@@ -1438,12 +1548,14 @@ export default function WatsonExcelValidatorPage() {
     supplierCode: string;
     rowCount: number;
     reportDate: string;
+    initialStatus: "draft" | "confirmed";
   }>({
     open: false,
     exportId: "",
     supplierCode: "",
     rowCount: 0,
     reportDate: "",
+    initialStatus: "draft",
   });
 
   const handleSaveToCloud = useCallback(async () => {
@@ -1477,6 +1589,7 @@ export default function WatsonExcelValidatorPage() {
         supplierCode,
         supplierName: supplierCode,
         reportDate,
+        fileName: fileName || undefined,
         headers: exportHeaders,
         data: dataArray,
         summary: priceIssueBreakdown
@@ -1490,23 +1603,45 @@ export default function WatsonExcelValidatorPage() {
         lowConfidenceCount,
       });
 
-      // Show success modal with API usage info
+      // Auto-confirm the export immediately
+      try {
+        await fetch(`/api/internal/exports/${exportId}/confirm`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            action: "confirm",
+            confirmedBy:
+              userData?.name ||
+              userData?.displayName ||
+              userData?.email ||
+              "admin",
+          }),
+        });
+      } catch (confirmErr) {
+        console.warn("Auto-confirm failed (non-fatal):", confirmErr);
+      }
+
+      // Lock editing immediately
+      setConfirmedExportId(exportId);
+
+      // Show success modal already confirmed
       setExportSuccessModal({
         open: true,
         exportId,
         supplierCode,
         rowCount: dataArray.length,
         reportDate,
+        initialStatus: "confirmed",
       });
-      logExportExcel(`cloud:${exportId}`);
+      logSaveCloud(exportId);
       toast.success(
         "บันทึกสำเร็จ!",
         `Export ID: ${exportId.substring(0, 8)}...`,
       );
 
-      // Update workflow status to "exported"
+      // Update workflow status to "confirmed"
       if (currentRecordId) {
-        updateInvoiceStatus(currentRecordId, "exported", {
+        updateInvoiceStatus(currentRecordId, "confirmed", {
           lastExportId: exportId,
         });
       }
@@ -1527,9 +1662,10 @@ export default function WatsonExcelValidatorPage() {
     priceIssueBreakdown,
     passedCount,
     lowConfidenceCount,
-    logExportExcel,
+    logSaveCloud,
     currentRecordId,
     updateInvoiceStatus,
+    userData,
   ]);
 
   const handleExportReport = useCallback(() => {
@@ -1564,6 +1700,8 @@ export default function WatsonExcelValidatorPage() {
   }, []);
 
   const handleReset = useCallback(() => {
+    isResettingRef.current = true;
+    router.replace("/watson-excel-validator");
     reset();
     lastProcessedParsedDataRef.current = null;
     setData([]);
@@ -1575,7 +1713,19 @@ export default function WatsonExcelValidatorPage() {
     setShowPriceColumns(false);
     setQtyOverrides(new Map());
     setBulkAcceptedItemCodes(new Set());
-  }, [reset, setData]);
+    try {
+      sessionStorage.removeItem("watson_validator_session");
+    } catch {}
+    if (currentRecordId) {
+      try {
+        sessionStorage.removeItem("watson_session_" + currentRecordId);
+      } catch {}
+    }
+    // Reset guard after a tick to allow URL change to settle
+    setTimeout(() => {
+      isResettingRef.current = false;
+    }, 500);
+  }, [reset, setData, currentRecordId, router]);
 
   // Handle Calc Log click from DataTable
   const handleCalcLogClick = useCallback(
@@ -1762,6 +1912,11 @@ export default function WatsonExcelValidatorPage() {
                                             },
                                             body: JSON.stringify({
                                               action: "confirm",
+                                              confirmedBy:
+                                                userData?.name ||
+                                                userData?.displayName ||
+                                                userData?.email ||
+                                                "admin",
                                             }),
                                           },
                                         );
@@ -1817,6 +1972,149 @@ export default function WatsonExcelValidatorPage() {
                 </Card>
               </div>
             </div>
+
+            {/* Confirmed Exports Section */}
+            {(isLoadingConfirmedExports ||
+              confirmedExports.length > 0 ||
+              confirmedExportsTotal > 0) && (
+              <div className="mt-6">
+                <Card className="border-green-200">
+                  <CardHeader className="pb-3">
+                    <div className="flex items-center justify-between">
+                      <CardTitle className="text-sm font-medium text-green-700 flex items-center gap-2">
+                        <CheckCircle className="h-4 w-4" />
+                        ยืนยันแล้ว — พร้อมให้ระบบอื่นใช้งาน
+                        {confirmedExportsTotal > 0 && (
+                          <span className="text-xs font-normal text-green-600 bg-green-100 px-2 py-0.5 rounded-full">
+                            {confirmedExportsTotal} รายการ
+                          </span>
+                        )}
+                      </CardTitle>
+                    </div>
+                  </CardHeader>
+                  <CardContent className="pt-0 px-0">
+                    {isLoadingConfirmedExports ? (
+                      <div className="px-6 space-y-2">
+                        {[1, 2, 3].map((i) => (
+                          <div key={i} className="flex gap-4 py-2">
+                            <Skeleton className="h-4 w-1/4" />
+                            <Skeleton className="h-4 w-1/6" />
+                            <Skeleton className="h-4 w-12" />
+                            <Skeleton className="h-4 w-1/6" />
+                            <Skeleton className="h-4 w-1/5" />
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <>
+                        {/* Table header */}
+                        <div className="grid grid-cols-[2fr_1.2fr_3rem_1.2fr_1.4fr_1fr] gap-x-4 px-6 py-2 bg-gray-50 border-y border-gray-100 text-xs font-medium text-gray-500 uppercase tracking-wide">
+                          <span>ชื่อไฟล์</span>
+                          <span>Supplier</span>
+                          <span className="text-right">แถว</span>
+                          <span>ยืนยันโดย</span>
+                          <span>วันที่ยืนยัน</span>
+                          <span>Export ID</span>
+                        </div>
+                        {/* Rows */}
+                        <div className="divide-y divide-gray-50">
+                          {confirmedExports.map((exp) => (
+                            <div
+                              key={exp.id}
+                              className="grid grid-cols-[2fr_1.2fr_3rem_1.2fr_1.4fr_1fr] gap-x-4 px-6 py-2.5 hover:bg-green-50 transition-colors"
+                            >
+                              <span
+                                className="text-sm text-gray-800 truncate font-medium"
+                                title={exp.fileName || exp.id}
+                              >
+                                {exp.fileName || (
+                                  <span className="text-gray-400 italic">
+                                    (ไม่ระบุ)
+                                  </span>
+                                )}
+                              </span>
+                              <span className="text-sm text-gray-600 truncate">
+                                {exp.supplierCode}
+                              </span>
+                              <span className="text-sm text-gray-600 text-right">
+                                {exp.rowCount.toLocaleString()}
+                              </span>
+                              <span className="text-sm text-gray-600 truncate">
+                                {exp.confirmedBy || (
+                                  <span className="text-gray-400">—</span>
+                                )}
+                              </span>
+                              <span className="text-xs text-gray-500">
+                                {exp.confirmedAt
+                                  ? new Date(
+                                      exp.confirmedAt,
+                                    ).toLocaleDateString("th-TH", {
+                                      day: "numeric",
+                                      month: "short",
+                                      year: "2-digit",
+                                      hour: "2-digit",
+                                      minute: "2-digit",
+                                    })
+                                  : "—"}
+                              </span>
+                              <span className="font-mono text-[10px] text-green-700 bg-green-50 border border-green-100 px-1.5 py-0.5 rounded self-center truncate">
+                                {exp.id.substring(0, 8)}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                        {/* Pagination */}
+                        {confirmedExportsTotal > CONFIRMED_PAGE_SIZE && (
+                          <div className="flex items-center justify-between px-6 pt-3 pb-1 border-t border-gray-100">
+                            <span className="text-xs text-gray-500">
+                              {confirmedExportsPage * CONFIRMED_PAGE_SIZE + 1}–
+                              {Math.min(
+                                (confirmedExportsPage + 1) *
+                                  CONFIRMED_PAGE_SIZE,
+                                confirmedExportsTotal,
+                              )}{" "}
+                              จาก {confirmedExportsTotal} รายการ
+                            </span>
+                            <div className="flex gap-1">
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="h-7 w-7 p-0"
+                                disabled={confirmedExportsPage === 0}
+                                onClick={() => {
+                                  const p = confirmedExportsPage - 1;
+                                  setConfirmedExportsPage(p);
+                                  fetchConfirmedExports(p);
+                                }}
+                              >
+                                <ChevronLeft className="h-4 w-4" />
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="h-7 w-7 p-0"
+                                disabled={
+                                  (confirmedExportsPage + 1) *
+                                    CONFIRMED_PAGE_SIZE >=
+                                  confirmedExportsTotal
+                                }
+                                onClick={() => {
+                                  const p = confirmedExportsPage + 1;
+                                  setConfirmedExportsPage(p);
+                                  fetchConfirmedExports(p);
+                                }}
+                              >
+                                <ChevronRight className="h-4 w-4" />
+                              </Button>
+                            </div>
+                          </div>
+                        )}
+                      </>
+                    )}
+                  </CardContent>
+                </Card>
+              </div>
+            )}
           </div>
         )}
 
@@ -1834,15 +2132,16 @@ export default function WatsonExcelValidatorPage() {
                       ({data.length} แถว, {headers.length} คอลัมน์)
                     </span>
                   </div>
-                  <Button
-                    onClick={handleReset}
-                    variant="ghost"
-                    size="sm"
-                    disabled={!!confirmedExportId}
-                  >
-                    <RotateCcw className="h-4 w-4 mr-2" />
-                    เริ่มใหม่
-                  </Button>
+                  <div className="flex items-center gap-2">
+                    <Button onClick={handleReset} variant="ghost" size="sm">
+                      <Home className="h-4 w-4 mr-2" />
+                      กลับหน้า Home
+                    </Button>
+                    <Button onClick={handleReset} variant="ghost" size="sm">
+                      <RotateCcw className="h-4 w-4 mr-2" />
+                      เริ่มใหม่
+                    </Button>
+                  </div>
                 </div>
 
                 {/* Confirmed file banner */}
@@ -2035,6 +2334,24 @@ export default function WatsonExcelValidatorPage() {
                         </Button>
                       )}
                   </div>
+
+                  {/* Separator + Confirm & Save to Cloud button */}
+                  {validationResult?.isValid &&
+                    showPriceColumns &&
+                    !confirmedExportId && (
+                      <>
+                        <div className="h-6 w-px bg-gray-300 mx-1" />
+                        <Button
+                          onClick={() => setConfirmSaveOpen(true)}
+                          disabled={isSavingToCloud}
+                          size="sm"
+                          className="bg-emerald-600 hover:bg-emerald-700 text-white"
+                        >
+                          <UploadCloud className="h-4 w-4 mr-2" />
+                          ยืนยันและบันทึก
+                        </Button>
+                      </>
+                    )}
                 </div>
               </CardContent>
             </Card>
@@ -2457,24 +2774,13 @@ export default function WatsonExcelValidatorPage() {
                 </Card>
               </div>
 
-              {/* Bottom Section - Logs & Errors */}
-              <div className="grid grid-cols-1 xl:grid-cols-4 gap-6">
-                <div className="xl:col-span-1">
-                  <ActivityLogsSidebar
-                    logs={activityLogs}
-                    summary={logsSummary}
-                    onClearLogs={clearLogs}
-                  />
-                </div>
-                <div className="xl:col-span-3">
-                  {validationResult && !validationResult.isValid && (
-                    <ErrorDetails
-                      errors={validationResult.errors}
-                      onRowClick={handleRowClick}
-                    />
-                  )}
-                </div>
-              </div>
+              {/* Error Details */}
+              {validationResult && !validationResult.isValid && (
+                <ErrorDetails
+                  errors={validationResult.errors}
+                  onRowClick={handleRowClick}
+                />
+              )}
             </div>
           </div>
         )}
@@ -2491,19 +2797,44 @@ export default function WatsonExcelValidatorPage() {
       {/* Export Success Modal */}
       <ExportSuccessModal
         open={exportSuccessModal.open}
-        onOpenChange={(open) =>
-          setExportSuccessModal((prev) => ({ ...prev, open }))
-        }
+        onOpenChange={(open) => {
+          if (!open) {
+            // When modal closes, sync read-only lock from modal's final status
+            setExportSuccessModal((prev) => {
+              if (prev.initialStatus === "confirmed") {
+                setConfirmedExportId(prev.exportId);
+              } else {
+                setConfirmedExportId(null);
+              }
+              return { ...prev, open: false };
+            });
+          } else {
+            setExportSuccessModal((prev) => ({ ...prev, open: true }));
+          }
+        }}
         exportId={exportSuccessModal.exportId}
         supplierCode={exportSuccessModal.supplierCode}
         rowCount={exportSuccessModal.rowCount}
         reportDate={exportSuccessModal.reportDate}
+        initialStatus={exportSuccessModal.initialStatus}
         onStatusChange={(status) => {
-          // Update invoice workflow status when export is confirmed/unconfirmed
+          const isConfirmed = status === "confirmed";
+          // Lock/unlock read-only immediately
+          if (isConfirmed) {
+            setConfirmedExportId(exportSuccessModal.exportId);
+          } else {
+            setConfirmedExportId(null);
+          }
+          // Keep modal initialStatus in sync so onOpenChange knows final status
+          setExportSuccessModal((prev) => ({
+            ...prev,
+            initialStatus: status,
+          }));
+          // Update invoice workflow status
           if (currentRecordId) {
             updateInvoiceStatus(
               currentRecordId,
-              status === "confirmed" ? "confirmed" : "exported",
+              isConfirmed ? "confirmed" : "exported",
             );
           }
         }}
@@ -2517,6 +2848,68 @@ export default function WatsonExcelValidatorPage() {
         maxQty={qtyEditMaxQty}
         onSave={handleQtyEditModalSave}
       />
+
+      {/* Confirm Save Modal */}
+      <Dialog open={confirmSaveOpen} onOpenChange={setConfirmSaveOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-emerald-700">
+              <UploadCloud className="h-5 w-5" />
+              ยืนยันการบันทึกข้อมูล
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-4 space-y-2 text-sm">
+              <div className="flex justify-between">
+                <span className="text-gray-500">ไฟล์:</span>
+                <span className="font-medium truncate max-w-50">
+                  {fileName}
+                </span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-gray-500">Supplier:</span>
+                <span className="font-mono">
+                  {reportMeta?.reportParameters || "-"}
+                </span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-gray-500">จำนวนแถว:</span>
+                <span className="font-mono">{displayData.length} แถว</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-gray-500">ผ่านการตรวจ:</span>
+                <span className="font-mono text-green-700">
+                  {passedCount} / {displayData.length}
+                </span>
+              </div>
+            </div>
+            <p className="text-sm text-gray-600">
+              ข้อมูลนี้จะถูกบันทึกไปยัง Cloud และสามารถเรียกดูผ่าน API ได้
+              เมื่อยืนยันแล้วจะ<strong>ล็อคไฟล์</strong>ไม่สามารถแก้ไขได้อีก
+            </p>
+          </div>
+          <div className="flex justify-end gap-3 pt-2">
+            <Button variant="outline" onClick={() => setConfirmSaveOpen(false)}>
+              ยกเลิก
+            </Button>
+            <Button
+              onClick={() => {
+                setConfirmSaveOpen(false);
+                handleSaveToCloud();
+              }}
+              disabled={isSavingToCloud}
+              className="bg-emerald-600 hover:bg-emerald-700 text-white"
+            >
+              {isSavingToCloud ? (
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+              ) : (
+                <UploadCloud className="h-4 w-4 mr-2" />
+              )}
+              ยืนยันและบันทึก
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       {/* Duplicate File Dialog */}
       <DuplicateFileDialog
@@ -2543,6 +2936,13 @@ export default function WatsonExcelValidatorPage() {
       <LoadingOverlay
         isLoading={isGlobalLoading}
         message="กำลังโหลดข้อมูล..."
+      />
+
+      {/* Floating Activity Log Chat Head */}
+      <ActivityLogsSidebar
+        logs={activityLogs}
+        summary={logsSummary}
+        onClearLogs={clearLogs}
       />
     </div>
   );
