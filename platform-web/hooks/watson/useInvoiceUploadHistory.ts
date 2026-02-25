@@ -4,11 +4,11 @@ import { RawRow } from "@/types/watson/invoice";
 import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
 
-export type WorkflowStatus = 
-  | "uploaded" 
-  | "validated" 
-  | "calculated" 
-  | "exported" 
+export type WorkflowStatus =
+  | "uploaded"
+  | "validated"
+  | "calculated"
+  | "exported"
   | "confirmed";
 
 const MAX_HISTORY = 5;
@@ -95,37 +95,41 @@ export function useInvoiceUploadHistory(): InvoiceUploadHistoryReturn {
     setIsLoading(true);
 
     const fetchHistory = async () => {
-        try {
-            const response = await fetch("/api/watson/invoice-history?limit=" + MAX_HISTORY);
-            if (!response.ok) throw new Error("Failed to fetch history");
-            
-            const records = await response.json();
-            
-            if (mounted) {
-                const formatted = records.map((d: any) => ({
-                    id: d.id,
-                    fileName: d.fileName,
-                    uploadedAt: d.uploadedAt,
-                    rowCount: d.rowCount,
-                    supplierCode: d.supplierCode,
-                    supplierName: d.supplierName,
-                    reportDate: d.reportDate,
-                    storageUrl: d.storageUrl,
-                    status: d.status || "uploaded",
-                    lastExportId: d.lastExportId,
-                    validatedAt: d.validatedAt,
-                    calculatedAt: d.calculatedAt,
-                    exportedAt: d.exportedAt,
-                    confirmedAt: d.confirmedAt,
-                    isLoading: false,
-                }));
-                setHistoryItems(formatted);
-            }
-        } catch (err) {
-            console.error("Error loading invoice upload history:", err);
-        } finally {
-            if (mounted) setIsLoading(false);
+      try {
+        const response = await fetch(
+          "/api/watson/invoice-history?limit=" + MAX_HISTORY,
+        );
+        if (!response.ok) throw new Error("Failed to fetch history");
+
+        const records = await response.json();
+
+        if (mounted) {
+          const formatted = records.map((d: any) => ({
+            id: d.id,
+            fileName: d.fileName,
+            uploadedAt: d.uploadedAt,
+            rowCount: d.rowCount,
+            supplierCode: d.supplierCode,
+            supplierName: d.supplierName,
+            reportDate: d.reportDate,
+            storageUrl: d.storageUrl,
+            status: d.status || "uploaded",
+            lastExportId: d.lastExportId,
+            validatedAt: d.validatedAt,
+            calculatedAt: d.calculatedAt,
+            exportedAt: d.exportedAt,
+            confirmedAt: d.confirmedAt,
+            bulkAcceptedItemCodes: d.bulkAcceptedItemCodes || [],
+            qtyOverrides: d.qtyOverrides || {},
+            isLoading: false,
+          }));
+          setHistoryItems(formatted);
         }
+      } catch (err) {
+        console.error("Error loading invoice upload history:", err);
+      } finally {
+        if (mounted) setIsLoading(false);
+      }
     };
 
     fetchHistory();
@@ -136,51 +140,60 @@ export function useInvoiceUploadHistory(): InvoiceUploadHistoryReturn {
   }, []);
 
   // Update history helper
-  const updateLocalHistory = useCallback((
-      updater: (prev: InvoiceUploadRecord[]) => InvoiceUploadRecord[]
-  ) => {
+  const updateLocalHistory = useCallback(
+    (updater: (prev: InvoiceUploadRecord[]) => InvoiceUploadRecord[]) => {
       setHistoryItems(updater);
-  }, []);
+    },
+    [],
+  );
 
   // Load full data for a record from API
   const loadRecordData = useCallback(
     async (record: InvoiceUploadRecord): Promise<InvoiceUploadRecord> => {
       // Return existing data if already loaded
       if (record.data && record.headers) return record;
-      
+
       // Set loading state
       updateLocalHistory((prev) =>
         prev.map((r) => (r.id === record.id ? { ...r, isLoading: true } : r)),
       );
 
       try {
-        const response = await fetch(`/api/watson/invoice-history/${record.id}`);
+        const response = await fetch(
+          `/api/watson/invoice-history/${record.id}`,
+        );
         if (!response.ok) throw new Error("Failed to load data");
 
         const content = await response.json();
-        
+
         const updatedRecord = {
-            ...record,
-            headers: content.headers || [],
-            data: content.data || [],
-            bulkAcceptedItemCodes: content.bulkAcceptedItemCodes || [],
-            qtyOverrides: content.qtyOverrides || {},
-            isLoading: false,
+          ...record,
+          headers: content.headers || [],
+          data: content.data || [],
+          // bulkAcceptedItemCodes and qtyOverrides live in Firestore (not in storage file),
+          // so preserve values already on the record (from the list API) rather than
+          // overwriting with undefined from the storage-only content response.
+          bulkAcceptedItemCodes:
+            record.bulkAcceptedItemCodes ?? content.bulkAcceptedItemCodes ?? [],
+          qtyOverrides: record.qtyOverrides ?? content.qtyOverrides ?? {},
+          isLoading: false,
         };
 
         // Update history
         updateLocalHistory((prev) =>
-          prev.map((r) =>
-            r.id === record.id ? updatedRecord : r,
-          ),
+          prev.map((r) => (r.id === record.id ? updatedRecord : r)),
         );
-        
+
         return updatedRecord;
       } catch (error) {
         console.error("Error loading invoice data:", error);
-        toast.error("โหลดข้อมูลไม่สำเร็จ", { description: "ไม่สามารถดึงข้อมูล Invoice ได้" });
+        toast.error("โหลดข้อมูลไม่สำเร็จ", {
+          description: "ไม่สามารถดึงข้อมูล Invoice ได้",
+        });
         updateLocalHistory((prev) =>
-          prev.map((r) => (r.id === record.id ? { ...r, isLoading: false } : r)),
+          prev.map((r) =>
+            r.id === record.id ? { ...r, isLoading: false } : r,
+          ),
         );
         return record;
       }
@@ -194,7 +207,7 @@ export function useInvoiceUploadHistory(): InvoiceUploadHistoryReturn {
       const record = historyItems.find((r) => r.id === id);
       if (!record) return null;
       if (record.data) return record;
-      
+
       return loadRecordData(record);
     },
     [historyItems, loadRecordData],
@@ -210,15 +223,15 @@ export function useInvoiceUploadHistory(): InvoiceUploadHistoryReturn {
         supplierName?: string;
         reportDate?: string;
         uploader?: {
-            id: string;
-            name: string;
-            email: string;
-            role: string;
+          id: string;
+          name: string;
+          email: string;
+          role: string;
         };
       },
     ): Promise<string> => {
       const tempId = `temp-${Date.now()}`;
-      
+
       const record: InvoiceUploadRecord = {
         id: tempId,
         fileName,
@@ -242,35 +255,38 @@ export function useInvoiceUploadHistory(): InvoiceUploadHistoryReturn {
 
       try {
         const response = await fetch("/api/watson/invoice-upload", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-                fileName,
-                headers,
-                data,
-                meta
-            })
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            fileName,
+            headers,
+            data,
+            meta,
+          }),
         });
 
         if (!response.ok) {
-            const err = await response.json().catch(() => ({}));
-            throw new Error(err.error || "Upload failed");
+          const err = await response.json().catch(() => ({}));
+          throw new Error(err.error || "Upload failed");
         }
 
         const result = await response.json();
         const newId = result.id;
 
-         // Update with real ID
-         updateLocalHistory((prev) =>
-            prev.map((r) => (r.id === tempId ? { ...r, id: newId } : r)),
-          );
-          return newId;
+        // Update with real ID
+        updateLocalHistory((prev) =>
+          prev.map((r) => (r.id === tempId ? { ...r, id: newId } : r)),
+        );
+        return newId;
       } catch (err) {
-          console.error("Error saving invoice upload:", err);
-          toast.error("บันทึกประวัติการอัปโหลดไม่สำเร็จ", {
-            description: err instanceof Error ? err.message : "เกิดข้อผิดพลาดที่ไม่ทราบสาเหตุ",
-          });
-          return tempId;
+        console.error("Error saving invoice upload:", err);
+        toast.error("บันทึกประวัติการอัปโหลดไม่สำเร็จ", {
+          description:
+            err instanceof Error
+              ? err.message
+              : "เกิดข้อผิดพลาดที่ไม่ทราบสาเหตุ",
+        });
+        return tempId;
       }
     },
     [updateLocalHistory],
@@ -312,16 +328,16 @@ export function useInvoiceUploadHistory(): InvoiceUploadHistoryReturn {
       if (id.startsWith("temp-")) return;
 
       try {
-          await fetch(`/api/watson/invoice-history/${id}`, {
-              method: "PATCH",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                  headers,
-                  data,
-                  bulkAcceptedItemCodes,
-                  qtyOverrides
-              })
-          });
+        await fetch(`/api/watson/invoice-history/${id}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            headers,
+            data,
+            bulkAcceptedItemCodes,
+            qtyOverrides,
+          }),
+        });
       } catch (err) {
         console.error("Error updating invoice upload:", err);
         toast.error("บันทึกการแก้ไขไม่สำเร็จ");
@@ -367,15 +383,15 @@ export function useInvoiceUploadHistory(): InvoiceUploadHistoryReturn {
       // Skip API for temp records
       if (id.startsWith("temp-")) return;
 
-       try {
-          await fetch(`/api/watson/invoice-history/${id}`, {
-              method: "PATCH",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                  status,
-                  ...options
-              })
-          });
+      try {
+        await fetch(`/api/watson/invoice-history/${id}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            status,
+            ...options,
+          }),
+        });
       } catch (err) {
         console.error("Error updating invoice status:", err);
       }
@@ -383,17 +399,20 @@ export function useInvoiceUploadHistory(): InvoiceUploadHistoryReturn {
     [updateLocalHistory],
   );
 
-  const removeRecord = useCallback(async (id: string) => {
-    updateLocalHistory((prev) => prev.filter((r) => r.id !== id));
-    
-    if (id.startsWith("temp-")) return;
+  const removeRecord = useCallback(
+    async (id: string) => {
+      updateLocalHistory((prev) => prev.filter((r) => r.id !== id));
 
-    try {
+      if (id.startsWith("temp-")) return;
+
+      try {
         await fetch(`/api/watson/invoice-history/${id}`, { method: "DELETE" });
-    } catch (err) {
-      console.error("Error deleting invoice upload:", err);
-    }
-  }, [updateLocalHistory]);
+      } catch (err) {
+        console.error("Error deleting invoice upload:", err);
+      }
+    },
+    [updateLocalHistory],
+  );
 
   const clearHistory = useCallback(() => {
     updateLocalHistory(() => []);
@@ -401,7 +420,9 @@ export function useInvoiceUploadHistory(): InvoiceUploadHistoryReturn {
   }, [updateLocalHistory]);
 
   // Derived history summary (omit heavy data)
-  const history = historyItems.map(({ headers, data, bulkAcceptedItemCodes, qtyOverrides, ...rest }) => rest);
+  const history = historyItems.map(
+    ({ headers, data, bulkAcceptedItemCodes, qtyOverrides, ...rest }) => rest,
+  );
 
   return {
     history,

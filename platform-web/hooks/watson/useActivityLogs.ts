@@ -310,6 +310,13 @@ export function useActivityLogs() {
     [addLog],
   );
 
+  const logSaveCloud = useCallback(
+    (exportId: string) => {
+      return addLog("save_cloud", "บันทึกขึ้น Cloud", { exportId }, false);
+    },
+    [addLog],
+  );
+
   const logExportReport = useCallback(
     (fileName: string) => {
       return addLog(
@@ -351,6 +358,7 @@ export function useActivityLogs() {
     logValidate,
     logExportExcel,
     logExportReport,
+    logSaveCloud,
     logUndo,
     logRedo,
   };
