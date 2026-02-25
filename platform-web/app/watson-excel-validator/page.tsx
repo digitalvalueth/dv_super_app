@@ -249,22 +249,29 @@ export default function WatsonExcelValidatorPage() {
   const [isLoadingConfirmedExports, setIsLoadingConfirmedExports] =
     useState(false);
 
-  const fetchConfirmedExports = useCallback((page: number) => {
-    setIsLoadingConfirmedExports(true);
-    const offset = page * CONFIRMED_PAGE_SIZE;
-    fetch(
-      `/api/exports?status=confirmed&limit=${CONFIRMED_PAGE_SIZE}&offset=${offset}`,
-    )
-      .then((r) => r.json())
-      .then((res) => {
-        if (res.success) {
-          setConfirmedExports(res.data || []);
-          setConfirmedExportsTotal(res.meta?.total ?? 0);
-        }
-      })
-      .catch(() => {})
-      .finally(() => setIsLoadingConfirmedExports(false));
-  }, []);
+  const fetchConfirmedExports = useCallback(
+    (page: number) => {
+      setIsLoadingConfirmedExports(true);
+      const offset = page * CONFIRMED_PAGE_SIZE;
+      const params = new URLSearchParams({
+        status: "confirmed",
+        limit: String(CONFIRMED_PAGE_SIZE),
+        offset: String(offset),
+      });
+      if (userData?.companyId) params.set("companyId", userData.companyId);
+      fetch(`/api/exports?${params.toString()}`)
+        .then((r) => r.json())
+        .then((res) => {
+          if (res.success) {
+            setConfirmedExports(res.data || []);
+            setConfirmedExportsTotal(res.meta?.total ?? 0);
+          }
+        })
+        .catch(() => {})
+        .finally(() => setIsLoadingConfirmedExports(false));
+    },
+    [userData?.companyId],
+  );
 
   useEffect(() => {
     if (data.length > 0) return;
@@ -1601,6 +1608,8 @@ export default function WatsonExcelValidatorPage() {
           : {},
         passedCount,
         lowConfidenceCount,
+        companyId: userData?.companyId || null,
+        companyName: userData?.companyName || null,
       });
 
       // Auto-confirm the export immediately

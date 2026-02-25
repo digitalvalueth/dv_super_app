@@ -18,6 +18,8 @@ export async function POST(req: NextRequest) {
       passedCount,
       lowConfidenceCount,
       metadata,
+      companyId,
+      companyName,
     } = body;
 
     if (!supplierCode || !headers || !data) {
@@ -87,6 +89,8 @@ export async function POST(req: NextRequest) {
       metadata: metadata || null,
       storagePath,
       storageUrl,
+      companyId: companyId || null,
+      companyName: companyName || null,
     });
 
     return NextResponse.json({ success: true, data: { id: docId } });
@@ -120,10 +124,15 @@ export async function GET(req: NextRequest) {
     );
     const offset = parseInt(searchParams.get("offset") || "0", 10);
 
+    const companyIdFilter = searchParams.get("companyId");
+
     let query = adminDb
       .collection(COLLECTIONS.EXPORTS)
       .orderBy("exportedAt", "desc") as FirebaseFirestore.Query;
 
+    if (companyIdFilter) {
+      query = query.where("companyId", "==", companyIdFilter);
+    }
     if (supplierCode) {
       query = query.where("supplierCode", "==", supplierCode);
     }

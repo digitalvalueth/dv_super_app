@@ -1,17 +1,19 @@
 import { db } from "@/lib/firebase";
 import { Company, User } from "@/types";
 import {
-    collection,
-    deleteDoc,
-    doc,
-    getDoc,
-    getDocs,
-    orderBy,
-    query,
-    serverTimestamp,
-    setDoc,
-    updateDoc,
-    where,
+  addDoc,
+  arrayUnion,
+  collection,
+  deleteDoc,
+  doc,
+  getDoc,
+  getDocs,
+  orderBy,
+  query,
+  serverTimestamp,
+  setDoc,
+  updateDoc,
+  where,
 } from "firebase/firestore";
 
 // ==================== Types ====================
@@ -168,9 +170,7 @@ export async function getCompanyUsers(
   }
 }
 
-export async function getAllCompanies(): Promise<
-  (Company & { id: string })[]
-> {
+export async function getAllCompanies(): Promise<(Company & { id: string })[]> {
   try {
     const companiesRef = collection(db, "companies");
     const snapshot = await getDocs(companiesRef);
@@ -196,6 +196,44 @@ export async function getAllUsers(): Promise<(User & { id: string })[]> {
     console.error("Error fetching all users:", error);
     return [];
   }
+}
+
+export async function updateUserRole(
+  userId: string,
+  role: string,
+): Promise<void> {
+  const userRef = doc(db, "users", userId);
+  await updateDoc(userRef, { role, updatedAt: serverTimestamp() });
+}
+
+export async function createCompany(data: {
+  name: string;
+  code: string;
+  enabledModules?: string[];
+}): Promise<string> {
+  const companiesRef = collection(db, "companies");
+  const docRef = await addDoc(companiesRef, {
+    name: data.name,
+    code: data.code.toUpperCase(),
+    enabledModules: data.enabledModules || [],
+    createdAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
+  });
+  return docRef.id;
+}
+
+/**
+ * Add a companyId to a user's companyIds array (for multi-company users).
+ * Safe to call multiple times — arrayUnion deduplicates.
+ */
+export async function addUserToCompany(
+  userId: string,
+  companyId: string,
+): Promise<void> {
+  const userRef = doc(db, "users", userId);
+  await updateDoc(userRef, {
+    companyIds: arrayUnion(companyId),
+  });
 }
 
 // ==================== Access Check Helpers ====================
@@ -274,7 +312,9 @@ export async function setModuleWhitelist(
     ? companySnap.data()?.moduleWhitelist || {}
     : {};
 
-  existing[moduleId] = emails.map((e) => e.toLowerCase().trim()).filter(Boolean);
+  existing[moduleId] = emails
+    .map((e) => e.toLowerCase().trim())
+    .filter(Boolean);
 
   await updateDoc(companyRef, {
     moduleWhitelist: existing,
