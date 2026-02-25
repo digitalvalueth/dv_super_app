@@ -41,6 +41,8 @@ export interface ExportData {
   passedCount?: number;
   lowConfidenceCount?: number;
   metadata?: Record<string, unknown>;
+  companyId?: string | null;
+  companyName?: string | null;
 }
 
 /**

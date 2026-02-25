@@ -50,6 +50,8 @@ export async function POST(req: NextRequest) {
       status: "uploaded", // Initial status
       storagePath,
       storageUrl,
+      companyId: meta?.companyId || null,
+      companyName: meta?.companyName || null,
       supplierCode: meta?.supplierCode || null,
       supplierName: meta?.supplierName || null,
       reportDate: meta?.reportDate || null,
