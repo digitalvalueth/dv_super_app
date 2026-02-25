@@ -1057,7 +1057,14 @@ export function PriceListSidebar({
                                       </div>
                                       <div className="text-right">
                                         <div className="font-mono font-bold text-indigo-600">
-                                          ฿{period.priceExtVat.toFixed(2)}
+                                          ExcV ฿{period.priceExtVat.toFixed(2)}
+                                        </div>
+                                        <div className="text-[9px] text-indigo-400 font-mono">
+                                          IncV ฿
+                                          {(
+                                            period.invoice62IncV ??
+                                            period.priceExtVat * 1.07
+                                          ).toFixed(2)}
                                         </div>
                                         <div className="text-gray-400 text-[10px]">
                                           เต็ม ฿{period.price.toLocaleString()}{" "}
@@ -1297,7 +1304,14 @@ export function PriceListSidebar({
                                       </div>
                                       <div className="text-right">
                                         <div className="font-mono font-bold text-indigo-600">
-                                          ฿{period.priceExtVat.toFixed(2)}
+                                          ExcV ฿{period.priceExtVat.toFixed(2)}
+                                        </div>
+                                        <div className="text-[9px] text-indigo-400 font-mono">
+                                          IncV ฿
+                                          {(
+                                            period.invoice62IncV ??
+                                            period.priceExtVat * 1.07
+                                          ).toFixed(2)}
                                         </div>
                                         <div className="text-gray-400 text-[10px]">
                                           เต็ม ฿{period.price.toLocaleString()}

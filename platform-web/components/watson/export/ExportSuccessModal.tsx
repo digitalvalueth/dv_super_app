@@ -1,25 +1,25 @@
 "use client";
 
-import { useState } from "react";
-import {
-  CheckCircle,
-  Copy,
-  Check,
-  Shield,
-  ShieldCheck,
-  Loader2,
-} from "lucide-react";
+import { Badge } from "@/components/watson/ui/badge";
+import { Button } from "@/components/watson/ui/button";
 import {
   Dialog,
   DialogContent,
-  DialogHeader,
-  DialogTitle,
   DialogDescription,
   DialogFooter,
+  DialogHeader,
+  DialogTitle,
 } from "@/components/watson/ui/dialog";
-import { Button } from "@/components/watson/ui/button";
-import { Badge } from "@/components/watson/ui/badge";
 import { toast } from "@/components/watson/ui/toast-provider";
+import {
+  Check,
+  CheckCircle,
+  Copy,
+  Loader2,
+  Shield,
+  ShieldCheck,
+} from "lucide-react";
+import { useEffect, useState } from "react";
 
 interface ExportSuccessModalProps {
   open: boolean;
@@ -44,6 +44,13 @@ export function ExportSuccessModal({
   const [copiedField, setCopiedField] = useState<string | null>(null);
   const [status, setStatus] = useState<"draft" | "confirmed">(initialStatus);
   const [isConfirming, setIsConfirming] = useState(false);
+
+  // Sync status when modal reopens with a different initialStatus
+  useEffect(() => {
+    if (open) {
+      setStatus(initialStatus);
+    }
+  }, [open, initialStatus]);
 
   const handleCopy = async (text: string, field: string) => {
     try {

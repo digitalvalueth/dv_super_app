@@ -183,6 +183,7 @@ export function usePriceListData() {
           priceIncVat: item.priceIncVat,
           priceExtVat: item.priceExtVat,
           remark: item.remarki1 || undefined,
+          invoice62IncV: item.invoice62IncV,
         };
       });
 
@@ -432,6 +433,7 @@ export function usePriceListData() {
         "PL Remark",
         "PL Full Price",
         "PL Comm Price",
+        "PL Invoice62 IncV",
         "Total Comm",
         "Calc Log",
       ];
@@ -487,10 +489,23 @@ export function usePriceListData() {
           calcLog.push(`📦 ตรวจพบ: รายการคืนสินค้า (Qty หรือ Amount ติดลบ)`);
           calcLog.push(`  ข้ามการคำนวณ Knapsack และ Price Match`);
 
-          // Find rawItem for PL info even for returns
-          const rawItemReturn = priceListRaw.find(
-            (r) => r.itemCode === itemCode,
-          );
+          // Find rawItem for PL info even for returns (match by invoice date)
+          const rawItemReturn = (() => {
+            const candidates = priceListRaw.filter(
+              (r) => r.itemCode === itemCode,
+            );
+            if (candidates.length === 0) return undefined;
+            const byDate = candidates.find((r) => {
+              if (!r.priceStartDate) return false;
+              const start = new Date(r.priceStartDate);
+              const end = r.priceEndDate ? new Date(r.priceEndDate) : null;
+              return (
+                toDateOnly(invoiceDate) >= toDateOnly(start) &&
+                (end === null || toDateOnly(invoiceDate) <= toDateOnly(end))
+              );
+            });
+            return byDate || candidates[0];
+          })();
 
           return {
             ...row,
@@ -510,6 +525,9 @@ export function usePriceListData() {
               : "-",
             "PL Comm Price": rawItemReturn?.priceIncVat
               ? `฿${rawItemReturn.priceIncVat.toFixed(2)}`
+              : "-",
+            "PL Invoice62 IncV": rawItemReturn?.invoice62IncV
+              ? fmt2(rawItemReturn.invoice62IncV)
               : "-",
             "Total Comm": "-",
             "Calc Log": calcLog.join("\n"),
@@ -534,9 +552,22 @@ export function usePriceListData() {
           calcLog.push(`  สินค้า 1 ชิ้นอาจมีราคาแตกต่างได้`);
           calcLog.push(`  เริ่มตรวจสอบตั้งแต่ 2 ชิ้นขึ้นไป`);
 
-          const rawItemSingle = priceListRaw.find(
-            (r) => r.itemCode === itemCode,
-          );
+          const rawItemSingle = (() => {
+            const candidates = priceListRaw.filter(
+              (r) => r.itemCode === itemCode,
+            );
+            if (candidates.length === 0) return undefined;
+            const byDate = candidates.find((r) => {
+              if (!r.priceStartDate) return false;
+              const start = new Date(r.priceStartDate);
+              const end = r.priceEndDate ? new Date(r.priceEndDate) : null;
+              return (
+                toDateOnly(invoiceDate) >= toDateOnly(start) &&
+                (end === null || toDateOnly(invoiceDate) <= toDateOnly(end))
+              );
+            });
+            return byDate || candidates[0];
+          })();
 
           return {
             ...row,
@@ -557,13 +588,18 @@ export function usePriceListData() {
             "PL Comm Price": rawItemSingle?.priceIncVat
               ? `฿${rawItemSingle.priceIncVat.toFixed(2)}`
               : "-",
+            "PL Invoice62 IncV": rawItemSingle?.invoice62IncV
+              ? fmt2(rawItemSingle.invoice62IncV)
+              : "-",
             "Total Comm": rawItemSingle?.priceIncVat
               ? `฿${fmt2(rawItemSingle.priceIncVat)}`
               : "-",
             "Calc Log": calcLog.join("\n"),
             // New export columns
             QtyBuy1: "1",
-            PriceBuy1_Invoice_Formula: fmt2(rawAmt),
+            PriceBuy1_Invoice_Formula: rawItemSingle?.invoice62IncV
+              ? fmt2(rawItemSingle.invoice62IncV)
+              : fmt2(rawAmt),
             PriceBuy1_Com_Calculate: rawItemSingle?.priceIncVat
               ? fmt2(rawItemSingle.priceIncVat)
               : "",
@@ -576,8 +612,10 @@ export function usePriceListData() {
             // Hidden metadata for manual qty override recalculation
             _stdPriceExtVat: rawAmt, // single item = entire amount
             _stdPriceIncVat: rawItemSingle?.priceIncVat || 0,
+            _stdInvoice62IncV: rawItemSingle?.invoice62IncV || 0,
             _proPriceExtVat: rawAmt, // fallback to std for manual promo split
             _proPriceIncVat: rawItemSingle?.priceIncVat || 0,
+            _proInvoice62IncV: rawItemSingle?.invoice62IncV || 0,
             _proRemark: "Buy1",
           };
         }
@@ -586,8 +624,39 @@ export function usePriceListData() {
         const matchedPeriod = findPriceForDate(itemCode, invoiceDate);
         const item = priceHistory.find((h) => h.itemCode === itemCode);
 
-        // Find the raw price list item for additional info
-        const rawItem = priceListRaw.find((r) => r.itemCode === itemCode);
+        // Find the raw price list item matching the invoice date and matched period
+        const rawItem = (() => {
+          const candidates = priceListRaw.filter(
+            (r) => r.itemCode === itemCode,
+          );
+          if (candidates.length === 0) return undefined;
+          if (matchedPeriod) {
+            // Most precise: date range + priceExtVat match
+            const byDateAndPrice = candidates.find((r) => {
+              if (!r.priceStartDate) return false;
+              const start = new Date(r.priceStartDate);
+              const end = r.priceEndDate ? new Date(r.priceEndDate) : null;
+              const inRange =
+                toDateOnly(invoiceDate) >= toDateOnly(start) &&
+                (end === null || toDateOnly(invoiceDate) <= toDateOnly(end));
+              const priceMatch =
+                Math.abs(r.priceExtVat - matchedPeriod.priceExtVat) < 0.02;
+              return inRange && priceMatch;
+            });
+            if (byDateAndPrice) return byDateAndPrice;
+          }
+          // Fallback: date range only
+          const byDate = candidates.find((r) => {
+            if (!r.priceStartDate) return false;
+            const start = new Date(r.priceStartDate);
+            const end = r.priceEndDate ? new Date(r.priceEndDate) : null;
+            return (
+              toDateOnly(invoiceDate) >= toDateOnly(start) &&
+              (end === null || toDateOnly(invoiceDate) <= toDateOnly(end))
+            );
+          });
+          return byDate || candidates[0];
+        })();
 
         let expectedPrice = "-";
         let priceMatch = "-";
@@ -619,6 +688,9 @@ export function usePriceListData() {
         let priceProInvoiceFormula = 0;
         let priceProComCalculate = 0;
         let remarkCombined = "";
+        let plInvoice62IncV = "-";
+        let _stdInvoice62PerUnit = 0;
+        let _proInvoice62PerUnit = 0;
 
         // Set Price List info if found
         if (rawItem) {
@@ -627,6 +699,9 @@ export function usePriceListData() {
           plFullPrice = rawItem.price ? `฿${rawItem.price.toFixed(2)}` : "-";
           plCommPrice = rawItem.priceIncVat
             ? `฿${rawItem.priceIncVat.toFixed(2)}`
+            : "-";
+          plInvoice62IncV = rawItem.invoice62IncV
+            ? fmt2(rawItem.invoice62IncV)
             : "-";
         }
 
@@ -752,25 +827,33 @@ export function usePriceListData() {
               // Buy1 (Std) allocation
               if (stdAlloc) {
                 qtyBuy1 = stdAlloc.qty;
-                priceBuy1InvoiceFormula = stdAlloc.price * stdAlloc.qty;
+                // Display: per-unit Invoice 62% IncV (not total)
+                priceBuy1InvoiceFormula =
+                  rawItem?.invoice62IncV || stdAlloc.price;
+                // Comm Calculate = Comm Price IncV (not invoice62)
                 priceBuy1ComCalculate =
-                  (stdAlloc.priceIncVat || 0) * stdAlloc.qty;
+                  rawItem?.priceIncVat || stdAlloc.priceIncVat || 0;
                 // Store per-unit prices for manual override recalculation
                 _stdPricePerUnit = stdAlloc.price;
                 _stdCommPerUnit = stdAlloc.priceIncVat || 0;
+                _stdInvoice62PerUnit = rawItem?.invoice62IncV || 0;
               }
 
               // Promo allocations (sum all promo)
               const remarks: string[] = [];
               promoAllocs.forEach((alloc) => {
                 qtyPro += alloc.qty;
-                priceProInvoiceFormula += alloc.price * alloc.qty;
-                priceProComCalculate += (alloc.priceIncVat || 0) * alloc.qty;
+                // Display: per-unit Invoice 62% IncV (not accumulated total)
+                priceProInvoiceFormula = rawItem?.invoice62IncV || alloc.price;
+                // Comm Calculate = Comm Price IncV (not invoice62)
+                priceProComCalculate =
+                  rawItem?.priceIncVat || alloc.priceIncVat || 0;
                 // Store per-unit promo price (use first/dominant promo)
                 if (_proPricePerUnit === 0) {
                   _proPricePerUnit = alloc.price;
                   _proCommPerUnit = alloc.priceIncVat || 0;
                   _proRemarkStr = alloc.remark || "";
+                  _proInvoice62PerUnit = rawItem?.invoice62IncV || 0;
                 }
                 if (alloc.remark) {
                   remarks.push(alloc.remark);
@@ -922,6 +1005,7 @@ export function usePriceListData() {
           "PL Remark": plRemark,
           "PL Full Price": plFullPrice,
           "PL Comm Price": plCommPrice,
+          "PL Invoice62 IncV": plInvoice62IncV,
           "Total Comm": totalComm,
           "Calc Log": calcLog.join("\n"),
           // New export columns
@@ -941,8 +1025,10 @@ export function usePriceListData() {
           // Hidden metadata for manual qty override recalculation
           _stdPriceExtVat: _stdPricePerUnit,
           _stdPriceIncVat: _stdCommPerUnit,
+          _stdInvoice62IncV: _stdInvoice62PerUnit,
           _proPriceExtVat: _proPricePerUnit,
           _proPriceIncVat: _proCommPerUnit,
+          _proInvoice62IncV: _proInvoice62PerUnit,
           _proRemark: _proRemarkStr,
         };
       });

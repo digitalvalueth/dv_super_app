@@ -19,6 +19,7 @@ if (!admin.apps.length) {
       // Fallback to Application Default Credentials (works in Cloud Run)
       admin.initializeApp({
         projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID,
+        storageBucket: process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET,
       });
       console.warn(
         "⚠️ Using Application Default Credentials - this may fail in local development",
@@ -31,6 +32,7 @@ if (!admin.apps.length) {
           privateKey: privateKey,
         }),
         projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID,
+        storageBucket: process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET,
       });
       console.log(
         "✅ Firebase Admin initialized with environment variables from .env.local",

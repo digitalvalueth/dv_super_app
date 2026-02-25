@@ -37,6 +37,7 @@ export interface PricePeriod {
   priceIncVat: number;
   priceExtVat: number;
   remark?: string; // Promotion remark (Buy1, 2 For 599, etc.)
+  invoice62IncV?: number; // Invoice 62% IncV (รวม VAT)
 }
 
 // Result when matching invoice date
