@@ -1,4 +1,4 @@
-import { adminDb, adminStorage } from "@/lib/firebase-admin";
+import { adminDb, getAdminBucket } from "@/lib/firebase-admin";
 import { COLLECTIONS, InvoiceStorageData } from "@/lib/watson-firebase";
 import { NextRequest, NextResponse } from "next/server";
 
@@ -24,12 +24,7 @@ export async function GET(
       return NextResponse.json({ headers: [], data: [] });
     }
 
-    const bucketName = process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET;
-    if (!bucketName) {
-      throw new Error("Storage bucket not configured");
-    }
-
-    const bucket = adminStorage.bucket(bucketName);
+    const bucket = getAdminBucket();
     const file = bucket.file(storagePath);
 
     const [exists] = await file.exists();
@@ -72,15 +67,16 @@ export async function DELETE(
       const storagePath = data?.storagePath;
 
       if (storagePath) {
-        const bucketName = process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET;
-        if (bucketName) {
-          const bucket = adminStorage.bucket(bucketName);
+        try {
+          const bucket = getAdminBucket();
           const file = bucket.file(storagePath);
           await file
             .delete()
             .catch((err) =>
               console.warn("Failed to delete file from storage:", err),
             );
+        } catch (err) {
+          console.warn("Failed to get bucket for delete:", err);
         }
       }
 
@@ -122,10 +118,7 @@ export async function PATCH(
           { status: 400 },
         );
 
-      const bucketName = process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET;
-      if (!bucketName) throw new Error("Storage bucket not configured");
-
-      const bucket = adminStorage.bucket(bucketName);
+      const bucket = getAdminBucket();
       const file = bucket.file(storagePath);
 
       const storageData: InvoiceStorageData = { headers, data };

@@ -46,7 +46,10 @@ export { auth };
 const databaseId = process.env.EXPO_PUBLIC_FIRESTORE_DATABASE_ID || "(default)";
 export const db = getFirestore(app, databaseId);
 
-export const storage = getStorage(app);
+export const storage = getStorage(
+  app,
+  `gs://${process.env.EXPO_PUBLIC_FIREBASE_STORAGE_BUCKET}`,
+);
 export const functions = getFunctions(app);
 
 // Google Auth Provider

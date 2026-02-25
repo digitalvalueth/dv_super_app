@@ -1,4 +1,4 @@
-import { adminDb, adminStorage } from "@/lib/firebase-admin";
+import { adminDb, getAdminBucket } from "@/lib/firebase-admin";
 import { COLLECTIONS } from "@/lib/watson-firebase";
 import { Timestamp } from "firebase-admin/firestore";
 import { NextRequest, NextResponse } from "next/server";
@@ -57,7 +57,7 @@ export async function POST(req: NextRequest) {
 
     // 3. Upload data to Firebase Storage
     const storagePath = `watson/exports/${docId}.json`;
-    const bucket = adminStorage.bucket(bucketName);
+    const bucket = getAdminBucket();
     const file = bucket.file(storagePath);
 
     await file.save(JSON.stringify({ headers, data: rowObjects }), {
