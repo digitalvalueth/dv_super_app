@@ -70,12 +70,15 @@ export function QtyEditModal({
   // Get price info from hidden metadata
   const stdPriceExtVat = Number(data?.row?.["_stdPriceExtVat"]) || 0;
   const stdPriceIncVat = Number(data?.row?.["_stdPriceIncVat"]) || 0;
+  const stdInvoice62IncV = Number(data?.row?.["_stdInvoice62IncV"]) || 0;
   let proPriceExtVat = Number(data?.row?.["_proPriceExtVat"]) || 0;
   let proPriceIncVat = Number(data?.row?.["_proPriceIncVat"]) || 0;
+  let proInvoice62IncV = Number(data?.row?.["_proInvoice62IncV"]) || 0;
   // Fallback: if no promo price stored, use std price
   if (proPriceExtVat === 0 && stdPriceExtVat > 0) {
     proPriceExtVat = stdPriceExtVat;
     proPriceIncVat = stdPriceIncVat;
+    proInvoice62IncV = stdInvoice62IncV;
   }
   const proRemark = String(
     data?.row?.["_proRemark"] ?? data?.row?.["PL Remark"] ?? "",
@@ -83,9 +86,14 @@ export function QtyEditModal({
 
   // Calculate preview prices
   const preview = useMemo(() => {
+    // Invoice (ExtVat) totals — used for Calc Amt
     const buy1Invoice = qtyBuy1 * stdPriceExtVat;
-    const buy1Com = qtyBuy1 * stdPriceIncVat;
     const proInvoice = qtyPro * proPriceExtVat;
+    // Invoice 62% IncV totals — per-unit × qty
+    const buy1Invoice62 = qtyBuy1 * (stdInvoice62IncV || stdPriceExtVat);
+    const proInvoice62 = qtyPro * (proInvoice62IncV || proPriceExtVat);
+    // Comm (ค่าคอมพนักงาน) totals
+    const buy1Com = qtyBuy1 * stdPriceIncVat;
     const proCom = qtyPro * proPriceIncVat;
     const calcAmt = buy1Invoice + proInvoice;
     const rawAmt = Math.abs(
@@ -116,6 +124,8 @@ export function QtyEditModal({
       buy1Com,
       proInvoice,
       proCom,
+      buy1Invoice62,
+      proInvoice62,
       calcAmt,
       rawAmt: actualRawAmt,
       diff,
@@ -127,8 +137,10 @@ export function QtyEditModal({
     qtyPro,
     stdPriceExtVat,
     stdPriceIncVat,
+    stdInvoice62IncV,
     proPriceExtVat,
     proPriceIncVat,
+    proInvoice62IncV,
     data,
   ]);
 
@@ -152,20 +164,30 @@ export function QtyEditModal({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-lg">
         <DialogHeader>
-          <DialogTitle className="flex items-center gap-2 text-amber-600">
-            <AlertTriangle className="h-5 w-5" />
+          <DialogTitle
+            className={`flex items-center gap-2 ${
+              isValid ? "text-green-600" : "text-amber-600"
+            }`}
+          >
+            {isValid ? (
+              <Check className="h-5 w-5" />
+            ) : (
+              <AlertTriangle className="h-5 w-5" />
+            )}
             แก้ไขจำนวน QtyBuy1 / QtyPro
           </DialogTitle>
         </DialogHeader>
 
-        {/* Warning Message */}
-        <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 text-sm">
-          <p className="text-amber-800 font-medium">
-            คุณได้กรอก {data.editField} = {data.attemptedValue} ซึ่งทำให้
-            QtyBuy1 + QtyPro เกินจำนวน Qty ({maxQty})
-          </p>
-          <p className="text-amber-600 mt-1">โปรดกรอกจำนวนให้ถูกต้อง</p>
-        </div>
+        {/* Warning Message — show only when still invalid */}
+        {!isValid && (
+          <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 text-sm">
+            <p className="text-amber-800 font-medium">
+              คุณได้กรอก {data.editField} = {data.attemptedValue} ซึ่งทำให้
+              QtyBuy1 + QtyPro เกินจำนวน Qty ({maxQty})
+            </p>
+            <p className="text-amber-600 mt-1">โปรดกรอกจำนวนให้ถูกต้อง</p>
+          </div>
+        )}
 
         {/* Row Info */}
         <div className="bg-gray-50 rounded-lg p-3 space-y-1.5 text-sm">
@@ -190,33 +212,78 @@ export function QtyEditModal({
 
         {/* Price Tiers Info */}
         {(stdPriceExtVat > 0 || proPriceExtVat > 0) && (
-          <div className="bg-blue-50 rounded-lg p-3 space-y-1.5 text-sm">
+          <div className="bg-blue-50 rounded-lg p-3 space-y-2 text-sm">
             <div className="flex items-center gap-2 font-medium text-blue-800">
               <Tag className="h-4 w-4" />
               ราคาจาก Price List
+              <span className="text-xs font-normal text-blue-500">
+                (ต่อชิ้น)
+              </span>
             </div>
             {stdPriceExtVat > 0 && (
-              <div className="flex justify-between ml-6">
-                <span className="text-blue-600">Std (Buy1):</span>
-                <span className="font-mono">
-                  ฿{stdPriceExtVat.toFixed(2)} ExtVat | ฿
-                  {stdPriceIncVat.toFixed(2)} IncVat
-                </span>
+              <div className="ml-6 space-y-0.5">
+                <div className="text-blue-600 font-medium text-xs">
+                  Std (Buy1):
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-gray-500 text-xs">Invoice ExcV:</span>
+                  <span className="font-mono text-xs">
+                    ฿{stdPriceExtVat.toFixed(2)}
+                  </span>
+                </div>
+                {stdInvoice62IncV > 0 && (
+                  <div className="flex justify-between">
+                    <span className="text-gray-500 text-xs">
+                      Invoice 62% IncV:
+                    </span>
+                    <span className="font-mono text-xs font-medium text-indigo-600">
+                      ฿{stdInvoice62IncV.toFixed(2)}
+                    </span>
+                  </div>
+                )}
+                <div className="flex justify-between">
+                  <span className="text-gray-500 text-xs">
+                    ค่าคอมพนักงาน (Comm IncV):
+                  </span>
+                  <span className="font-mono text-xs font-medium text-purple-600">
+                    ฿{stdPriceIncVat.toFixed(2)}
+                  </span>
+                </div>
               </div>
             )}
-            {proPriceExtVat > 0 && (
-              <div className="flex justify-between ml-6">
-                <span className="text-green-600">
+            {proPriceExtVat > 0 && proPriceExtVat !== stdPriceExtVat && (
+              <div className="ml-6 space-y-0.5 border-t border-blue-200 pt-1.5">
+                <div className="text-green-600 font-medium text-xs">
                   Promo{proRemark ? ` (${proRemark})` : ""}:
-                </span>
-                <span className="font-mono">
-                  ฿{proPriceExtVat.toFixed(2)} ExtVat | ฿
-                  {proPriceIncVat.toFixed(2)} IncVat
-                </span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-gray-500 text-xs">Invoice ExcV:</span>
+                  <span className="font-mono text-xs">
+                    ฿{proPriceExtVat.toFixed(2)}
+                  </span>
+                </div>
+                {proInvoice62IncV > 0 && (
+                  <div className="flex justify-between">
+                    <span className="text-gray-500 text-xs">
+                      Invoice 62% IncV:
+                    </span>
+                    <span className="font-mono text-xs font-medium text-indigo-600">
+                      ฿{proInvoice62IncV.toFixed(2)}
+                    </span>
+                  </div>
+                )}
+                <div className="flex justify-between">
+                  <span className="text-gray-500 text-xs">
+                    ค่าคอมพนักงาน (Comm IncV):
+                  </span>
+                  <span className="font-mono text-xs font-medium text-purple-600">
+                    ฿{proPriceIncVat.toFixed(2)}
+                  </span>
+                </div>
               </div>
             )}
             {matchedPeriod !== "-" && (
-              <div className="flex justify-between ml-6 text-gray-500">
+              <div className="flex justify-between ml-6 text-gray-500 text-xs border-t border-blue-200 pt-1">
                 <span>Period:</span>
                 <span>{matchedPeriod}</span>
               </div>
@@ -239,10 +306,20 @@ export function QtyEditModal({
               className={`text-center text-lg font-mono ${qtyBuy1 > 0 ? "border-blue-300 bg-blue-50" : ""}`}
             />
             {stdPriceExtVat > 0 && qtyBuy1 > 0 && (
-              <p className="text-xs text-gray-500 mt-1 text-center">
-                = ฿
-                {(Math.round(preview.buy1Invoice * 10000) / 10000).toFixed(2)}
-              </p>
+              <div className="text-xs mt-1 text-center space-y-0.5">
+                <p className="text-gray-500">
+                  Invoice ExcV: ฿
+                  {(Math.round(preview.buy1Invoice * 10000) / 10000).toFixed(2)}
+                </p>
+                {stdInvoice62IncV > 0 && (
+                  <p className="text-indigo-500">
+                    Invoice IncV: ฿{preview.buy1Invoice62.toFixed(2)}
+                  </p>
+                )}
+                <p className="text-purple-500">
+                  คอม: ฿{preview.buy1Com.toFixed(2)}
+                </p>
+              </div>
             )}
           </div>
           <div>
@@ -263,9 +340,20 @@ export function QtyEditModal({
               className={`text-center text-lg font-mono ${qtyPro > 0 ? "border-green-300 bg-green-50" : ""}`}
             />
             {proPriceExtVat > 0 && qtyPro > 0 && (
-              <p className="text-xs text-gray-500 mt-1 text-center">
-                = ฿{(Math.round(preview.proInvoice * 10000) / 10000).toFixed(2)}
-              </p>
+              <div className="text-xs mt-1 text-center space-y-0.5">
+                <p className="text-gray-500">
+                  Invoice ExcV: ฿
+                  {(Math.round(preview.proInvoice * 10000) / 10000).toFixed(2)}
+                </p>
+                {proInvoice62IncV > 0 && (
+                  <p className="text-indigo-500">
+                    Invoice IncV: ฿{preview.proInvoice62.toFixed(2)}
+                  </p>
+                )}
+                <p className="text-purple-500">
+                  คอม: ฿{preview.proCom.toFixed(2)}
+                </p>
+              </div>
             )}
           </div>
         </div>
@@ -350,9 +438,17 @@ export function QtyEditModal({
                 {preview.confidence.toFixed(0)}%
               </Badge>
             </div>
+            {preview.buy1Invoice62 + preview.proInvoice62 > 0 && (
+              <div className="flex justify-between ml-6 text-indigo-600 border-t border-indigo-200 pt-1 mt-1">
+                <span>Total Invoice IncV:</span>
+                <span className="font-mono font-medium">
+                  ฿{(preview.buy1Invoice62 + preview.proInvoice62).toFixed(2)}
+                </span>
+              </div>
+            )}
             {preview.totalCom > 0 && (
-              <div className="flex justify-between ml-6 text-indigo-700 border-t border-indigo-200 pt-1 mt-1">
-                <span>Total Comm:</span>
+              <div className="flex justify-between ml-6 text-purple-600">
+                <span>Total ค่าคอมพนักงาน:</span>
                 <span className="font-mono font-medium">
                   ฿{(Math.round(preview.totalCom * 10000) / 10000).toFixed(2)}
                 </span>

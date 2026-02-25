@@ -489,10 +489,23 @@ export function usePriceListData() {
           calcLog.push(`📦 ตรวจพบ: รายการคืนสินค้า (Qty หรือ Amount ติดลบ)`);
           calcLog.push(`  ข้ามการคำนวณ Knapsack และ Price Match`);
 
-          // Find rawItem for PL info even for returns
-          const rawItemReturn = priceListRaw.find(
-            (r) => r.itemCode === itemCode,
-          );
+          // Find rawItem for PL info even for returns (match by invoice date)
+          const rawItemReturn = (() => {
+            const candidates = priceListRaw.filter(
+              (r) => r.itemCode === itemCode,
+            );
+            if (candidates.length === 0) return undefined;
+            const byDate = candidates.find((r) => {
+              if (!r.priceStartDate) return false;
+              const start = new Date(r.priceStartDate);
+              const end = r.priceEndDate ? new Date(r.priceEndDate) : null;
+              return (
+                toDateOnly(invoiceDate) >= toDateOnly(start) &&
+                (end === null || toDateOnly(invoiceDate) <= toDateOnly(end))
+              );
+            });
+            return byDate || candidates[0];
+          })();
 
           return {
             ...row,
@@ -539,9 +552,22 @@ export function usePriceListData() {
           calcLog.push(`  สินค้า 1 ชิ้นอาจมีราคาแตกต่างได้`);
           calcLog.push(`  เริ่มตรวจสอบตั้งแต่ 2 ชิ้นขึ้นไป`);
 
-          const rawItemSingle = priceListRaw.find(
-            (r) => r.itemCode === itemCode,
-          );
+          const rawItemSingle = (() => {
+            const candidates = priceListRaw.filter(
+              (r) => r.itemCode === itemCode,
+            );
+            if (candidates.length === 0) return undefined;
+            const byDate = candidates.find((r) => {
+              if (!r.priceStartDate) return false;
+              const start = new Date(r.priceStartDate);
+              const end = r.priceEndDate ? new Date(r.priceEndDate) : null;
+              return (
+                toDateOnly(invoiceDate) >= toDateOnly(start) &&
+                (end === null || toDateOnly(invoiceDate) <= toDateOnly(end))
+              );
+            });
+            return byDate || candidates[0];
+          })();
 
           return {
             ...row,
@@ -598,8 +624,39 @@ export function usePriceListData() {
         const matchedPeriod = findPriceForDate(itemCode, invoiceDate);
         const item = priceHistory.find((h) => h.itemCode === itemCode);
 
-        // Find the raw price list item for additional info
-        const rawItem = priceListRaw.find((r) => r.itemCode === itemCode);
+        // Find the raw price list item matching the invoice date and matched period
+        const rawItem = (() => {
+          const candidates = priceListRaw.filter(
+            (r) => r.itemCode === itemCode,
+          );
+          if (candidates.length === 0) return undefined;
+          if (matchedPeriod) {
+            // Most precise: date range + priceExtVat match
+            const byDateAndPrice = candidates.find((r) => {
+              if (!r.priceStartDate) return false;
+              const start = new Date(r.priceStartDate);
+              const end = r.priceEndDate ? new Date(r.priceEndDate) : null;
+              const inRange =
+                toDateOnly(invoiceDate) >= toDateOnly(start) &&
+                (end === null || toDateOnly(invoiceDate) <= toDateOnly(end));
+              const priceMatch =
+                Math.abs(r.priceExtVat - matchedPeriod.priceExtVat) < 0.02;
+              return inRange && priceMatch;
+            });
+            if (byDateAndPrice) return byDateAndPrice;
+          }
+          // Fallback: date range only
+          const byDate = candidates.find((r) => {
+            if (!r.priceStartDate) return false;
+            const start = new Date(r.priceStartDate);
+            const end = r.priceEndDate ? new Date(r.priceEndDate) : null;
+            return (
+              toDateOnly(invoiceDate) >= toDateOnly(start) &&
+              (end === null || toDateOnly(invoiceDate) <= toDateOnly(end))
+            );
+          });
+          return byDate || candidates[0];
+        })();
 
         let expectedPrice = "-";
         let priceMatch = "-";
