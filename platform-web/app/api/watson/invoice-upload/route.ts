@@ -1,5 +1,4 @@
-
-import { adminDb, adminStorage } from "@/lib/firebase-admin";
+import { adminDb, getAdminBucket } from "@/lib/firebase-admin";
 import { COLLECTIONS, InvoiceStorageData } from "@/lib/watson-firebase";
 import { Timestamp } from "firebase-admin/firestore";
 import { NextRequest, NextResponse } from "next/server";
@@ -12,15 +11,7 @@ export async function POST(req: NextRequest) {
     if (!data || !fileName || !headers) {
       return NextResponse.json(
         { error: "Missing required fields" },
-        { status: 400 }
-      );
-    }
-
-    const bucketName = process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET;
-    if (!bucketName) {
-      return NextResponse.json(
-        { error: "Storage bucket not configured" },
-        { status: 500 }
+        { status: 400 },
       );
     }
 
@@ -31,15 +22,16 @@ export async function POST(req: NextRequest) {
 
     // 2. Upload to Firebase Storage
     const storagePath = `watson/invoice-uploads/${docId}.json`;
-    const bucket = adminStorage.bucket(bucketName);
+    const bucket = getAdminBucket();
+    const bucketName = process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET!;
     const file = bucket.file(storagePath);
-    
-    const storageData: InvoiceStorageData = { 
-        headers: headers,
-        data: data 
+
+    const storageData: InvoiceStorageData = {
+      headers: headers,
+      data: data,
     };
     const jsonString = JSON.stringify(storageData);
-    
+
     await file.save(jsonString, {
       contentType: "application/json",
       metadata: {
@@ -65,12 +57,13 @@ export async function POST(req: NextRequest) {
     });
 
     return NextResponse.json({ id: docId, success: true });
-
   } catch (error) {
     console.error("Error in /api/watson/invoice-upload:", error);
     return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Internal Server Error" },
-      { status: 500 }
+      {
+        error: error instanceof Error ? error.message : "Internal Server Error",
+      },
+      { status: 500 },
     );
   }
 }

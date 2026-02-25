@@ -6,13 +6,43 @@
   "build": {
     "development": {
       "developmentClient": true,
-      "distribution": "internal"
+      "distribution": "internal",
+      "env": {
+        "APP_ENV": "sandbox",
+        "EXPO_PUBLIC_FIREBASE_API_KEY": "AIzaSyD5TjCFFBgZvOTYilVrSLT-7X7fTBijNGw",
+        "EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN": "fittbsa.firebaseapp.com",
+        "EXPO_PUBLIC_FIREBASE_PROJECT_ID": "fittbsa",
+        "EXPO_PUBLIC_FIREBASE_STORAGE_BUCKET": "fittbsa-app-sandbox",
+        "EXPO_PUBLIC_FIREBASE_MESSAGING_SENDER_ID": "1095128507689",
+        "EXPO_PUBLIC_FIREBASE_APP_ID": "1:1095128507689:android:7de8275cc37884cf7f4338",
+        "EXPO_PUBLIC_FIRESTORE_DATABASE_ID": "fittsuperapp-dev"
+      }
     },
     "preview": {
-      "distribution": "internal"
+      "distribution": "internal",
+      "env": {
+        "APP_ENV": "sandbox",
+        "EXPO_PUBLIC_FIREBASE_API_KEY": "AIzaSyD5TjCFFBgZvOTYilVrSLT-7X7fTBijNGw",
+        "EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN": "fittbsa.firebaseapp.com",
+        "EXPO_PUBLIC_FIREBASE_PROJECT_ID": "fittbsa",
+        "EXPO_PUBLIC_FIREBASE_STORAGE_BUCKET": "fittbsa-app-sandbox",
+        "EXPO_PUBLIC_FIREBASE_MESSAGING_SENDER_ID": "1095128507689",
+        "EXPO_PUBLIC_FIREBASE_APP_ID": "1:1095128507689:android:7de8275cc37884cf7f4338",
+        "EXPO_PUBLIC_FIRESTORE_DATABASE_ID": "fittsuperapp-dev"
+      }
     },
     "production": {
-      "autoIncrement": true
+      "autoIncrement": true,
+      "env": {
+        "APP_ENV": "production",
+        "EXPO_PUBLIC_FIREBASE_API_KEY": "AIzaSyD5TjCFFBgZvOTYilVrSLT-7X7fTBijNGw",
+        "EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN": "fittbsa.firebaseapp.com",
+        "EXPO_PUBLIC_FIREBASE_PROJECT_ID": "fittbsa",
+        "EXPO_PUBLIC_FIREBASE_STORAGE_BUCKET": "fittbsa-app-prod",
+        "EXPO_PUBLIC_FIREBASE_MESSAGING_SENDER_ID": "1095128507689",
+        "EXPO_PUBLIC_FIREBASE_APP_ID": "1:1095128507689:android:7de8275cc37884cf7f4338",
+        "EXPO_PUBLIC_FIRESTORE_DATABASE_ID": "fittsuperapp-prod"
+      }
     }
   },
   "submit": {

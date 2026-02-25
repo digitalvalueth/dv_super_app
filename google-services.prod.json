@@ -1,0 +1,62 @@
+{
+  "project_info": {
+    "project_number": "1095128507689",
+    "project_id": "fittbsa",
+    "storage_bucket": "fittbsa-app-prod"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:1095128507689:android:7de8275cc37884cf7f4338",
+        "android_client_info": {
+          "package_name": "com.digitalvalue.fittbsa"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "1095128507689-k7dleqj0nubd4pqi0dr44hs7g0hite8o.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.digitalvalue.fittbsa",
+            "certificate_hash": "f75cde43e3c2ee28eb0fb871d51d7f2a46ce6fdc"
+          }
+        },
+        {
+          "client_id": "1095128507689-k7dleqj0nubd4pqi0dr44hs7g0hite8o.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.digitalvalue.fittbsa",
+            "certificate_hash": "5e8f16062ea3cd2c4a0d547876baa6f38cabf625"
+          }
+        },
+        {
+          "client_id": "1095128507689-q8iq6a4qgke7ksp3he50eo2hr2r5d7ad.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyD5TjCFFBgZvOTYilVrSLT-7X7fTBijNGw"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "1095128507689-q8iq6a4qgke7ksp3he50eo2hr2r5d7ad.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "1095128507689-8hprqq9d073m5ckief3r7riav9vg7oi0.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.itswatthachai.superfitt"
+              }
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

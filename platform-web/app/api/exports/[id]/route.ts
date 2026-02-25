@@ -1,4 +1,4 @@
-import { adminDb, adminStorage } from "@/lib/firebase-admin";
+import { adminDb, getAdminBucket } from "@/lib/firebase-admin";
 import { COLLECTIONS } from "@/lib/watson-firebase";
 import { Timestamp } from "firebase-admin/firestore";
 import { NextRequest, NextResponse } from "next/server";
@@ -32,20 +32,17 @@ export async function GET(
     // Load row data from storage
     let rowData: Record<string, unknown>[] = [];
     if (d.storagePath) {
-      const bucketName = process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET;
-      if (bucketName) {
-        try {
-          const bucket = adminStorage.bucket(bucketName);
-          const file = bucket.file(d.storagePath);
-          const [exists] = await file.exists();
-          if (exists) {
-            const [content] = await file.download();
-            const parsed = JSON.parse(content.toString("utf-8"));
-            rowData = parsed.data || [];
-          }
-        } catch (err) {
-          console.warn("Failed to load export data from storage:", err);
+      try {
+        const bucket = getAdminBucket();
+        const file = bucket.file(d.storagePath);
+        const [exists] = await file.exists();
+        if (exists) {
+          const [content] = await file.download();
+          const parsed = JSON.parse(content.toString("utf-8"));
+          rowData = parsed.data || [];
         }
+      } catch (err) {
+        console.warn("Failed to load export data from storage:", err);
       }
     }
 
