@@ -9,7 +9,7 @@ import {
   DialogTitle,
 } from "@/components/watson/ui/dialog";
 import { Input } from "@/components/watson/ui/input";
-import { AlertTriangle, Calculator, Check, Package, Tag } from "lucide-react";
+import { AlertTriangle, Calculator, Check, Tag } from "lucide-react";
 import { useMemo, useState } from "react";
 
 export interface QtyEditModalData {
@@ -162,8 +162,8 @@ export function QtyEditModal({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-lg">
-        <DialogHeader>
+      <DialogContent className="max-w-2xl max-h-[90vh] flex flex-col">
+        <DialogHeader className="shrink-0">
           <DialogTitle
             className={`flex items-center gap-2 ${
               isValid ? "text-green-600" : "text-amber-600"
@@ -178,287 +178,271 @@ export function QtyEditModal({
           </DialogTitle>
         </DialogHeader>
 
-        {/* Warning Message — show only when still invalid */}
-        {!isValid && (
-          <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 text-sm">
-            <p className="text-amber-800 font-medium">
-              คุณได้กรอก {data.editField} = {data.attemptedValue} ซึ่งทำให้
-              QtyBuy1 + QtyPro เกินจำนวน Qty ({maxQty})
-            </p>
-            <p className="text-amber-600 mt-1">โปรดกรอกจำนวนให้ถูกต้อง</p>
-          </div>
-        )}
-
-        {/* Row Info */}
-        <div className="bg-gray-50 rounded-lg p-3 space-y-1.5 text-sm">
-          <div className="flex items-center gap-2">
-            <Package className="h-4 w-4 text-gray-500" />
-            <span className="text-gray-500">แถวที่:</span>
-            <Badge variant="outline">{data.rowIndex + 1}</Badge>
-          </div>
-          <div className="flex items-center gap-2">
-            <span className="text-gray-500 ml-6">Item Code:</span>
-            <span className="font-mono font-medium">{itemCode}</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <span className="text-gray-500 ml-6">รายละเอียด:</span>
-            <span className="truncate">{itemDesc}</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <span className="text-gray-500 ml-6">Qty เดิม:</span>
-            <Badge className="bg-blue-100 text-blue-800">{maxQty}</Badge>
-          </div>
-        </div>
-
-        {/* Price Tiers Info */}
-        {(stdPriceExtVat > 0 || proPriceExtVat > 0) && (
-          <div className="bg-blue-50 rounded-lg p-3 space-y-2 text-sm">
-            <div className="flex items-center gap-2 font-medium text-blue-800">
-              <Tag className="h-4 w-4" />
-              ราคาจาก Price List
-              <span className="text-xs font-normal text-blue-500">
-                (ต่อชิ้น)
-              </span>
+        {/* Scrollable body */}
+        <div className="overflow-y-auto flex-1 space-y-3 pr-1">
+          {/* Warning Message */}
+          {!isValid && (
+            <div className="bg-amber-50 border border-amber-200 rounded-lg p-2.5 text-sm">
+              <p className="text-amber-800 font-medium">
+                คุณได้กรอก {data.editField} = {data.attemptedValue} ซึ่งทำให้
+                QtyBuy1 + QtyPro เกินจำนวน Qty ({maxQty})
+              </p>
             </div>
-            {stdPriceExtVat > 0 && (
-              <div className="ml-6 space-y-0.5">
-                <div className="text-blue-600 font-medium text-xs">
-                  Std (Buy1):
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-gray-500 text-xs">Invoice ExcV:</span>
-                  <span className="font-mono text-xs">
-                    ฿{stdPriceExtVat.toFixed(2)}
-                  </span>
-                </div>
-                {stdInvoice62IncV > 0 && (
-                  <div className="flex justify-between">
-                    <span className="text-gray-500 text-xs">
-                      Invoice 62% IncV:
-                    </span>
-                    <span className="font-mono text-xs font-medium text-indigo-600">
-                      ฿{stdInvoice62IncV.toFixed(2)}
-                    </span>
-                  </div>
-                )}
-                <div className="flex justify-between">
-                  <span className="text-gray-500 text-xs">
-                    ค่าคอมพนักงาน (Comm IncV):
-                  </span>
-                  <span className="font-mono text-xs font-medium text-purple-600">
-                    ฿{stdPriceIncVat.toFixed(2)}
-                  </span>
-                </div>
-              </div>
-            )}
-            {proPriceExtVat > 0 && proPriceExtVat !== stdPriceExtVat && (
-              <div className="ml-6 space-y-0.5 border-t border-blue-200 pt-1.5">
-                <div className="text-green-600 font-medium text-xs">
-                  Promo{proRemark ? ` (${proRemark})` : ""}:
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-gray-500 text-xs">Invoice ExcV:</span>
-                  <span className="font-mono text-xs">
-                    ฿{proPriceExtVat.toFixed(2)}
-                  </span>
-                </div>
-                {proInvoice62IncV > 0 && (
-                  <div className="flex justify-between">
-                    <span className="text-gray-500 text-xs">
-                      Invoice 62% IncV:
-                    </span>
-                    <span className="font-mono text-xs font-medium text-indigo-600">
-                      ฿{proInvoice62IncV.toFixed(2)}
-                    </span>
-                  </div>
-                )}
-                <div className="flex justify-between">
-                  <span className="text-gray-500 text-xs">
-                    ค่าคอมพนักงาน (Comm IncV):
-                  </span>
-                  <span className="font-mono text-xs font-medium text-purple-600">
-                    ฿{proPriceIncVat.toFixed(2)}
-                  </span>
-                </div>
-              </div>
-            )}
-            {matchedPeriod !== "-" && (
-              <div className="flex justify-between ml-6 text-gray-500 text-xs border-t border-blue-200 pt-1">
-                <span>Period:</span>
-                <span>{matchedPeriod}</span>
-              </div>
-            )}
-          </div>
-        )}
+          )}
 
-        {/* Input Fields */}
-        <div className="grid grid-cols-2 gap-4">
-          <div>
-            <label className="text-sm font-medium text-gray-700 mb-1 block">
-              QtyBuy1 (ซื้อปกติ)
-            </label>
-            <Input
-              type="number"
-              min={0}
-              max={maxQty}
-              value={qtyBuy1}
-              onChange={(e) => setQtyBuy1(parseInt(e.target.value) || 0)}
-              className={`text-center text-lg font-mono ${qtyBuy1 > 0 ? "border-blue-300 bg-blue-50" : ""}`}
-            />
-            {stdPriceExtVat > 0 && qtyBuy1 > 0 && (
-              <div className="text-xs mt-1 text-center space-y-0.5">
-                <p className="text-gray-500">
-                  Invoice ExcV: ฿
-                  {(Math.round(preview.buy1Invoice * 10000) / 10000).toFixed(2)}
-                </p>
-                {stdInvoice62IncV > 0 && (
-                  <p className="text-indigo-500">
-                    Invoice IncV: ฿{preview.buy1Invoice62.toFixed(2)}
-                  </p>
-                )}
-                <p className="text-purple-500">
-                  คอม: ฿{preview.buy1Com.toFixed(2)}
-                </p>
-              </div>
-            )}
-          </div>
-          <div>
-            <label className="text-sm font-medium text-gray-700 mb-1 block">
-              QtyPro (จำนวนโปร)
-              {proPriceExtVat > 0 && (
-                <Badge className="ml-1 bg-green-100 text-green-700 text-xs">
-                  มีโปร
-                </Badge>
-              )}
-            </label>
-            <Input
-              type="number"
-              min={0}
-              max={maxQty}
-              value={qtyPro}
-              onChange={(e) => setQtyPro(parseInt(e.target.value) || 0)}
-              className={`text-center text-lg font-mono ${qtyPro > 0 ? "border-green-300 bg-green-50" : ""}`}
-            />
-            {proPriceExtVat > 0 && qtyPro > 0 && (
-              <div className="text-xs mt-1 text-center space-y-0.5">
-                <p className="text-gray-500">
-                  Invoice ExcV: ฿
-                  {(Math.round(preview.proInvoice * 10000) / 10000).toFixed(2)}
-                </p>
-                {proInvoice62IncV > 0 && (
-                  <p className="text-indigo-500">
-                    Invoice IncV: ฿{preview.proInvoice62.toFixed(2)}
-                  </p>
-                )}
-                <p className="text-purple-500">
-                  คอม: ฿{preview.proCom.toFixed(2)}
-                </p>
-              </div>
-            )}
-          </div>
-        </div>
-
-        {/* Total & Validation */}
-        <div
-          className={`rounded-lg p-3 text-sm ${
-            isOverLimit
-              ? "bg-red-50 border border-red-200"
-              : isValid
-                ? "bg-green-50 border border-green-200"
-                : "bg-gray-50 border border-gray-200"
-          }`}
-        >
-          <div className="flex justify-between items-center">
-            <span className="font-medium">
-              QtyBuy1 ({qtyBuy1}) + QtyPro ({qtyPro}) = {totalQty}
+          {/* Row Info — compact single line */}
+          <div className="bg-gray-50 rounded-lg px-3 py-2 flex flex-wrap gap-x-4 gap-y-1 text-sm">
+            <span className="text-gray-500">
+              แถวที่{" "}
+              <span className="font-medium text-gray-800">
+                {data.rowIndex + 1}
+              </span>
             </span>
-            <span>
-              {isOverLimit ? (
-                <Badge className="bg-red-100 text-red-700">
-                  เกิน {totalQty - maxQty}
-                </Badge>
-              ) : isValid ? (
-                <Badge className="bg-green-100 text-green-700">
-                  <Check className="h-3 w-3 mr-1" />
-                  OK
-                </Badge>
-              ) : (
-                <Badge variant="secondary">กรุณากรอก</Badge>
-              )}
+            <span className="text-gray-500">
+              Item Code:{" "}
+              <span className="font-mono font-medium text-gray-800">
+                {itemCode}
+              </span>
+            </span>
+            <span className="text-gray-500 truncate max-w-xs">{itemDesc}</span>
+            <span className="text-gray-500">
+              Qty: <span className="font-medium text-blue-700">{maxQty}</span>
             </span>
           </div>
-          {maxQty - totalQty > 0 && !isOverLimit && (
-            <p className="text-gray-500 text-xs mt-1">
-              เหลืออีก {maxQty - totalQty} ที่ยังไม่ได้จัดสรร
-            </p>
+
+          {/* Main 2-column: Price Tiers | Inputs */}
+          <div className="grid grid-cols-2 gap-3">
+            {/* Left: Price Tiers */}
+            {(stdPriceExtVat > 0 || proPriceExtVat > 0) && (
+              <div className="bg-blue-50 rounded-lg p-3 text-xs space-y-2">
+                <div className="flex items-center gap-1.5 font-medium text-blue-800 text-sm">
+                  <Tag className="h-3.5 w-3.5" />
+                  ราคาต่อชิ้น
+                </div>
+                {stdPriceExtVat > 0 && (
+                  <div className="space-y-0.5">
+                    <div className="text-blue-600 font-semibold">
+                      Std (Buy1):
+                    </div>
+                    <div className="flex justify-between text-gray-600">
+                      <span>Invoice ExcV:</span>
+                      <span className="font-mono">
+                        ฿{stdPriceExtVat.toFixed(2)}
+                      </span>
+                    </div>
+                    {stdInvoice62IncV > 0 && (
+                      <div className="flex justify-between">
+                        <span className="text-gray-600">Invoice 62% IncV:</span>
+                        <span className="font-mono font-medium text-indigo-600">
+                          ฿{stdInvoice62IncV.toFixed(2)}
+                        </span>
+                      </div>
+                    )}
+                    <div className="flex justify-between">
+                      <span className="text-gray-600">Comm IncV:</span>
+                      <span className="font-mono font-medium text-purple-600">
+                        ฿{stdPriceIncVat.toFixed(2)}
+                      </span>
+                    </div>
+                  </div>
+                )}
+                {proPriceExtVat > 0 && proPriceExtVat !== stdPriceExtVat && (
+                  <div className="space-y-0.5 border-t border-blue-200 pt-1.5">
+                    <div className="text-green-600 font-semibold">
+                      Promo{proRemark ? ` (${proRemark})` : ""}:
+                    </div>
+                    <div className="flex justify-between text-gray-600">
+                      <span>Invoice ExcV:</span>
+                      <span className="font-mono">
+                        ฿{proPriceExtVat.toFixed(2)}
+                      </span>
+                    </div>
+                    {proInvoice62IncV > 0 && (
+                      <div className="flex justify-between">
+                        <span className="text-gray-600">Invoice 62% IncV:</span>
+                        <span className="font-mono font-medium text-indigo-600">
+                          ฿{proInvoice62IncV.toFixed(2)}
+                        </span>
+                      </div>
+                    )}
+                    <div className="flex justify-between">
+                      <span className="text-gray-600">Comm IncV:</span>
+                      <span className="font-mono font-medium text-purple-600">
+                        ฿{proPriceIncVat.toFixed(2)}
+                      </span>
+                    </div>
+                  </div>
+                )}
+                {matchedPeriod !== "-" && (
+                  <div className="flex justify-between text-gray-500 border-t border-blue-200 pt-1">
+                    <span>Period:</span>
+                    <span>{matchedPeriod}</span>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Right: Inputs */}
+            <div className="space-y-3">
+              <div>
+                <label className="text-sm font-medium text-gray-700 mb-1 block">
+                  QtyBuy1 (ซื้อปกติ)
+                </label>
+                <Input
+                  type="number"
+                  min={0}
+                  max={maxQty}
+                  value={qtyBuy1}
+                  onChange={(e) => setQtyBuy1(parseInt(e.target.value) || 0)}
+                  className={`text-center text-lg font-mono ${qtyBuy1 > 0 ? "border-blue-300 bg-blue-50" : ""}`}
+                />
+                {stdPriceExtVat > 0 && qtyBuy1 > 0 && (
+                  <div className="text-xs mt-1 text-center space-y-0.5 text-gray-500">
+                    <p>
+                      ExcV: ฿
+                      {(
+                        Math.round(preview.buy1Invoice * 10000) / 10000
+                      ).toFixed(2)}
+                      {stdInvoice62IncV > 0 && (
+                        <span className="text-indigo-500 ml-2">
+                          IncV: ฿{preview.buy1Invoice62.toFixed(2)}
+                        </span>
+                      )}
+                    </p>
+                    <p className="text-purple-500">
+                      คอม: ฿{preview.buy1Com.toFixed(2)}
+                    </p>
+                  </div>
+                )}
+              </div>
+              <div>
+                <label className="text-sm font-medium text-gray-700 mb-1 flex items-center gap-1">
+                  QtyPro (จำนวนโปร)
+                  {proPriceExtVat > 0 && (
+                    <Badge className="ml-1 bg-green-100 text-green-700 text-xs">
+                      มีโปร
+                    </Badge>
+                  )}
+                </label>
+                <Input
+                  type="number"
+                  min={0}
+                  max={maxQty}
+                  value={qtyPro}
+                  onChange={(e) => setQtyPro(parseInt(e.target.value) || 0)}
+                  className={`text-center text-lg font-mono ${qtyPro > 0 ? "border-green-300 bg-green-50" : ""}`}
+                />
+                {proPriceExtVat > 0 && qtyPro > 0 && (
+                  <div className="text-xs mt-1 text-center space-y-0.5 text-gray-500">
+                    <p>
+                      ExcV: ฿
+                      {(Math.round(preview.proInvoice * 10000) / 10000).toFixed(
+                        2,
+                      )}
+                      {proInvoice62IncV > 0 && (
+                        <span className="text-indigo-500 ml-2">
+                          IncV: ฿{preview.proInvoice62.toFixed(2)}
+                        </span>
+                      )}
+                    </p>
+                    <p className="text-purple-500">
+                      คอม: ฿{preview.proCom.toFixed(2)}
+                    </p>
+                  </div>
+                )}
+              </div>
+
+              {/* Total validation — inline */}
+              <div
+                className={`rounded-lg px-3 py-2 text-sm flex items-center justify-between ${
+                  isOverLimit
+                    ? "bg-red-50 border border-red-200"
+                    : isValid
+                      ? "bg-green-50 border border-green-200"
+                      : "bg-gray-50 border border-gray-200"
+                }`}
+              >
+                <span className="font-medium text-xs">
+                  Buy1({qtyBuy1}) + Pro({qtyPro}) = {totalQty} / {maxQty}
+                </span>
+                {isOverLimit ? (
+                  <Badge className="bg-red-100 text-red-700">
+                    เกิน {totalQty - maxQty}
+                  </Badge>
+                ) : isValid ? (
+                  <Badge className="bg-green-100 text-green-700">
+                    <Check className="h-3 w-3 mr-1" />
+                    OK
+                  </Badge>
+                ) : (
+                  <Badge variant="secondary">กรุณากรอก</Badge>
+                )}
+              </div>
+            </div>
+          </div>
+
+          {/* Price Preview — compact */}
+          {isValid && preview.calcAmt > 0 && (
+            <div className="bg-indigo-50 rounded-lg px-3 py-2 grid grid-cols-2 gap-x-4 gap-y-0.5 text-xs">
+              <div className="col-span-2 flex items-center gap-1.5 font-medium text-indigo-800 mb-1 text-sm">
+                <Calculator className="h-3.5 w-3.5" />
+                ผลคำนวณเบื้องต้น
+              </div>
+              <div className="flex justify-between text-indigo-700">
+                <span>Calc Amt:</span>
+                <span className="font-mono">
+                  ฿{(Math.round(preview.calcAmt * 10000) / 10000).toFixed(2)}
+                </span>
+              </div>
+              <div className="flex justify-between text-indigo-700">
+                <span>Raw Amt:</span>
+                <span className="font-mono">฿{preview.rawAmt.toFixed(2)}</span>
+              </div>
+              <div className="flex justify-between">
+                <span>Diff:</span>
+                <span
+                  className={`font-mono font-medium ${Math.abs(preview.diff) < 1 ? "text-green-600" : "text-amber-600"}`}
+                >
+                  {preview.diff >= 0 ? "+" : ""}
+                  {(Math.round(preview.diff * 10000) / 10000).toFixed(2)}
+                </span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span>Confidence:</span>
+                <Badge
+                  className={
+                    preview.confidence >= 90
+                      ? "bg-green-100 text-green-700"
+                      : preview.confidence >= 70
+                        ? "bg-amber-100 text-amber-700"
+                        : "bg-red-100 text-red-700"
+                  }
+                >
+                  {preview.confidence.toFixed(0)}%
+                </Badge>
+              </div>
+              {preview.buy1Invoice62 + preview.proInvoice62 > 0 && (
+                <div className="flex justify-between text-indigo-600 col-span-1">
+                  <span>Total IncV:</span>
+                  <span className="font-mono font-medium">
+                    ฿{(preview.buy1Invoice62 + preview.proInvoice62).toFixed(2)}
+                  </span>
+                </div>
+              )}
+              {preview.totalCom > 0 && (
+                <div className="flex justify-between text-purple-600 col-span-1">
+                  <span>Total คอม:</span>
+                  <span className="font-mono font-medium">
+                    ฿{(Math.round(preview.totalCom * 10000) / 10000).toFixed(2)}
+                  </span>
+                </div>
+              )}
+            </div>
           )}
         </div>
 
-        {/* Price Preview */}
-        {isValid && preview.calcAmt > 0 && (
-          <div className="bg-indigo-50 rounded-lg p-3 space-y-1 text-sm">
-            <div className="flex items-center gap-2 font-medium text-indigo-800 mb-1">
-              <Calculator className="h-4 w-4" />
-              ผลคำนวณเบื้องต้น
-            </div>
-            <div className="flex justify-between ml-6 text-indigo-700">
-              <span>Calc Amt:</span>
-              <span className="font-mono">
-                ฿{(Math.round(preview.calcAmt * 10000) / 10000).toFixed(2)}
-              </span>
-            </div>
-            <div className="flex justify-between ml-6 text-indigo-700">
-              <span>Raw Amt:</span>
-              <span className="font-mono">฿{preview.rawAmt.toFixed(2)}</span>
-            </div>
-            <div className="flex justify-between ml-6">
-              <span>Diff:</span>
-              <span
-                className={`font-mono font-medium ${
-                  Math.abs(preview.diff) < 1
-                    ? "text-green-600"
-                    : "text-amber-600"
-                }`}
-              >
-                {preview.diff >= 0 ? "+" : ""}
-                {(Math.round(preview.diff * 10000) / 10000).toFixed(2)}
-              </span>
-            </div>
-            <div className="flex justify-between ml-6">
-              <span>Confidence:</span>
-              <Badge
-                className={
-                  preview.confidence >= 90
-                    ? "bg-green-100 text-green-700"
-                    : preview.confidence >= 70
-                      ? "bg-amber-100 text-amber-700"
-                      : "bg-red-100 text-red-700"
-                }
-              >
-                {preview.confidence.toFixed(0)}%
-              </Badge>
-            </div>
-            {preview.buy1Invoice62 + preview.proInvoice62 > 0 && (
-              <div className="flex justify-between ml-6 text-indigo-600 border-t border-indigo-200 pt-1 mt-1">
-                <span>Total Invoice IncV:</span>
-                <span className="font-mono font-medium">
-                  ฿{(preview.buy1Invoice62 + preview.proInvoice62).toFixed(2)}
-                </span>
-              </div>
-            )}
-            {preview.totalCom > 0 && (
-              <div className="flex justify-between ml-6 text-purple-600">
-                <span>Total ค่าคอมพนักงาน:</span>
-                <span className="font-mono font-medium">
-                  ฿{(Math.round(preview.totalCom * 10000) / 10000).toFixed(2)}
-                </span>
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* Actions */}
-        <div className="flex justify-end gap-2 pt-2">
+        {/* Actions — always visible at bottom */}
+        <div className="flex justify-end gap-2 pt-3 border-t shrink-0">
           <Button variant="outline" onClick={() => onOpenChange(false)}>
             ยกเลิก
           </Button>

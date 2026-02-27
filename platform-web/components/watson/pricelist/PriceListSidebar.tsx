@@ -164,6 +164,11 @@ export function PriceListSidebar({
     return false;
   });
 
+  // Active = endDate is null (ongoing) or endDate >= today
+  const today = new Date();
+  const getActivePeriods = (item: ItemPriceHistory) =>
+    item.periods.filter((p) => !p.endDate || new Date(p.endDate) >= today);
+
   // Helper: parse Excel date (serial number or string)
   const parseExcelDate = useCallback((dateVal: unknown): string => {
     if (typeof dateVal === "number") {
@@ -995,12 +1000,24 @@ export function PriceListSidebar({
                           </div>
                         </TableCell>
                         <TableCell className="text-xs text-center">
-                          <Badge
-                            variant="outline"
-                            className="text-[10px] bg-indigo-50"
-                          >
-                            {item.periods.length} tiers
-                          </Badge>
+                          <div className="flex flex-col items-center gap-0.5">
+                            <Badge
+                              variant="outline"
+                              className="text-[10px] bg-green-50 text-green-700 border-green-300"
+                            >
+                              {getActivePeriods(item).length} ใช้งานอยู่
+                            </Badge>
+                            {item.periods.length -
+                              getActivePeriods(item).length >
+                              0 && (
+                              <span className="text-[9px] text-gray-300">
+                                +
+                                {item.periods.length -
+                                  getActivePeriods(item).length}{" "}
+                                เก่า
+                              </span>
+                            )}
+                          </div>
                         </TableCell>
                       </TableRow>
 
@@ -1025,55 +1042,110 @@ export function PriceListSidebar({
                                 </div>
                               </div>
 
-                              {/* Price tiers */}
-                              <div className="space-y-1.5">
-                                {item.periods.map((period, idx) => (
-                                  <div
-                                    key={idx}
-                                    className="bg-white p-2.5 rounded-lg border border-gray-200 hover:border-indigo-200 transition-colors"
-                                  >
-                                    <div className="flex justify-between items-start">
-                                      <div className="space-y-1">
-                                        <div className="flex items-center gap-1.5">
-                                          <Calendar className="h-3 w-3 text-gray-400" />
-                                          <span className="text-gray-600">
-                                            {formatDate(period.startDate)}
-                                            {period.endDate
-                                              ? ` → ${formatDate(period.endDate)}`
-                                              : " → ปัจจุบัน"}
-                                          </span>
-                                        </div>
-                                        {period.remark && (
-                                          <div className="flex items-center gap-1">
-                                            <Tag className="h-3 w-3 text-blue-400" />
-                                            <Badge
-                                              variant="outline"
-                                              className="text-[10px] bg-blue-50 text-blue-700 border-blue-200"
-                                            >
-                                              {period.remark}
-                                            </Badge>
-                                          </div>
-                                        )}
+                              {/* Price tiers — grouped by start date */}
+                              <div className="space-y-2">
+                                {(() => {
+                                  const activePeriods = getActivePeriods(item);
+                                  const groupByDate = (
+                                    periods: typeof activePeriods,
+                                  ) => {
+                                    const groups: {
+                                      key: string;
+                                      label: string;
+                                      periods: typeof activePeriods;
+                                    }[] = [];
+                                    periods.forEach((p) => {
+                                      const key =
+                                        formatDate(p.startDate) +
+                                        (p.endDate
+                                          ? ` → ${formatDate(p.endDate)}`
+                                          : " → ปัจจุบัน");
+                                      const existing = groups.find(
+                                        (g) => g.key === key,
+                                      );
+                                      if (existing) existing.periods.push(p);
+                                      else
+                                        groups.push({
+                                          key,
+                                          label: key,
+                                          periods: [p],
+                                        });
+                                    });
+                                    return groups;
+                                  };
+                                  const activeGroups =
+                                    groupByDate(activePeriods);
+                                  const activeColors = [
+                                    "bg-indigo-100 text-indigo-700 border-indigo-300",
+                                    "bg-emerald-100 text-emerald-700 border-emerald-300",
+                                    "bg-amber-100 text-amber-700 border-amber-300",
+                                  ];
+                                  return activeGroups.map((group, gIdx) => (
+                                    <div key={group.key}>
+                                      <div
+                                        className={`flex items-center gap-1.5 px-2 py-1 rounded-md border text-[10px] font-medium mb-1 ${activeColors[gIdx % activeColors.length]}`}
+                                      >
+                                        <Calendar className="h-3 w-3 shrink-0" />
+                                        {group.label}
+                                        <span className="ml-auto opacity-60">
+                                          {group.periods.length} tier
+                                          {group.periods.length > 1 ? "s" : ""}
+                                        </span>
                                       </div>
-                                      <div className="text-right">
-                                        <div className="font-mono font-bold text-indigo-600">
-                                          ExcV ฿{period.priceExtVat.toFixed(2)}
-                                        </div>
-                                        <div className="text-[9px] text-indigo-400 font-mono">
-                                          IncV ฿
-                                          {(
-                                            period.invoice62IncV ??
-                                            period.priceExtVat * 1.07
-                                          ).toFixed(2)}
-                                        </div>
-                                        <div className="text-gray-400 text-[10px]">
-                                          เต็ม ฿{period.price.toLocaleString()}{" "}
-                                          | คอม ฿{period.priceIncVat.toFixed(2)}
-                                        </div>
+                                      <div className="space-y-1 pl-2">
+                                        {group.periods.map((period, idx) => (
+                                          <div
+                                            key={idx}
+                                            className="bg-white p-2.5 rounded-lg border border-gray-200 hover:border-indigo-200 transition-colors"
+                                          >
+                                            <div className="flex justify-between items-start">
+                                              <div className="space-y-1">
+                                                {period.remark ? (
+                                                  <div className="flex items-center gap-1">
+                                                    <Tag className="h-3 w-3 text-blue-400" />
+                                                    <Badge
+                                                      variant="outline"
+                                                      className="text-[10px] bg-blue-50 text-blue-700 border-blue-200"
+                                                    >
+                                                      {period.remark}
+                                                    </Badge>
+                                                  </div>
+                                                ) : (
+                                                  <span className="text-gray-400 text-[10px]">
+                                                    buy 1
+                                                  </span>
+                                                )}
+                                              </div>
+                                              <div className="text-right">
+                                                <div className="font-mono font-bold text-indigo-600">
+                                                  ExcV ฿
+                                                  {period.priceExtVat.toFixed(
+                                                    2,
+                                                  )}
+                                                </div>
+                                                <div className="text-[9px] text-indigo-400 font-mono">
+                                                  IncV ฿
+                                                  {(
+                                                    period.invoice62IncV ??
+                                                    period.priceExtVat * 1.07
+                                                  ).toFixed(2)}
+                                                </div>
+                                                <div className="text-gray-400 text-[10px]">
+                                                  เต็ม ฿
+                                                  {period.price.toLocaleString()}{" "}
+                                                  | คอม ฿
+                                                  {period.priceIncVat.toFixed(
+                                                    2,
+                                                  )}
+                                                </div>
+                                              </div>
+                                            </div>
+                                          </div>
+                                        ))}
                                       </div>
                                     </div>
-                                  </div>
-                                ))}
+                                  ));
+                                })()}
                               </div>
                             </div>
                           </TableCell>
@@ -1261,12 +1333,24 @@ export function PriceListSidebar({
                             </span>
                           </TableCell>
                           <TableCell className="text-xs text-center">
-                            <Badge
-                              variant="outline"
-                              className="text-[10px] bg-indigo-50"
-                            >
-                              {item.periods.length}
-                            </Badge>
+                            <div className="flex flex-col items-center gap-0.5">
+                              <Badge
+                                variant="outline"
+                                className="text-[10px] bg-green-50 text-green-700 border-green-300"
+                              >
+                                {getActivePeriods(item).length} ใช้งานอยู่
+                              </Badge>
+                              {item.periods.length -
+                                getActivePeriods(item).length >
+                                0 && (
+                                <span className="text-[9px] text-gray-300">
+                                  +
+                                  {item.periods.length -
+                                    getActivePeriods(item).length}{" "}
+                                  เก่า
+                                </span>
+                              )}
+                            </div>
                           </TableCell>
                         </TableRow>
 
@@ -1277,49 +1361,114 @@ export function PriceListSidebar({
                               colSpan={3}
                               className="bg-indigo-50/50 p-2"
                             >
-                              <div className="text-xs space-y-1.5">
-                                {item.periods.map((period, idx) => (
-                                  <div
-                                    key={idx}
-                                    className="bg-white p-2 rounded-lg border border-gray-200"
-                                  >
-                                    <div className="flex justify-between items-start">
-                                      <div className="space-y-0.5">
-                                        <span className="text-gray-600">
-                                          {formatDate(period.startDate)}
-                                          {period.endDate
-                                            ? ` → ${formatDate(period.endDate)}`
-                                            : " → ปัจจุบัน"}
+                              <div className="text-xs space-y-2">
+                                {/* Product info header */}
+                                <div className="flex items-start gap-2 mb-1">
+                                  <Package className="h-4 w-4 text-indigo-500 shrink-0 mt-0.5" />
+                                  <div>
+                                    <p className="font-medium text-indigo-700">
+                                      {item.prodName || item.itemCode}
+                                    </p>
+                                    <p className="text-gray-400 text-[10px]">
+                                      Barcode: {item.prodCode || "-"}
+                                    </p>
+                                  </div>
+                                </div>
+                                {(() => {
+                                  const activePeriods = getActivePeriods(item);
+                                  const groupByDate = (
+                                    periods: typeof activePeriods,
+                                  ) => {
+                                    const groups: {
+                                      key: string;
+                                      label: string;
+                                      periods: typeof activePeriods;
+                                    }[] = [];
+                                    periods.forEach((p) => {
+                                      const key =
+                                        formatDate(p.startDate) +
+                                        (p.endDate
+                                          ? ` → ${formatDate(p.endDate)}`
+                                          : " → ปัจจุบัน");
+                                      const existing = groups.find(
+                                        (g) => g.key === key,
+                                      );
+                                      if (existing) existing.periods.push(p);
+                                      else
+                                        groups.push({
+                                          key,
+                                          label: key,
+                                          periods: [p],
+                                        });
+                                    });
+                                    return groups;
+                                  };
+                                  const activeGroups =
+                                    groupByDate(activePeriods);
+                                  const activeColors = [
+                                    "bg-indigo-100 text-indigo-700 border-indigo-300",
+                                    "bg-emerald-100 text-emerald-700 border-emerald-300",
+                                    "bg-amber-100 text-amber-700 border-amber-300",
+                                  ];
+                                  return activeGroups.map((group, gIdx) => (
+                                    <div key={group.key}>
+                                      <div
+                                        className={`flex items-center gap-1.5 px-2 py-1 rounded-md border text-[10px] font-medium mb-1 ${activeColors[gIdx % activeColors.length]}`}
+                                      >
+                                        <Calendar className="h-3 w-3 shrink-0" />
+                                        {group.label}
+                                        <span className="ml-auto opacity-60">
+                                          {group.periods.length} tier
+                                          {group.periods.length > 1 ? "s" : ""}
                                         </span>
-                                        {period.remark && (
-                                          <div>
-                                            <Badge
-                                              variant="outline"
-                                              className="text-[10px] bg-blue-50 text-blue-700 border-blue-200"
-                                            >
-                                              {period.remark}
-                                            </Badge>
-                                          </div>
-                                        )}
                                       </div>
-                                      <div className="text-right">
-                                        <div className="font-mono font-bold text-indigo-600">
-                                          ExcV ฿{period.priceExtVat.toFixed(2)}
-                                        </div>
-                                        <div className="text-[9px] text-indigo-400 font-mono">
-                                          IncV ฿
-                                          {(
-                                            period.invoice62IncV ??
-                                            period.priceExtVat * 1.07
-                                          ).toFixed(2)}
-                                        </div>
-                                        <div className="text-gray-400 text-[10px]">
-                                          เต็ม ฿{period.price.toLocaleString()}
-                                        </div>
+                                      <div className="space-y-1 pl-2">
+                                        {group.periods.map((period, idx) => (
+                                          <div
+                                            key={idx}
+                                            className="bg-white p-2 rounded-lg border border-gray-200"
+                                          >
+                                            <div className="flex justify-between items-start">
+                                              <div className="space-y-0.5">
+                                                {period.remark ? (
+                                                  <Badge
+                                                    variant="outline"
+                                                    className="text-[10px] bg-blue-50 text-blue-700 border-blue-200"
+                                                  >
+                                                    {period.remark}
+                                                  </Badge>
+                                                ) : (
+                                                  <span className="text-gray-400 text-[10px]">
+                                                    buy 1
+                                                  </span>
+                                                )}
+                                              </div>
+                                              <div className="text-right">
+                                                <div className="font-mono font-bold text-indigo-600">
+                                                  ExcV ฿
+                                                  {period.priceExtVat.toFixed(
+                                                    2,
+                                                  )}
+                                                </div>
+                                                <div className="text-[9px] text-indigo-400 font-mono">
+                                                  IncV ฿
+                                                  {(
+                                                    period.invoice62IncV ??
+                                                    period.priceExtVat * 1.07
+                                                  ).toFixed(2)}
+                                                </div>
+                                                <div className="text-gray-400 text-[10px]">
+                                                  เต็ม ฿
+                                                  {period.price.toLocaleString()}
+                                                </div>
+                                              </div>
+                                            </div>
+                                          </div>
+                                        ))}
                                       </div>
                                     </div>
-                                  </div>
-                                ))}
+                                  ));
+                                })()}
                               </div>
                             </TableCell>
                           </TableRow>
