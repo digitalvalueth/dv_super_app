@@ -843,11 +843,13 @@ export function usePriceListData() {
               const remarks: string[] = [];
               promoAllocs.forEach((alloc) => {
                 qtyPro += alloc.qty;
-                // Display: per-unit Invoice 62% IncV (not accumulated total)
-                priceProInvoiceFormula = rawItem?.invoice62IncV || alloc.price;
-                // Comm Calculate = Comm Price IncV (not invoice62)
-                priceProComCalculate =
-                  rawItem?.priceIncVat || alloc.priceIncVat || 0;
+                // Use the actual promo-tier price (not the standard item's invoice62).
+                // For a "1 baht" promo, alloc.price ≈ 0.58 (ExtVat) and
+                // alloc.priceIncVat = 1.00; using rawItem.invoice62IncV here would
+                // incorrectly show the full-price 179.18 instead.
+                priceProInvoiceFormula = alloc.price;
+                // Comm Calculate = actual promo Comm Price IncV
+                priceProComCalculate = alloc.priceIncVat || 0;
                 // Store per-unit promo price (use first/dominant promo)
                 if (_proPricePerUnit === 0) {
                   _proPricePerUnit = alloc.price;

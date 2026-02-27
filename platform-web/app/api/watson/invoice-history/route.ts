@@ -8,13 +8,13 @@ export async function GET(req: NextRequest) {
     const limitCount = parseInt(searchParams.get("limit") || "20", 10);
     const companyId = searchParams.get("companyId");
 
-    let ref: FirebaseFirestore.Query = adminDb
-      .collection(COLLECTIONS.INVOICE_UPLOADS)
-      .orderBy("uploadedAt", "desc");
+    const collectionRef = adminDb.collection(COLLECTIONS.INVOICE_UPLOADS);
 
-    if (companyId) {
-      ref = ref.where("companyId", "==", companyId);
-    }
+    let ref: FirebaseFirestore.Query = companyId
+      ? collectionRef
+          .where("companyId", "==", companyId)
+          .orderBy("uploadedAt", "desc")
+      : collectionRef.orderBy("uploadedAt", "desc");
 
     const snapshot = await ref.limit(limitCount).get();
 
