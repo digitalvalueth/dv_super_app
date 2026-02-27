@@ -743,31 +743,38 @@ export default function WatsonExcelValidatorPage() {
 
           updated["QtyBuy1"] = newQtyBuy1 > 0 ? newQtyBuy1 : "";
           updated["QtyPro"] = newQtyPro > 0 ? newQtyPro : "";
-          // Display fields: Invoice Formula = per-unit Invoice 62% IncV; Com Calculate = per-unit Comm Price IncV
+
+          // Display fields show PER-UNIT prices (same as initial enrichment):
+          //   Invoice Formula = invoice 62% IncV per unit, fallback to ExtVat per unit
+          //   Com Calculate   = Comm price IncV per unit
+          // NOTE: newPriceBuy1Invoice / newPriceProInvoice are TOTALS — only used for
+          //       Calc Amt; never shown directly in the Formula/Calculate columns.
+          // Fallback chain for std: 62%IncV → ExtVat → proPriceExtVat
+          // (when knapsack originally allocated all qty to promo, _stdPrice* = 0,
+          //  so we fall back to the pro per-unit price for user-edited QtyBuy1)
+          const effStdInvoice62 = stdInvoice62IncV || proInvoice62IncV;
+          const effStdExtVat = stdPriceExtVat || proPriceExtVat;
+          const effStdIncVat = stdPriceIncVat || proPriceIncVat;
           updated["PriceBuy1_Invoice_Formula"] =
-            stdInvoice62IncV > 0
-              ? fmt2(stdInvoice62IncV)
-              : newPriceBuy1Invoice > 0
-                ? fmt2(newPriceBuy1Invoice)
-                : "";
+            newQtyBuy1 > 0
+              ? effStdInvoice62 > 0
+                ? fmt2(effStdInvoice62)
+                : effStdExtVat > 0
+                  ? fmt2(effStdExtVat)
+                  : ""
+              : "";
           updated["PriceBuy1_Com_Calculate"] =
-            stdPriceIncVat > 0
-              ? fmt2(stdPriceIncVat)
-              : newPriceBuy1Com > 0
-                ? fmt2(newPriceBuy1Com)
-                : "";
+            newQtyBuy1 > 0 && effStdIncVat > 0 ? fmt2(effStdIncVat) : "";
           updated["PricePro_Invoice_Formula"] =
-            proInvoice62IncV > 0 && newQtyPro > 0
-              ? fmt2(proInvoice62IncV)
-              : newPriceProInvoice > 0
-                ? fmt2(newPriceProInvoice)
-                : "";
+            newQtyPro > 0
+              ? proInvoice62IncV > 0
+                ? fmt2(proInvoice62IncV)
+                : proPriceExtVat > 0
+                  ? fmt2(proPriceExtVat)
+                  : ""
+              : "";
           updated["PricePro_Com_Calculate"] =
-            proPriceIncVat > 0 && newQtyPro > 0
-              ? fmt2(proPriceIncVat)
-              : newPriceProCom > 0
-                ? fmt2(newPriceProCom)
-                : "";
+            newQtyPro > 0 && proPriceIncVat > 0 ? fmt2(proPriceIncVat) : "";
 
           // Recalculate Calc Amt, Diff, Confidence
           const calcAmt = newPriceBuy1Invoice + newPriceProInvoice;

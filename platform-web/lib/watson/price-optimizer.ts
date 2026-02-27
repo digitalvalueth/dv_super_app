@@ -36,7 +36,7 @@ export interface OptimizationOptions {
   confidenceThreshold?: number;
   /** ห้ามให้ยอดรวมเกิน rawAmt (default: false) */
   notExceedRawAmt?: boolean;
-  /** จำนวน qty สูงสุดที่จะคำนวณ (default: 50) */
+  /** จำนวน qty สูงสุดที่จะคำนวณ (default: 500) */
   maxQty?: number;
   /** จำนวนราคาสูงสุดที่จะคำนวณ (default: 10) */
   maxPrices?: number;
@@ -58,8 +58,8 @@ export function findBestPriceCombination(
   const {
     confidenceThreshold = 0.9,
     notExceedRawAmt = false,
-    maxQty = 50,
-    maxPrices = 10,
+    maxQty = 500,
+    maxPrices = 100,
   } = options;
 
   // Handle edge cases
