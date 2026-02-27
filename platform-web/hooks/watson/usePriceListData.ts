@@ -782,6 +782,7 @@ export function usePriceListData() {
             // Run Knapsack optimization
             const result = findBestPriceCombination(validPrices, qty, rawAmt, {
               confidenceThreshold,
+              maxQty: qty, // pass actual qty so knapsack is not capped at default 50
             });
 
             calcLog.push(``);
@@ -861,6 +862,15 @@ export function usePriceListData() {
                   remarks.push(alloc.remark);
                 }
               });
+
+              // If Knapsack didn't allocate std, always store std tier per-unit price
+              // so manual QtyBuy1 override can use it for recalculation
+              if (_stdPricePerUnit === 0 && validPrices.length > 0) {
+                const stdTier = validPrices[0]; // highest price = std tier
+                _stdPricePerUnit = stdTier.price;
+                _stdCommPerUnit = stdTier.priceIncVat || 0;
+                _stdInvoice62PerUnit = rawItem?.invoice62IncV || 0;
+              }
 
               // If Knapsack didn't allocate promo, store available promo tier price
               // so manual QtyPro override can use it for recalculation
