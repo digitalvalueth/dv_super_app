@@ -164,10 +164,12 @@ export function PriceListSidebar({
     return false;
   });
 
-  // Active = endDate is null (ongoing) or endDate >= today
-  const today = new Date();
+  // Show all periods, sorted by startDate descending (most recent first)
   const getActivePeriods = (item: ItemPriceHistory) =>
-    item.periods.filter((p) => !p.endDate || new Date(p.endDate) >= today);
+    [...item.periods].sort(
+      (a, b) =>
+        new Date(b.startDate).getTime() - new Date(a.startDate).getTime(),
+    );
 
   // Helper: parse Excel date (serial number or string)
   const parseExcelDate = useCallback((dateVal: unknown): string => {
@@ -1003,20 +1005,10 @@ export function PriceListSidebar({
                           <div className="flex flex-col items-center gap-0.5">
                             <Badge
                               variant="outline"
-                              className="text-[10px] bg-green-50 text-green-700 border-green-300"
+                              className="text-[10px] bg-indigo-50 text-indigo-700 border-indigo-300"
                             >
-                              {getActivePeriods(item).length} ใช้งานอยู่
+                              {item.periods.length} ช่วงราคา
                             </Badge>
-                            {item.periods.length -
-                              getActivePeriods(item).length >
-                              0 && (
-                              <span className="text-[9px] text-gray-300">
-                                +
-                                {item.periods.length -
-                                  getActivePeriods(item).length}{" "}
-                                เก่า
-                              </span>
-                            )}
                           </div>
                         </TableCell>
                       </TableRow>
@@ -1336,20 +1328,10 @@ export function PriceListSidebar({
                             <div className="flex flex-col items-center gap-0.5">
                               <Badge
                                 variant="outline"
-                                className="text-[10px] bg-green-50 text-green-700 border-green-300"
+                                className="text-[10px] bg-indigo-50 text-indigo-700 border-indigo-300"
                               >
-                                {getActivePeriods(item).length} ใช้งานอยู่
+                                {item.periods.length} ช่วงราคา
                               </Badge>
-                              {item.periods.length -
-                                getActivePeriods(item).length >
-                                0 && (
-                                <span className="text-[9px] text-gray-300">
-                                  +
-                                  {item.periods.length -
-                                    getActivePeriods(item).length}{" "}
-                                  เก่า
-                                </span>
-                              )}
                             </div>
                           </TableCell>
                         </TableRow>
