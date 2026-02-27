@@ -358,9 +358,19 @@ export default function WatsonExcelValidatorPage() {
     "Total Comm",
     "Log",
   ]);
-  const [hiddenColumns, setHiddenColumns] = useState<Set<string>>(
-    () => new Set(DEFAULT_HIDDEN_COLUMNS),
-  );
+  const HIDDEN_COLS_STORAGE_KEY = "watson_hidden_columns";
+  const [hiddenColumns, setHiddenColumns] = useState<Set<string>>(() => {
+    // Restore from localStorage; fall back to defaults
+    try {
+      const saved = localStorage.getItem(HIDDEN_COLS_STORAGE_KEY);
+      if (saved) {
+        const parsed: string[] = JSON.parse(saved);
+        return new Set(parsed);
+      }
+    } catch {}
+    return new Set(DEFAULT_HIDDEN_COLUMNS);
+  });
+  const [colPickerOpen, setColPickerOpen] = useState(false);
   const [priceRecalcTrigger, setPriceRecalcTrigger] = useState(0);
   const [calcStatus, setCalcStatus] = useState<
     "idle" | "calculating" | "completed"
@@ -867,6 +877,16 @@ export default function WatsonExcelValidatorPage() {
     qtyOverrides,
     reportMeta,
   ]);
+
+  // Persist hidden columns to localStorage whenever they change
+  useEffect(() => {
+    try {
+      localStorage.setItem(
+        HIDDEN_COLS_STORAGE_KEY,
+        JSON.stringify(Array.from(hiddenColumns)),
+      );
+    } catch {}
+  }, [hiddenColumns]);
 
   // Filter invoice history to last 2 months (unless historyShowAll is true)
   const filteredInvoiceHistory = useMemo(() => {
@@ -2838,7 +2858,10 @@ export default function WatsonExcelValidatorPage() {
                       </p>
                       {/* Column visibility picker */}
                       {toggleableColumns.length > 0 && (
-                        <DropdownMenu>
+                        <DropdownMenu
+                          open={colPickerOpen}
+                          onOpenChange={setColPickerOpen}
+                        >
                           <DropdownMenuTrigger asChild>
                             <Button
                               variant="outline"
@@ -2862,6 +2885,8 @@ export default function WatsonExcelValidatorPage() {
                               <DropdownMenuCheckboxItem
                                 key={col}
                                 checked={!hiddenColumns.has(col)}
+                                // prevent dropdown from closing on each check
+                                onSelect={(e) => e.preventDefault()}
                                 onCheckedChange={(checked) => {
                                   setHiddenColumns((prev) => {
                                     const next = new Set(prev);
