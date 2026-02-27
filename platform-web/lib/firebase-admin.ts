@@ -1,9 +1,12 @@
 import * as admin from "firebase-admin";
+import { getFirestore } from "firebase-admin/firestore";
 
-// Get database ID from environment
+// Get database ID from environment — MUST match Firestore named database
 const databaseId = process.env.NEXT_PUBLIC_FIRESTORE_DATABASE_ID || "(default)";
 
 // Initialize Firebase Admin SDK
+let _adminApp: admin.app.App;
+
 if (!admin.apps.length) {
   try {
     // Support both naming conventions:
@@ -21,7 +24,7 @@ if (!admin.apps.length) {
     const storageBucket = process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET;
 
     console.log(
-      `🔧 Firebase Admin init — projectId: ${process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID}, storageBucket: ${storageBucket}, clientEmail: ${clientEmail ? clientEmail.slice(0, 20) + "..." : "NOT SET"}`,
+      `🔧 Firebase Admin init — projectId: ${process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID}, databaseId: ${databaseId}, storageBucket: ${storageBucket}, clientEmail: ${clientEmail ? clientEmail.slice(0, 20) + "..." : "NOT SET"}`,
     );
 
     if (!privateKey || !clientEmail) {
@@ -30,12 +33,12 @@ if (!admin.apps.length) {
           "Ensure FIREBASE_CLIENT_EMAIL and FIREBASE_PRIVATE_KEY are set in Cloud Run env vars.",
       );
       // Fallback to Application Default Credentials (works in Cloud Run with correct IAM permissions)
-      admin.initializeApp({
+      _adminApp = admin.initializeApp({
         projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID,
         storageBucket,
       });
     } else {
-      admin.initializeApp({
+      _adminApp = admin.initializeApp({
         credential: admin.credential.cert({
           projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID,
           clientEmail,
@@ -49,24 +52,22 @@ if (!admin.apps.length) {
       );
     }
 
-    // Configure Firestore with named database if specified
-    const db = admin.firestore();
-    if (databaseId !== "(default)") {
-      db.settings({
-        databaseId: databaseId,
-      });
-      console.log(`📊 Using Firestore database: ${databaseId}`);
-    } else {
-      console.log(`📊 Using default Firestore database`);
-    }
+    console.log(`📊 Using Firestore named database: "${databaseId}"`);
   } catch (error) {
     console.error("❌ Error initializing Firebase Admin:", error);
     throw error;
   }
+} else {
+  _adminApp = admin.apps[0]!;
 }
 
 export const adminAuth = admin.auth();
-export const adminDb = admin.firestore();
+
+// ✅ Use getFirestore(app, databaseId) — the correct v12+ API for named databases.
+// DO NOT use admin.firestore().settings({ databaseId }) — that approach is unreliable
+// in v12+ and may silently fall back to the (default) database.
+export const adminDb = getFirestore(_adminApp, databaseId);
+
 export const adminStorage = admin.storage();
 
 /**
@@ -82,7 +83,7 @@ export function getAdminBucket() {
     );
   }
   const bucket = adminStorage.bucket(bucketName);
-  console.log(`\ud83e\udea3 Using Storage bucket: ${bucketName}`);
+  console.log(`🪣 Using Storage bucket: ${bucketName}`);
   return bucket;
 }
 

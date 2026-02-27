@@ -38,6 +38,7 @@ import {
 } from "@/components/watson/ui/dialog";
 import {
   DropdownMenu,
+  DropdownMenuCheckboxItem,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
@@ -327,6 +328,39 @@ export default function WatsonExcelValidatorPage() {
   const [goToPage, setGoToPage] = useState<number | undefined>(undefined);
   const [showPriceColumns, setShowPriceColumns] = useState(false);
   const [showPricePanel, setShowPricePanel] = useState(false);
+
+  // Invoice history period filter (default: last 2 months only)
+  const [historyShowAll, setHistoryShowAll] = useState(false);
+
+  // Column visibility — columns hidden by default in the data table
+  const DEFAULT_HIDDEN_COLUMNS = new Set([
+    "Currency",
+    "VAT %",
+    "Column 18",
+    "Column 19",
+    "Contact Name",
+    "Contact Phone/Fax",
+    // Price calculation columns (shown on demand via column picker)
+    "Expected Price",
+    "Price Match",
+    "Period Start",
+    "Matched Period",
+    "Std Qty",
+    "Promo Qty",
+    "Calc Amt",
+    "Diff",
+    "Confidence",
+    "PL Name",
+    "PL Remark",
+    "PL Full Price",
+    "PL Comm Price",
+    "PL Invoice62 IncV",
+    "Total Comm",
+    "Log",
+  ]);
+  const [hiddenColumns, setHiddenColumns] = useState<Set<string>>(
+    () => new Set(DEFAULT_HIDDEN_COLUMNS),
+  );
   const [priceRecalcTrigger, setPriceRecalcTrigger] = useState(0);
   const [calcStatus, setCalcStatus] = useState<
     "idle" | "calculating" | "completed"
@@ -834,6 +868,28 @@ export default function WatsonExcelValidatorPage() {
     reportMeta,
   ]);
 
+  // Filter invoice history to last 2 months (unless historyShowAll is true)
+  const filteredInvoiceHistory = useMemo(() => {
+    if (historyShowAll) return invoiceUploadHistory.slice(0, 20);
+    const cutoff = new Date();
+    cutoff.setMonth(cutoff.getMonth() - 2);
+    return invoiceUploadHistory
+      .filter((r) => new Date(r.uploadedAt) >= cutoff)
+      .slice(0, 20);
+  }, [invoiceUploadHistory, historyShowAll]);
+
+  // Derive visible headers by removing hidden columns
+  const visibleHeaders = useMemo(
+    () => displayHeaders.filter((h) => !hiddenColumns.has(h)),
+    [displayHeaders, hiddenColumns],
+  );
+
+  // All toggleable columns (from current display headers, excluding internal _ columns)
+  const toggleableColumns = useMemo(
+    () => displayHeaders.filter((h) => !h.startsWith("_")),
+    [displayHeaders],
+  );
+
   // When file is parsed, check for duplicates first
   // This is intentional - we need to sync external parsed data to internal state
   const lastProcessedParsedDataRef = useRef<typeof parsedData>(null);
@@ -948,8 +1004,10 @@ export default function WatsonExcelValidatorPage() {
             reportParameters: record.supplierCode || null,
           });
           // Check if file is confirmed - if so, lock it and show export ID
-          if (record.status === "confirmed" && record.lastExportId) {
-            setConfirmedExportId(record.lastExportId);
+          // Use fallback "confirmed" when lastExportId is absent so the lock
+          // still applies for any user who opens this record.
+          if (record.status === "confirmed") {
+            setConfirmedExportId(record.lastExportId || "confirmed");
             setShowPriceColumns(true); // Show the full data view
           } else {
             setConfirmedExportId(null);
@@ -1048,8 +1106,8 @@ export default function WatsonExcelValidatorPage() {
         reportParameters: record.supplierCode || null,
       });
       // Check if file is confirmed - if so, lock it and show export ID
-      if (record.status === "confirmed" && record.lastExportId) {
-        setConfirmedExportId(record.lastExportId);
+      if (record.status === "confirmed") {
+        setConfirmedExportId(record.lastExportId || "confirmed");
         setShowPriceColumns(true);
       } else {
         setConfirmedExportId(null);
@@ -1819,9 +1877,22 @@ export default function WatsonExcelValidatorPage() {
               <div className="col-span-12 lg:col-span-4 h-full">
                 <Card className="border-gray-200 h-fit">
                   <CardHeader className="pb-2">
-                    <CardTitle className="text-sm font-medium text-gray-600 flex items-center gap-2">
-                      <Calendar className="h-4 w-4" />
-                      ไฟล์ล่าสุด
+                    <CardTitle className="text-sm font-medium text-gray-600 flex items-center justify-between gap-2">
+                      <span className="flex items-center gap-2">
+                        <Calendar className="h-4 w-4" />
+                        ไฟล์ล่าสุด
+                        {!historyShowAll && (
+                          <span className="text-[10px] font-normal text-gray-400 bg-gray-100 px-1.5 py-0.5 rounded">
+                            2 เดือน
+                          </span>
+                        )}
+                      </span>
+                      <button
+                        className="text-[11px] text-indigo-500 hover:text-indigo-700 font-normal"
+                        onClick={() => setHistoryShowAll((v) => !v)}
+                      >
+                        {historyShowAll ? "แสดงแค่ 2 เดือน" : "ดูทั้งหมด"}
+                      </button>
                     </CardTitle>
                   </CardHeader>
                   <CardContent className="pt-0">
@@ -1839,9 +1910,9 @@ export default function WatsonExcelValidatorPage() {
                           </div>
                         ))}
                       </div>
-                    ) : invoiceUploadHistory.length > 0 ? (
+                    ) : filteredInvoiceHistory.length > 0 ? (
                       <div className="space-y-2">
-                        {invoiceUploadHistory.slice(0, 5).map((record) => (
+                        {filteredInvoiceHistory.map((record) => (
                           <div
                             key={record.id}
                             className="flex items-center justify-between p-2 rounded-lg hover:bg-gray-50 cursor-pointer group border border-transparent hover:border-gray-200 transition-colors"
@@ -1974,7 +2045,19 @@ export default function WatsonExcelValidatorPage() {
                     ) : (
                       <div className="text-center py-8 text-gray-400">
                         <FileSpreadsheet className="h-8 w-8 mx-auto mb-2 opacity-50" />
-                        <p className="text-sm">ยังไม่มีไฟล์ล่าสุด</p>
+                        {!historyShowAll && invoiceUploadHistory.length > 0 ? (
+                          <>
+                            <p className="text-sm">ไม่มีไฟล์ใน 2 เดือนล่าสุด</p>
+                            <button
+                              className="mt-2 text-xs text-indigo-500 hover:text-indigo-700"
+                              onClick={() => setHistoryShowAll(true)}
+                            >
+                              ดูทั้งหมด
+                            </button>
+                          </>
+                        ) : (
+                          <p className="text-sm">ยังไม่มีไฟล์ล่าสุด</p>
+                        )}
                       </div>
                     )}
                   </CardContent>
@@ -2748,15 +2831,58 @@ export default function WatsonExcelValidatorPage() {
                           )}
                         </div>
                       )}
-                    <p className="text-sm text-gray-500">
-                      ดับเบิลคลิกที่ cell เพื่อแก้ไข | คลิกที่หัว Column เพื่อ
-                      Shift ทั้ง Column
-                    </p>
+                    <div className="flex items-center justify-between">
+                      <p className="text-sm text-gray-500">
+                        ดับเบิลคลิกที่ cell เพื่อแก้ไข | คลิกที่หัว Column เพื่อ
+                        Shift ทั้ง Column
+                      </p>
+                      {/* Column visibility picker */}
+                      {toggleableColumns.length > 0 && (
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="h-7 text-xs gap-1.5"
+                            >
+                              <ChevronDown className="h-3 w-3" />
+                              คอลัมน์
+                              {hiddenColumns.size > 0 && (
+                                <span className="bg-amber-100 text-amber-700 rounded-full px-1.5 text-[10px] font-medium">
+                                  ซ่อน {hiddenColumns.size}
+                                </span>
+                              )}
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent
+                            align="end"
+                            className="max-h-80 overflow-y-auto w-56"
+                          >
+                            {toggleableColumns.map((col) => (
+                              <DropdownMenuCheckboxItem
+                                key={col}
+                                checked={!hiddenColumns.has(col)}
+                                onCheckedChange={(checked) => {
+                                  setHiddenColumns((prev) => {
+                                    const next = new Set(prev);
+                                    if (checked) next.delete(col);
+                                    else next.add(col);
+                                    return next;
+                                  });
+                                }}
+                              >
+                                {col}
+                              </DropdownMenuCheckboxItem>
+                            ))}
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      )}
+                    </div>
                   </CardHeader>
                   <CardContent>
                     <DataTable
                       data={displayData}
-                      headers={displayHeaders}
+                      headers={visibleHeaders}
                       errors={validationResult?.errors || []}
                       onCellUpdate={handleCellUpdate}
                       onShiftLeft={handleShiftLeft}
