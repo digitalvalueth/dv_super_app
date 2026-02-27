@@ -126,10 +126,11 @@ export async function GET(req: NextRequest) {
 
     const companyIdFilter = searchParams.get("companyId");
 
-    let query = adminDb
-      .collection(COLLECTIONS.EXPORTS)
-      .orderBy("exportedAt", "desc") as FirebaseFirestore.Query;
+    let query = adminDb.collection(
+      COLLECTIONS.EXPORTS,
+    ) as FirebaseFirestore.Query;
 
+    // Equality filters must come before orderBy in Firestore compound queries
     if (companyIdFilter) {
       query = query.where("companyId", "==", companyIdFilter);
     }
@@ -139,33 +140,42 @@ export async function GET(req: NextRequest) {
     if (status) {
       query = query.where("status", "==", status);
     }
-    if (confirmedStart) {
-      query = query.where(
-        "confirmedAt",
-        ">=",
-        Timestamp.fromDate(new Date(confirmedStart)),
-      );
-    }
-    if (confirmedEnd) {
-      query = query.where(
-        "confirmedAt",
-        "<=",
-        Timestamp.fromDate(new Date(confirmedEnd)),
-      );
-    }
-    if (startDate) {
-      query = query.where(
-        "exportedAt",
-        ">=",
-        Timestamp.fromDate(new Date(startDate)),
-      );
-    }
-    if (endDate) {
-      query = query.where(
-        "exportedAt",
-        "<=",
-        Timestamp.fromDate(new Date(endDate)),
-      );
+
+    // Range filters — orderBy must be on the same field as the range filter
+    if (confirmedStart || confirmedEnd) {
+      if (confirmedStart) {
+        query = query.where(
+          "confirmedAt",
+          ">=",
+          Timestamp.fromDate(new Date(confirmedStart)),
+        );
+      }
+      if (confirmedEnd) {
+        query = query.where(
+          "confirmedAt",
+          "<=",
+          Timestamp.fromDate(new Date(confirmedEnd)),
+        );
+      }
+      query = query.orderBy("confirmedAt", "desc");
+    } else if (startDate || endDate) {
+      if (startDate) {
+        query = query.where(
+          "exportedAt",
+          ">=",
+          Timestamp.fromDate(new Date(startDate)),
+        );
+      }
+      if (endDate) {
+        query = query.where(
+          "exportedAt",
+          "<=",
+          Timestamp.fromDate(new Date(endDate)),
+        );
+      }
+      query = query.orderBy("exportedAt", "desc");
+    } else {
+      query = query.orderBy("exportedAt", "desc");
     }
 
     const countSnap = await query.count().get();

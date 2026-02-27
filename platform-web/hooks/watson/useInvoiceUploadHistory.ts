@@ -12,7 +12,7 @@ export type WorkflowStatus =
   | "exported"
   | "confirmed";
 
-const MAX_HISTORY = 5;
+const MAX_HISTORY = 20;
 
 export interface InvoiceUploadRecord {
   id: string;
@@ -127,6 +127,7 @@ export function useInvoiceUploadHistory(): InvoiceUploadHistoryReturn {
             confirmedAt: d.confirmedAt,
             bulkAcceptedItemCodes: d.bulkAcceptedItemCodes || [],
             qtyOverrides: d.qtyOverrides || {},
+            uploader: d.uploader || null,
             isLoading: false,
           }));
           setHistoryItems(formatted);
