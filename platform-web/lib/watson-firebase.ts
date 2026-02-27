@@ -322,9 +322,14 @@ export async function listExports(options?: {
   confirmedEndDate?: Date;
   limitCount?: number;
   status?: ExportStatus; // Filter by status: "draft" | "confirmed"
+  companyId?: string;
 }): Promise<ExportDocument[]> {
   const db = getFirestoreDb();
   const constraints: QueryConstraint[] = [];
+
+  if (options?.companyId) {
+    constraints.push(where("companyId", "==", options.companyId));
+  }
 
   if (options?.supplierCode) {
     constraints.push(where("supplierCode", "==", options.supplierCode));
@@ -693,13 +698,17 @@ export async function getInvoiceUpload(
 
 export async function listInvoiceUploads(
   limitCount: number = 5,
+  companyId?: string,
 ): Promise<InvoiceUploadDocument[]> {
   const db = getFirestoreDb();
-  const q = query(
-    collection(db, COLLECTIONS.INVOICE_UPLOADS),
+  const constraints: QueryConstraint[] = [
     orderBy("uploadedAt", "desc"),
     limit(limitCount),
-  );
+  ];
+  if (companyId) {
+    constraints.unshift(where("companyId", "==", companyId));
+  }
+  const q = query(collection(db, COLLECTIONS.INVOICE_UPLOADS), ...constraints);
   const querySnapshot = await getDocs(q);
   return querySnapshot.docs.map((d) => d.data() as InvoiceUploadDocument);
 }

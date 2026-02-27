@@ -15,6 +15,7 @@ export interface User {
   companyId?: string;
   companyCode?: string;
   companyName?: string;
+  companyIds?: string[]; // All company IDs this user belongs to (multi-company support)
   branchId?: string;
   branchCode?: string;
   branchName?: string;

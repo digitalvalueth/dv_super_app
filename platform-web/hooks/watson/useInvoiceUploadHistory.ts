@@ -1,5 +1,6 @@
 "use client";
 
+import { useAuthStore } from "@/stores/auth.store";
 import { RawRow } from "@/types/watson/invoice";
 import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
@@ -86,6 +87,7 @@ export interface InvoiceUploadHistoryReturn {
 }
 
 export function useInvoiceUploadHistory(): InvoiceUploadHistoryReturn {
+  const { userData } = useAuthStore();
   const [historyItems, setHistoryItems] = useState<InvoiceUploadRecord[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
@@ -96,8 +98,12 @@ export function useInvoiceUploadHistory(): InvoiceUploadHistoryReturn {
 
     const fetchHistory = async () => {
       try {
+        const params = new URLSearchParams({ limit: String(MAX_HISTORY) });
+        const companyId = userData?.companyId;
+        if (companyId) params.set("companyId", companyId);
+
         const response = await fetch(
-          "/api/watson/invoice-history?limit=" + MAX_HISTORY,
+          "/api/watson/invoice-history?" + params.toString(),
         );
         if (!response.ok) throw new Error("Failed to fetch history");
 
@@ -137,7 +143,7 @@ export function useInvoiceUploadHistory(): InvoiceUploadHistoryReturn {
     return () => {
       mounted = false;
     };
-  }, []);
+  }, [userData?.companyId]);
 
   // Update history helper
   const updateLocalHistory = useCallback(
@@ -261,7 +267,11 @@ export function useInvoiceUploadHistory(): InvoiceUploadHistoryReturn {
             fileName,
             headers,
             data,
-            meta,
+            meta: {
+              ...meta,
+              companyId: userData?.companyId || null,
+              companyName: userData?.companyName || null,
+            },
           }),
         });
 

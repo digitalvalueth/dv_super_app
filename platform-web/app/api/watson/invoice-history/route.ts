@@ -1,4 +1,3 @@
-
 import { adminDb } from "@/lib/firebase-admin";
 import { COLLECTIONS } from "@/lib/watson-firebase";
 import { NextRequest, NextResponse } from "next/server";
@@ -7,12 +6,17 @@ export async function GET(req: NextRequest) {
   try {
     const searchParams = req.nextUrl.searchParams;
     const limitCount = parseInt(searchParams.get("limit") || "20", 10);
+    const companyId = searchParams.get("companyId");
 
-    const snapshot = await adminDb
+    let ref: FirebaseFirestore.Query = adminDb
       .collection(COLLECTIONS.INVOICE_UPLOADS)
-      .orderBy("uploadedAt", "desc")
-      .limit(limitCount)
-      .get();
+      .orderBy("uploadedAt", "desc");
+
+    if (companyId) {
+      ref = ref.where("companyId", "==", companyId);
+    }
+
+    const snapshot = await ref.limit(limitCount).get();
 
     const records = snapshot.docs.map((doc) => {
       const d = doc.data();
@@ -20,7 +24,8 @@ export async function GET(req: NextRequest) {
         ...d,
         id: doc.id,
         // Convert Timestamp to ISO string
-        uploadedAt: d.uploadedAt?.toDate?.().toISOString() || new Date().toISOString(),
+        uploadedAt:
+          d.uploadedAt?.toDate?.().toISOString() || new Date().toISOString(),
       };
     });
 
@@ -29,7 +34,7 @@ export async function GET(req: NextRequest) {
     console.error("Error listing invoice history:", error);
     return NextResponse.json(
       { error: "Failed to list history" },
-      { status: 500 }
+      { status: 500 },
     );
   }
 }

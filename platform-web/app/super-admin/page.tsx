@@ -4,38 +4,43 @@ import React from "react";
 
 import { auth } from "@/lib/firebase";
 import {
-    createModule,
-    deleteModule,
-    getAllCompanies,
-    getAllUsers,
-    getCompanyUsers,
-    getModules,
-    getModuleWhitelist,
-    ModuleInfo,
-    seedInitialModules,
-    setModuleWhitelist,
-    updateCompanyEnabledModules,
-    updateModule,
-    updateUserModuleAccess,
+  addUserToCompany,
+  createCompany,
+  createModule,
+  deleteModule,
+  getAllCompanies,
+  getAllUsers,
+  getCompanyUsers,
+  getModules,
+  getModuleWhitelist,
+  ModuleInfo,
+  seedInitialModules,
+  setModuleWhitelist,
+  updateCompanyEnabledModules,
+  updateModule,
+  updateUserModuleAccess,
+  updateUserRole,
 } from "@/lib/module-service";
 import { useAuthStore } from "@/stores/auth.store";
 import { Company, User } from "@/types";
 import { signOut } from "firebase/auth";
 import {
-    ArrowLeft,
-    Building2,
-    ChevronDown,
-    ExternalLink,
-    Layers,
-    LogOut,
-    Pencil,
-    Plus,
-    RefreshCw,
-    Save,
-    Shield,
-    Trash2,
-    Users,
-    X,
+  ArrowLeft,
+  Building2,
+  Check,
+  ChevronDown,
+  ExternalLink,
+  Layers,
+  LogOut,
+  Pencil,
+  Plus,
+  RefreshCw,
+  Save,
+  Shield,
+  Trash2,
+  UserPlus,
+  Users,
+  X,
 } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -141,13 +146,32 @@ export default function SuperAdminPage() {
   if (!isSuperAdmin && !isCompanyAdmin) return null;
 
   const activeModules = modules.filter((m) => m.status === "active");
-  const tabs: { id: TabId; label: string; icon: React.ReactNode }[] = isSuperAdmin
-    ? [
-        { id: "modules", label: "จัดการ Modules", icon: <Layers className="w-4 h-4" /> },
-        { id: "companies", label: "บริษัท ↔ Modules", icon: <Building2 className="w-4 h-4" /> },
-        { id: "users", label: "ผู้ใช้ ↔ Modules", icon: <Users className="w-4 h-4" /> },
-      ]
-    : [{ id: "users" as TabId, label: "ผู้ใช้ ↔ Modules", icon: <Users className="w-4 h-4" /> }];
+  const tabs: { id: TabId; label: string; icon: React.ReactNode }[] =
+    isSuperAdmin
+      ? [
+          {
+            id: "modules",
+            label: "จัดการ Modules",
+            icon: <Layers className="w-4 h-4" />,
+          },
+          {
+            id: "companies",
+            label: "บริษัท ↔ Modules",
+            icon: <Building2 className="w-4 h-4" />,
+          },
+          {
+            id: "users",
+            label: "ผู้ใช้ ↔ Modules",
+            icon: <Users className="w-4 h-4" />,
+          },
+        ]
+      : [
+          {
+            id: "users" as TabId,
+            label: "ผู้ใช้ ↔ Modules",
+            icon: <Users className="w-4 h-4" />,
+          },
+        ];
 
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
@@ -188,7 +212,9 @@ export default function SuperAdminPage() {
               disabled={loading}
               className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-600 transition-colors disabled:opacity-50"
             >
-              <RefreshCw className={`w-4 h-4 ${loading ? "animate-spin" : ""}`} />
+              <RefreshCw
+                className={`w-4 h-4 ${loading ? "animate-spin" : ""}`}
+              />
               รีเฟรช
             </button>
             {isSuperAdmin && (
@@ -234,17 +260,16 @@ export default function SuperAdminPage() {
         ) : (
           <>
             {activeTab === "modules" && isSuperAdmin && (
-              <ModulesTab
-                modules={modules}
-                onRefresh={loadData}
-              />
+              <ModulesTab modules={modules} onRefresh={loadData} />
             )}
 
             {activeTab === "companies" && isSuperAdmin && (
               <CompaniesTab
                 companies={companies}
                 activeModules={activeModules}
+                users={users}
                 onToggle={handleToggleCompanyModule}
+                onRefresh={loadData}
               />
             )}
 
@@ -402,9 +427,14 @@ function ModulesTab({
         <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6">
           <div className="flex items-center justify-between mb-4">
             <h3 className="font-semibold text-gray-900 dark:text-white">
-              {editingModule ? `แก้ไข: ${editingModule.name}` : "สร้าง Module ใหม่"}
+              {editingModule
+                ? `แก้ไข: ${editingModule.name}`
+                : "สร้าง Module ใหม่"}
             </h3>
-            <button onClick={resetForm} className="text-gray-400 hover:text-gray-600">
+            <button
+              onClick={resetForm}
+              className="text-gray-400 hover:text-gray-600"
+            >
               <X className="w-5 h-5" />
             </button>
           </div>
@@ -465,7 +495,9 @@ function ModulesTab({
               <input
                 type="text"
                 value={form.description}
-                onChange={(e) => setForm({ ...form, description: e.target.value })}
+                onChange={(e) =>
+                  setForm({ ...form, description: e.target.value })
+                }
                 placeholder="โปรแกรมนับ Stock สินค้า"
                 className="w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm"
               />
@@ -497,7 +529,10 @@ function ModulesTab({
                 <select
                   value={form.status}
                   onChange={(e) =>
-                    setForm({ ...form, status: e.target.value as ModuleInfo["status"] })
+                    setForm({
+                      ...form,
+                      status: e.target.value as ModuleInfo["status"],
+                    })
                   }
                   className="w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm"
                 >
@@ -513,7 +548,9 @@ function ModulesTab({
                 <input
                   type="number"
                   value={form.order}
-                  onChange={(e) => setForm({ ...form, order: parseInt(e.target.value) || 1 })}
+                  onChange={(e) =>
+                    setForm({ ...form, order: parseInt(e.target.value) || 1 })
+                  }
                   className="w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm"
                 />
               </div>
@@ -609,7 +646,8 @@ function ModulesTab({
 
         {modules.length === 0 && (
           <div className="text-center py-12 text-gray-400">
-            ยังไม่มี Module ในระบบ — กด "Seed ค่าเริ่มต้น" หรือ "เพิ่ม Module"
+            ยังไม่มี Module ในระบบ — กด &quot;Seed ค่าเริ่มต้น&quot; หรือ
+            &quot;เพิ่ม Module&quot;
           </div>
         )}
       </div>
@@ -622,16 +660,34 @@ function ModulesTab({
 function CompaniesTab({
   companies,
   activeModules,
+  users,
   onToggle,
+  onRefresh,
 }: {
   companies: (Company & { id: string })[];
   activeModules: ModuleInfo[];
-  onToggle: (companyId: string, currentModules: string[], moduleId: string) => void;
+  users: (User & { id: string })[];
+  onToggle: (
+    companyId: string,
+    currentModules: string[],
+    moduleId: string,
+  ) => void;
+  onRefresh: () => void;
 }) {
   const [expandedCompany, setExpandedCompany] = useState<string | null>(null);
-  const [whitelists, setWhitelists] = useState<Record<string, Record<string, string[]>>>({});
+  const [whitelists, setWhitelists] = useState<
+    Record<string, Record<string, string[]>>
+  >({});
   const [emailInputs, setEmailInputs] = useState<Record<string, string>>({});
   const [loadingWhitelist, setLoadingWhitelist] = useState<string | null>(null);
+  // User picker state: key = "companyId_moduleId"
+  const [pickerOpen, setPickerOpen] = useState<string | null>(null);
+  const [pickerSearch, setPickerSearch] = useState("");
+  const [pickerSelected, setPickerSelected] = useState<Set<string>>(new Set());
+  // Add company state
+  const [showAddCompany, setShowAddCompany] = useState(false);
+  const [addForm, setAddForm] = useState({ name: "", code: "" });
+  const [addingCompany, setAddingCompany] = useState(false);
 
   // Load whitelist when expanding a company
   const handleExpand = async (companyId: string) => {
@@ -673,7 +729,11 @@ function CompaniesTab({
   };
 
   // Remove single email tag
-  const handleRemoveEmail = (companyId: string, moduleId: string, email: string) => {
+  const handleRemoveEmail = (
+    companyId: string,
+    moduleId: string,
+    email: string,
+  ) => {
     const current = whitelists[companyId]?.[moduleId] || [];
     const updated = current.filter((e) => e !== email);
     setWhitelists((prev) => ({
@@ -687,7 +747,9 @@ function CompaniesTab({
     const emails = whitelists[companyId]?.[moduleId] || [];
     try {
       await setModuleWhitelist(companyId, moduleId, emails);
-      toast.success(`บันทึก whitelist ${moduleId} สำเร็จ (${emails.length} emails)`);
+      toast.success(
+        `บันทึก whitelist ${moduleId} สำเร็จ (${emails.length} emails)`,
+      );
     } catch (err) {
       console.error("Error:", err);
       toast.error("บันทึกไม่สำเร็จ");
@@ -695,10 +757,87 @@ function CompaniesTab({
   };
 
   // Handle Enter key in email input
-  const handleKeyDown = (e: React.KeyboardEvent, companyId: string, moduleId: string) => {
+  const handleKeyDown = (
+    e: React.KeyboardEvent,
+    companyId: string,
+    moduleId: string,
+  ) => {
     if (e.key === "Enter") {
       e.preventDefault();
       handleAddEmails(companyId, moduleId);
+    }
+  };
+
+  // Open user picker for a module
+  const openPicker = (companyId: string, moduleId: string) => {
+    const key = `${companyId}_${moduleId}`;
+    // Pre-select: emails already in whitelist UNION emails of users in this company
+    const alreadyInWhitelist = whitelists[companyId]?.[moduleId] || [];
+    const companyMemberEmails = users
+      .filter((u) => u.companyId === companyId && u.email)
+      .map((u) => u.email as string);
+    const preSelected = new Set([
+      ...alreadyInWhitelist,
+      ...companyMemberEmails,
+    ]);
+    setPickerSelected(preSelected);
+    setPickerSearch("");
+    setPickerOpen(key);
+  };
+
+  // Confirm user picker selection → add to whitelist + update companyIds for matched users
+  const confirmPicker = (companyId: string, moduleId: string) => {
+    const existing = whitelists[companyId]?.[moduleId] || [];
+    const merged = [...new Set([...existing, ...Array.from(pickerSelected)])];
+    setWhitelists((prev) => ({
+      ...prev,
+      [companyId]: { ...prev[companyId], [moduleId]: merged },
+    }));
+
+    // For newly added emails → add companyId to their companyIds in Firestore
+    const existingSet = new Set(existing);
+    const newlyAdded = Array.from(pickerSelected).filter(
+      (email) => !existingSet.has(email),
+    );
+    if (newlyAdded.length > 0) {
+      const emailToUser = new Map(
+        users.filter((u) => u.email).map((u) => [u.email as string, u]),
+      );
+      newlyAdded.forEach((email) => {
+        const matchedUser = emailToUser.get(email);
+        if (matchedUser?.id) {
+          addUserToCompany(matchedUser.id, companyId).catch((e) =>
+            console.error("addUserToCompany error:", e),
+          );
+        }
+      });
+    }
+
+    setPickerOpen(null);
+    setPickerSelected(new Set());
+  };
+
+  // Add company handler
+  const handleAddCompany = async () => {
+    if (!addForm.name.trim() || !addForm.code.trim()) {
+      toast.error("กรุณากรอกชื่อบริษัทและ Code");
+      return;
+    }
+    setAddingCompany(true);
+    try {
+      await createCompany({
+        name: addForm.name.trim(),
+        code: addForm.code.trim(),
+      });
+      toast.success(`สร้างบริษัท "${addForm.name}" สำเร็จ`);
+      setAddForm({ name: "", code: "" });
+      setShowAddCompany(false);
+      onRefresh();
+    } catch (err) {
+      console.error("Error:", err);
+      toast.error("สร้างบริษัทไม่สำเร็จ");
+    } finally {
+      setAddingCompany(false);
     }
   };
 
@@ -708,21 +847,110 @@ function CompaniesTab({
         <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
           จัดการ Module ตามบริษัท ({companies.length})
         </h2>
+        <button
+          onClick={() => setShowAddCompany((v) => !v)}
+          className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-colors"
+        >
+          <Plus className="w-4 h-4" />
+          เพิ่มบริษัท
+        </button>
       </div>
+
+      {/* Add company inline form */}
+      {showAddCompany && (
+        <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-5">
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="font-semibold text-gray-900 dark:text-white">
+              เพิ่มบริษัทใหม่
+            </h3>
+            <button
+              onClick={() => setShowAddCompany(false)}
+              className="text-gray-400 hover:text-gray-600"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+          <div className="flex gap-3 flex-wrap">
+            <div className="flex-1 min-w-45">
+              <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">
+                ชื่อบริษัท *
+              </label>
+              <input
+                type="text"
+                value={addForm.name}
+                onChange={(e) =>
+                  setAddForm((f) => ({ ...f, name: e.target.value }))
+                }
+                placeholder="FITT Corporation"
+                className="w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-sm text-gray-900 dark:text-white"
+              />
+            </div>
+            <div className="w-36">
+              <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">
+                Code *
+              </label>
+              <input
+                type="text"
+                value={addForm.code}
+                onChange={(e) =>
+                  setAddForm((f) => ({
+                    ...f,
+                    code: e.target.value.toUpperCase(),
+                  }))
+                }
+                placeholder="FITT"
+                className="w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-sm text-gray-900 dark:text-white"
+              />
+            </div>
+            <div className="flex items-end gap-2">
+              <button
+                onClick={handleAddCompany}
+                disabled={addingCompany}
+                className="flex items-center gap-1.5 px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors"
+              >
+                {addingCompany ? (
+                  <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                ) : (
+                  <Check className="w-4 h-4" />
+                )}
+                บันทึก
+              </button>
+              <button
+                onClick={() => {
+                  setShowAddCompany(false);
+                  setAddForm({ name: "", code: "" });
+                }}
+                className="px-4 py-2 text-sm font-medium text-gray-600 dark:text-gray-300 bg-gray-100 dark:bg-gray-700 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
+              >
+                ยกเลิก
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-700/50">
-                <th className="text-left px-6 py-3 font-medium text-gray-500">บริษัท</th>
-                <th className="text-left px-6 py-3 font-medium text-gray-500">Code</th>
+                <th className="text-left px-6 py-3 font-medium text-gray-500">
+                  บริษัท
+                </th>
+                <th className="text-left px-6 py-3 font-medium text-gray-500">
+                  Code
+                </th>
                 {activeModules.map((mod) => (
-                  <th key={mod.id} className="text-center px-4 py-3 font-medium text-gray-500">
+                  <th
+                    key={mod.id}
+                    className="text-center px-4 py-3 font-medium text-gray-500"
+                  >
                     {mod.icon} {mod.name}
                   </th>
                 ))}
-                <th className="text-center px-4 py-3 font-medium text-gray-500">Whitelist</th>
+                <th className="text-center px-4 py-3 font-medium text-gray-500">
+                  Whitelist
+                </th>
               </tr>
             </thead>
             <tbody>
@@ -732,14 +960,20 @@ function CompaniesTab({
                 return (
                   <React.Fragment key={company.id}>
                     <tr className="border-b border-gray-100 dark:border-gray-700/50 hover:bg-gray-50 dark:hover:bg-gray-700/30 transition-colors">
-                      <td className="px-6 py-3 font-medium text-gray-900 dark:text-white">{company.name}</td>
-                      <td className="px-6 py-3 text-gray-500">{company.code}</td>
+                      <td className="px-6 py-3 font-medium text-gray-900 dark:text-white">
+                        {company.name}
+                      </td>
+                      <td className="px-6 py-3 text-gray-500">
+                        {company.code}
+                      </td>
                       {activeModules.map((mod) => {
                         const isEnabled = enabled.includes(mod.id);
                         return (
                           <td key={mod.id} className="text-center px-4 py-3">
                             <button
-                              onClick={() => onToggle(company.id, enabled, mod.id)}
+                              onClick={() =>
+                                onToggle(company.id, enabled, mod.id)
+                              }
                               className={`w-8 h-8 rounded-lg inline-flex items-center justify-center text-lg transition-all ${
                                 isEnabled
                                   ? "bg-green-100 dark:bg-green-900/30 hover:bg-green-200"
@@ -768,80 +1002,261 @@ function CompaniesTab({
                     {/* Expanded whitelist editor */}
                     {isExpanded && (
                       <tr>
-                        <td colSpan={3 + activeModules.length} className="px-6 py-4 bg-blue-50/50 dark:bg-blue-950/20">
+                        <td
+                          colSpan={3 + activeModules.length}
+                          className="px-6 py-4 bg-blue-50/50 dark:bg-blue-950/20"
+                        >
                           {loadingWhitelist === company.id ? (
-                            <div className="text-center py-4 text-gray-400">กำลังโหลด whitelist...</div>
+                            <div className="text-center py-4 text-gray-400">
+                              กำลังโหลด whitelist...
+                            </div>
                           ) : (
                             <div className="space-y-4">
                               <h4 className="font-semibold text-gray-800 dark:text-gray-200 flex items-center gap-2">
                                 📧 Email Whitelist — {company.name}
                               </h4>
                               <p className="text-xs text-gray-500">
-                                วาง email ที่ต้องการให้สิทธิ์ (คั่นด้วย เว้นวรรค, comma, หรือ Enter) → เมื่อ user login ด้วย email นี้ จะได้สิทธิ์อัตโนมัติ
+                                วาง email ที่ต้องการให้สิทธิ์ (คั่นด้วย
+                                เว้นวรรค, comma, หรือ Enter) → เมื่อ user login
+                                ด้วย email นี้ จะได้สิทธิ์อัตโนมัติ
                               </p>
 
-                              {activeModules.filter((m) => enabled.includes(m.id)).map((mod) => {
-                                const key = `${company.id}_${mod.id}`;
-                                const emails = whitelists[company.id]?.[mod.id] || [];
-                                return (
-                                  <div key={mod.id} className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-4">
-                                    <div className="flex items-center justify-between mb-3">
-                                      <span className="font-medium text-gray-700 dark:text-gray-300">
-                                        {mod.icon} {mod.name}
-                                        <span className="ml-2 text-xs text-gray-400">({emails.length} emails)</span>
-                                      </span>
-                                      <button
-                                        onClick={() => handleSaveWhitelist(company.id, mod.id)}
-                                        className="flex items-center gap-1 px-3 py-1 text-xs font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-colors"
-                                      >
-                                        <Save className="w-3 h-3" />
-                                        บันทึก
-                                      </button>
-                                    </div>
-
-                                    {/* Email tags */}
-                                    <div className="flex flex-wrap gap-1.5 mb-3 min-h-[32px]">
-                                      {emails.map((email) => (
-                                        <span
-                                          key={email}
-                                          className="inline-flex items-center gap-1 px-2.5 py-1 bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 rounded-full text-xs font-medium group"
-                                        >
-                                          {email}
-                                          <button
-                                            onClick={() => handleRemoveEmail(company.id, mod.id, email)}
-                                            className="w-3.5 h-3.5 rounded-full inline-flex items-center justify-center hover:bg-blue-300 dark:hover:bg-blue-700 transition-colors"
-                                          >
-                                            <X className="w-2.5 h-2.5" />
-                                          </button>
+                              {activeModules
+                                .filter((m) => enabled.includes(m.id))
+                                .map((mod) => {
+                                  const key = `${company.id}_${mod.id}`;
+                                  const emails =
+                                    whitelists[company.id]?.[mod.id] || [];
+                                  const isPickerOpen = pickerOpen === key;
+                                  // Show ALL users from the system (not just this company)
+                                  const filteredForPicker = users.filter(
+                                    (u) => {
+                                      const q = pickerSearch.toLowerCase();
+                                      return (
+                                        !q ||
+                                        (u.email || "")
+                                          .toLowerCase()
+                                          .includes(q) ||
+                                        (u.name || u.displayName || "")
+                                          .toLowerCase()
+                                          .includes(q) ||
+                                        (u.companyName || "")
+                                          .toLowerCase()
+                                          .includes(q)
+                                      );
+                                    },
+                                  );
+                                  return (
+                                    <div
+                                      key={mod.id}
+                                      className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-4"
+                                    >
+                                      <div className="flex items-center justify-between mb-3">
+                                        <span className="font-medium text-gray-700 dark:text-gray-300">
+                                          {mod.icon} {mod.name}
+                                          <span className="ml-2 text-xs text-gray-400">
+                                            ({emails.length} emails)
+                                          </span>
                                         </span>
-                                      ))}
-                                      {emails.length === 0 && (
-                                        <span className="text-xs text-gray-400 italic">ยังไม่มี email — วาง email ด้านล่าง</span>
+                                        <button
+                                          onClick={() =>
+                                            handleSaveWhitelist(
+                                              company.id,
+                                              mod.id,
+                                            )
+                                          }
+                                          className="flex items-center gap-1 px-3 py-1 text-xs font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-colors"
+                                        >
+                                          <Save className="w-3 h-3" />
+                                          บันทึก
+                                        </button>
+                                      </div>
+
+                                      {/* Email tags */}
+                                      <div className="flex flex-wrap gap-1.5 mb-3 min-h-8">
+                                        {emails.map((email) => (
+                                          <span
+                                            key={email}
+                                            className="inline-flex items-center gap-1 px-2.5 py-1 bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 rounded-full text-xs font-medium group"
+                                          >
+                                            {email}
+                                            <button
+                                              onClick={() =>
+                                                handleRemoveEmail(
+                                                  company.id,
+                                                  mod.id,
+                                                  email,
+                                                )
+                                              }
+                                              className="w-3.5 h-3.5 rounded-full inline-flex items-center justify-center hover:bg-blue-300 dark:hover:bg-blue-700 transition-colors"
+                                            >
+                                              <X className="w-2.5 h-2.5" />
+                                            </button>
+                                          </span>
+                                        ))}
+                                        {emails.length === 0 && (
+                                          <span className="text-xs text-gray-400 italic">
+                                            ยังไม่มี email — วาง email ด้านล่าง
+                                            หรือกด + เลือก user
+                                          </span>
+                                        )}
+                                      </div>
+
+                                      {/* Email input + user picker button */}
+                                      <div className="flex gap-2">
+                                        <input
+                                          type="text"
+                                          value={emailInputs[key] || ""}
+                                          onChange={(e) =>
+                                            setEmailInputs((prev) => ({
+                                              ...prev,
+                                              [key]: e.target.value,
+                                            }))
+                                          }
+                                          onKeyDown={(e) =>
+                                            handleKeyDown(e, company.id, mod.id)
+                                          }
+                                          placeholder="วาง email ที่นี่... (เช่น user1@gmail.com, user2@gmail.com)"
+                                          className="flex-1 px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm placeholder:text-gray-400"
+                                        />
+                                        <button
+                                          onClick={() =>
+                                            handleAddEmails(company.id, mod.id)
+                                          }
+                                          className="px-3 py-2 text-sm font-medium text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/20 rounded-lg hover:bg-blue-100 dark:hover:bg-blue-900/30 transition-colors"
+                                        >
+                                          เพิ่ม
+                                        </button>
+                                        {/* User picker button */}
+                                        {users.length > 0 && (
+                                          <button
+                                            onClick={() =>
+                                              openPicker(company.id, mod.id)
+                                            }
+                                            title="เลือก user จากระบบ"
+                                            className="flex items-center gap-1 px-3 py-2 text-sm font-medium text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-900/20 rounded-lg hover:bg-emerald-100 dark:hover:bg-emerald-900/30 transition-colors"
+                                          >
+                                            <UserPlus className="w-4 h-4" />
+                                          </button>
+                                        )}
+                                      </div>
+
+                                      {/* User picker dropdown */}
+                                      {isPickerOpen && (
+                                        <div className="mt-3 border border-gray-200 dark:border-gray-600 rounded-lg overflow-hidden shadow-lg bg-white dark:bg-gray-800">
+                                          <div className="p-3 border-b border-gray-100 dark:border-gray-700 flex items-center gap-2">
+                                            <input
+                                              autoFocus
+                                              type="text"
+                                              value={pickerSearch}
+                                              onChange={(e) =>
+                                                setPickerSearch(e.target.value)
+                                              }
+                                              placeholder="ค้นหาชื่อ, email หรือบริษัท..."
+                                              className="flex-1 px-3 py-1.5 text-sm rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                                            />
+                                            <span className="text-xs text-gray-400 whitespace-nowrap">
+                                              {pickerSelected.size} เลือก
+                                            </span>
+                                          </div>
+                                          <div className="divide-y divide-gray-100 dark:divide-gray-700 max-h-48 overflow-y-auto">
+                                            {filteredForPicker.length === 0 ? (
+                                              <p className="px-4 py-3 text-sm text-gray-400 text-center">
+                                                ไม่พบ user ที่ตรงกัน
+                                              </p>
+                                            ) : (
+                                              filteredForPicker.map((u) => {
+                                                const email = u.email || "";
+                                                const checked =
+                                                  pickerSelected.has(email);
+                                                return (
+                                                  <button
+                                                    key={u.id}
+                                                    onClick={() => {
+                                                      setPickerSelected(
+                                                        (prev) => {
+                                                          const next = new Set(
+                                                            prev,
+                                                          );
+                                                          if (next.has(email))
+                                                            next.delete(email);
+                                                          else next.add(email);
+                                                          return next;
+                                                        },
+                                                      );
+                                                    }}
+                                                    className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors text-left"
+                                                  >
+                                                    <div
+                                                      className={`w-4 h-4 rounded border-2 flex items-center justify-center shrink-0 transition-colors ${checked ? "bg-blue-600 border-blue-600" : "border-gray-300 dark:border-gray-500"}`}
+                                                    >
+                                                      {checked && (
+                                                        <Check className="w-3 h-3 text-white" />
+                                                      )}
+                                                    </div>
+                                                    <div className="min-w-0 flex-1">
+                                                      <div className="flex items-center gap-2 flex-wrap">
+                                                        <p className="text-sm font-medium text-gray-800 dark:text-gray-200 truncate">
+                                                          {u.name ||
+                                                            u.displayName ||
+                                                            email}
+                                                        </p>
+                                                        {u.companyId ===
+                                                        company.id ? (
+                                                          <span className="text-xs px-1.5 py-0.5 rounded bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400 shrink-0">
+                                                            บริษัทนี้
+                                                          </span>
+                                                        ) : u.companyName ? (
+                                                          <span className="text-xs px-1.5 py-0.5 rounded bg-gray-100 text-gray-500 dark:bg-gray-700 dark:text-gray-400 shrink-0">
+                                                            {u.companyName}
+                                                          </span>
+                                                        ) : (
+                                                          <span className="text-xs px-1.5 py-0.5 rounded bg-orange-100 text-orange-600 dark:bg-orange-900/30 dark:text-orange-400 shrink-0">
+                                                            ยังไม่มีบริษัท
+                                                          </span>
+                                                        )}
+                                                      </div>
+                                                      <p className="text-xs text-gray-400 truncate">
+                                                        {email}
+                                                      </p>
+                                                    </div>
+                                                  </button>
+                                                );
+                                              })
+                                            )}
+                                          </div>
+                                          <div className="flex gap-2 p-3 border-t border-gray-100 dark:border-gray-700">
+                                            <button
+                                              onClick={() =>
+                                                confirmPicker(
+                                                  company.id,
+                                                  mod.id,
+                                                )
+                                              }
+                                              className="flex-1 flex items-center justify-center gap-1.5 px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-colors"
+                                            >
+                                              <Check className="w-4 h-4" />
+                                              เพิ่ม {pickerSelected.size} user
+                                            </button>
+                                            <button
+                                              onClick={() => {
+                                                setPickerOpen(null);
+                                                setPickerSelected(new Set());
+                                              }}
+                                              className="px-4 py-2 text-sm font-medium text-gray-600 dark:text-gray-300 bg-gray-100 dark:bg-gray-700 rounded-lg hover:bg-gray-200 transition-colors"
+                                            >
+                                              ยกเลิก
+                                            </button>
+                                          </div>
+                                        </div>
                                       )}
                                     </div>
+                                  );
+                                })}
 
-                                    {/* Email input */}
-                                    <div className="flex gap-2">
-                                      <input
-                                        type="text"
-                                        value={emailInputs[key] || ""}
-                                        onChange={(e) => setEmailInputs((prev) => ({ ...prev, [key]: e.target.value }))}
-                                        onKeyDown={(e) => handleKeyDown(e, company.id, mod.id)}
-                                        placeholder="วาง email ที่นี่... (เช่น user1@gmail.com, user2@gmail.com)"
-                                        className="flex-1 px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm placeholder:text-gray-400"
-                                      />
-                                      <button
-                                        onClick={() => handleAddEmails(company.id, mod.id)}
-                                        className="px-3 py-2 text-sm font-medium text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/20 rounded-lg hover:bg-blue-100 dark:hover:bg-blue-900/30 transition-colors"
-                                      >
-                                        เพิ่ม
-                                      </button>
-                                    </div>
-                                  </div>
-                                );
-                              })}
-
-                              {activeModules.filter((m) => enabled.includes(m.id)).length === 0 && (
+                              {activeModules.filter((m) =>
+                                enabled.includes(m.id),
+                              ).length === 0 && (
                                 <p className="text-sm text-gray-400 text-center py-4">
                                   เปิดใช้ module ก่อนจึงจะจัดการ whitelist ได้
                                 </p>
@@ -856,7 +1271,10 @@ function CompaniesTab({
               })}
               {companies.length === 0 && (
                 <tr>
-                  <td colSpan={3 + activeModules.length} className="text-center py-12 text-gray-400">
+                  <td
+                    colSpan={3 + activeModules.length}
+                    className="text-center py-12 text-gray-400"
+                  >
                     ไม่พบข้อมูลบริษัท
                   </td>
                 </tr>
@@ -882,16 +1300,51 @@ function UsersTab({
   modules: ModuleInfo[];
   companies: (Company & { id: string })[];
   isSuperAdmin: boolean;
-  onToggleModule: (userId: string, currentModules: string[], moduleId: string) => void;
+  onToggleModule: (
+    userId: string,
+    currentModules: string[],
+    moduleId: string,
+  ) => void;
 }) {
   const [filterCompanyId, setFilterCompanyId] = useState<string>("");
+  const [localUsers, setLocalUsers] = useState(users);
+
+  // Sync when parent reloads
+  useEffect(() => {
+    setLocalUsers(users);
+  }, [users]);
+
+  const handleRoleChange = async (userId: string, newRole: string) => {
+    // Optimistic update
+    setLocalUsers((prev) =>
+      prev.map((u) =>
+        u.id === userId ? { ...u, role: newRole as User["role"] } : u,
+      ),
+    );
+    try {
+      await updateUserRole(userId, newRole);
+      toast.success("เปลี่ยน Role สำเร็จ");
+    } catch (err) {
+      console.error("Error:", err);
+      toast.error("เปลี่ยน Role ไม่สำเร็จ");
+      // Revert
+      setLocalUsers(users);
+    }
+  };
 
   const filteredUsers = filterCompanyId
-    ? users.filter((u) => u.companyId === filterCompanyId)
-    : users;
+    ? localUsers.filter((u) => u.companyId === filterCompanyId)
+    : localUsers;
 
   const sortedUsers = [...filteredUsers].sort((a, b) => {
-    const p: Record<string, number> = { super_admin: 0, admin: 1, manager: 2, supervisor: 3, employee: 4, staff: 5 };
+    const p: Record<string, number> = {
+      super_admin: 0,
+      admin: 1,
+      manager: 2,
+      supervisor: 3,
+      employee: 4,
+      staff: 5,
+    };
     return (p[a.role] || 99) - (p[b.role] || 99);
   });
 
@@ -912,10 +1365,11 @@ function UsersTab({
                 onChange={(e) => setFilterCompanyId(e.target.value)}
                 className="appearance-none pl-4 pr-8 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm"
               >
-                <option value="">ทุกบริษัท ({users.length})</option>
+                <option value="">ทุกบริษัท ({localUsers.length})</option>
                 {companies.map((c) => (
                   <option key={c.id} value={c.id}>
-                    {c.name} ({users.filter((u) => u.companyId === c.id).length})
+                    {c.name} (
+                    {localUsers.filter((u) => u.companyId === c.id).length})
                   </option>
                 ))}
               </select>
@@ -931,13 +1385,22 @@ function UsersTab({
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-700/50">
-                <th className="text-left px-6 py-3 font-medium text-gray-500">ผู้ใช้</th>
-                <th className="text-left px-4 py-3 font-medium text-gray-500">Role</th>
+                <th className="text-left px-6 py-3 font-medium text-gray-500">
+                  ผู้ใช้
+                </th>
+                <th className="text-left px-4 py-3 font-medium text-gray-500">
+                  Role
+                </th>
                 {isSuperAdmin && (
-                  <th className="text-left px-4 py-3 font-medium text-gray-500">บริษัท</th>
+                  <th className="text-left px-4 py-3 font-medium text-gray-500">
+                    บริษัท
+                  </th>
                 )}
                 {modules.map((mod) => (
-                  <th key={mod.id} className="text-center px-4 py-3 font-medium text-gray-500">
+                  <th
+                    key={mod.id}
+                    className="text-center px-4 py-3 font-medium text-gray-500"
+                  >
                     {mod.icon} {mod.name}
                   </th>
                 ))}
@@ -946,10 +1409,14 @@ function UsersTab({
             <tbody>
               {sortedUsers.map((user) => {
                 const userModules = user.moduleAccess || [];
-                const companyEnabled = companyModulesMap.get(user.companyId || "") || [];
+                const companyEnabled =
+                  companyModulesMap.get(user.companyId || "") || [];
 
                 return (
-                  <tr key={user.id} className="border-b border-gray-100 dark:border-gray-700/50 hover:bg-gray-50 dark:hover:bg-gray-700/30 transition-colors">
+                  <tr
+                    key={user.id}
+                    className="border-b border-gray-100 dark:border-gray-700/50 hover:bg-gray-50 dark:hover:bg-gray-700/30 transition-colors"
+                  >
                     <td className="px-6 py-3">
                       <p className="font-medium text-gray-900 dark:text-white">
                         {user.name || user.displayName || "—"}
@@ -957,26 +1424,46 @@ function UsersTab({
                       <p className="text-xs text-gray-500">{user.email}</p>
                     </td>
                     <td className="px-4 py-3">
-                      <span
-                        className={`inline-flex px-2 py-1 rounded-full text-xs font-medium ${
-                          user.role === "super_admin"
-                            ? "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400"
-                            : user.role === "admin"
-                              ? "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400"
-                              : "bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-300"
-                        }`}
-                      >
-                        {user.role}
-                      </span>
+                      {user.role === "super_admin" ? (
+                        <span className="inline-flex px-2 py-1 rounded-full text-xs font-medium bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400">
+                          super_admin
+                        </span>
+                      ) : (
+                        <select
+                          value={user.role}
+                          onChange={(e) =>
+                            handleRoleChange(user.id, e.target.value)
+                          }
+                          className={`text-xs font-medium px-2 py-1 rounded-lg border transition-colors cursor-pointer ${
+                            user.role === "admin"
+                              ? "bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-900/20 dark:text-blue-400 dark:border-blue-700"
+                              : "bg-gray-50 text-gray-700 border-gray-200 dark:bg-gray-700 dark:text-gray-300 dark:border-gray-600"
+                          }`}
+                        >
+                          <option value="admin">admin</option>
+                          <option value="manager">manager</option>
+                          <option value="supervisor">supervisor</option>
+                          <option value="employee">employee</option>
+                          <option value="staff">staff</option>
+                        </select>
+                      )}
                     </td>
                     {isSuperAdmin && (
-                      <td className="px-4 py-3 text-xs text-gray-500">{user.companyName || "—"}</td>
+                      <td className="px-4 py-3 text-xs text-gray-500">
+                        {user.companyName || "—"}
+                      </td>
                     )}
                     {modules.map((mod) => {
                       if (user.role === "super_admin") {
                         return (
-                          <td key={mod.id} className="text-center px-4 py-3" title="Super Admin">
-                            <span className="w-8 h-8 rounded-lg inline-flex items-center justify-center text-lg bg-amber-100 dark:bg-amber-900/30">⭐</span>
+                          <td
+                            key={mod.id}
+                            className="text-center px-4 py-3"
+                            title="Super Admin"
+                          >
+                            <span className="w-8 h-8 rounded-lg inline-flex items-center justify-center text-lg bg-amber-100 dark:bg-amber-900/30">
+                              ⭐
+                            </span>
                           </td>
                         );
                       }
@@ -987,7 +1474,9 @@ function UsersTab({
                       return (
                         <td key={mod.id} className="text-center px-4 py-3">
                           <button
-                            onClick={() => onToggleModule(user.id, userModules, mod.id)}
+                            onClick={() =>
+                              onToggleModule(user.id, userModules, mod.id)
+                            }
                             disabled={!companyHasModule && !isSuperAdmin}
                             className={`w-8 h-8 rounded-lg inline-flex items-center justify-center text-lg transition-all ${
                               !companyHasModule
@@ -1014,7 +1503,10 @@ function UsersTab({
               })}
               {sortedUsers.length === 0 && (
                 <tr>
-                  <td colSpan={3 + modules.length + (isSuperAdmin ? 1 : 0)} className="text-center py-12 text-gray-400">
+                  <td
+                    colSpan={3 + modules.length + (isSuperAdmin ? 1 : 0)}
+                    className="text-center py-12 text-gray-400"
+                  >
                     ไม่พบผู้ใช้
                   </td>
                 </tr>
