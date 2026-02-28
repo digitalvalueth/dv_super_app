@@ -10,7 +10,8 @@ export type WorkflowStatus =
   | "validated"
   | "calculated"
   | "exported"
-  | "confirmed";
+  | "confirmed"
+  | "cancelled";
 
 const MAX_HISTORY = 20;
 
@@ -84,6 +85,7 @@ export interface InvoiceUploadHistoryReturn {
   ) => void;
   removeRecord: (id: string) => void;
   clearHistory: () => void;
+  refetchHistory: () => Promise<void>;
 }
 
 export function useInvoiceUploadHistory(): InvoiceUploadHistoryReturn {
@@ -144,6 +146,45 @@ export function useInvoiceUploadHistory(): InvoiceUploadHistoryReturn {
     return () => {
       mounted = false;
     };
+  }, [userData?.companyId]);
+
+  // Refetch history from server (e.g. after external status changes)
+  const refetchHistory = useCallback(async () => {
+    try {
+      const params = new URLSearchParams({ limit: String(MAX_HISTORY) });
+      const companyId = userData?.companyId;
+      if (companyId) params.set("companyId", companyId);
+
+      const response = await fetch(
+        "/api/watson/invoice-history?" + params.toString(),
+      );
+      if (!response.ok) throw new Error("Failed to fetch history");
+
+      const records = await response.json();
+      const formatted = records.map((d: any) => ({
+        id: d.id,
+        fileName: d.fileName,
+        uploadedAt: d.uploadedAt,
+        rowCount: d.rowCount,
+        supplierCode: d.supplierCode,
+        supplierName: d.supplierName,
+        reportDate: d.reportDate,
+        storageUrl: d.storageUrl,
+        status: d.status || "uploaded",
+        lastExportId: d.lastExportId,
+        validatedAt: d.validatedAt,
+        calculatedAt: d.calculatedAt,
+        exportedAt: d.exportedAt,
+        confirmedAt: d.confirmedAt,
+        bulkAcceptedItemCodes: d.bulkAcceptedItemCodes || [],
+        qtyOverrides: d.qtyOverrides || {},
+        uploader: d.uploader || null,
+        isLoading: false,
+      }));
+      setHistoryItems(formatted);
+    } catch (err) {
+      console.error("Error refetching invoice upload history:", err);
+    }
   }, [userData?.companyId]);
 
   // Update history helper
@@ -385,6 +426,12 @@ export function useInvoiceUploadHistory(): InvoiceUploadHistoryReturn {
               break;
             case "confirmed":
               updated.confirmedAt = now;
+              if (options?.lastExportId) {
+                updated.lastExportId = options.lastExportId;
+              }
+              break;
+            case "cancelled":
+              // no extra timestamp field needed
               break;
           }
           return updated;
@@ -446,5 +493,6 @@ export function useInvoiceUploadHistory(): InvoiceUploadHistoryReturn {
     updateStatus,
     removeRecord,
     clearHistory,
+    refetchHistory,
   };
 }

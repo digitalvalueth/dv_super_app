@@ -3,12 +3,12 @@
 import { useAuthStore } from "@/stores/auth.store";
 import { useSidebarStore } from "@/stores/sidebar.store";
 import {
-    ChevronLeft,
-    ChevronRight,
-    FileSpreadsheet,
-    Home,
-    Menu,
-    X,
+  ChevronLeft,
+  ChevronRight,
+  FileSpreadsheet,
+  Home,
+  Menu,
+  X,
 } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
@@ -54,7 +54,7 @@ export function WatsonSidebar() {
       <aside
         className={`
           fixed lg:static inset-y-0 left-0 z-40
-          ${collapsed ? "w-[72px]" : "w-64"}
+          ${collapsed ? "w-18" : "w-64"}
           bg-white dark:bg-gray-800 border-r border-gray-200 dark:border-gray-700 
           transition-all duration-300 ease-in-out
           ${
@@ -66,16 +66,25 @@ export function WatsonSidebar() {
       >
         <div className="h-full flex flex-col">
           {/* Header */}
-          <div className={`border-b border-gray-200 dark:border-gray-700 ${collapsed ? "p-3" : "p-6"}`}>
+          <div
+            className={`border-b border-gray-200 dark:border-gray-700 ${collapsed ? "p-3" : "p-6"}`}
+          >
             {collapsed ? (
               <div className="flex items-center justify-center">
-                <span className="text-xl font-bold text-blue-600 dark:text-blue-400">W</span>
+                <span className="text-xl font-bold text-blue-600 dark:text-blue-400">
+                  W
+                </span>
               </div>
             ) : (
               <>
-                <h1 className="text-2xl font-bold text-blue-600 dark:text-blue-400">
-                  Watson Excel
-                </h1>
+                <div className="flex items-baseline gap-2">
+                  <h1 className="text-2xl font-bold text-blue-600 dark:text-blue-400">
+                    Watson Excel
+                  </h1>
+                  <span className="text-xs font-semibold text-blue-400 dark:text-blue-500 bg-blue-50 dark:bg-blue-900/30 px-1.5 py-0.5 rounded">
+                    v6.02
+                  </span>
+                </div>
                 <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
                   ตรวจสอบ Consignment Invoice
                 </p>
@@ -88,7 +97,9 @@ export function WatsonSidebar() {
             )}
           </div>
 
-          <nav className={`flex-1 ${collapsed ? "p-2" : "p-4"} space-y-1 overflow-y-auto`}>
+          <nav
+            className={`flex-1 ${collapsed ? "p-2" : "p-4"} space-y-1 overflow-y-auto`}
+          >
             {/* Back to Platform */}
             <Link
               href="/"
