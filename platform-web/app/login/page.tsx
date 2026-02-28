@@ -3,11 +3,20 @@
 import { auth } from "@/lib/firebase";
 import { useAuthStore } from "@/stores/auth.store";
 import {
-    GoogleAuthProvider,
-    signInWithEmailAndPassword,
-    signInWithPopup,
+  GoogleAuthProvider,
+  signInWithEmailAndPassword,
+  signInWithPopup,
 } from "firebase/auth";
-import { ArrowRight, Eye, EyeOff, Loader2, Lock, LogIn, LogOut, Mail } from "lucide-react";
+import {
+  ArrowRight,
+  Eye,
+  EyeOff,
+  Loader2,
+  Lock,
+  LogIn,
+  LogOut,
+  Mail,
+} from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { toast } from "sonner";
@@ -79,19 +88,26 @@ export default function LoginPage() {
   return (
     <div className="min-h-screen relative flex items-center justify-center overflow-hidden">
       {/* Animated gradient background */}
-      <div className="absolute inset-0 bg-gradient-to-br from-gray-900 via-blue-950 to-indigo-950" />
+      <div className="absolute inset-0 bg-linear-to-br from-gray-900 via-blue-950 to-indigo-950" />
 
       {/* Decorative elements */}
       <div className="absolute inset-0 overflow-hidden pointer-events-none">
         <div className="absolute -top-40 -right-40 w-96 h-96 bg-blue-500/15 rounded-full blur-3xl animate-pulse" />
-        <div className="absolute -bottom-40 -left-40 w-96 h-96 bg-purple-500/15 rounded-full blur-3xl animate-pulse" style={{ animationDelay: "1s" }} />
-        <div className="absolute top-1/3 left-1/4 w-64 h-64 bg-cyan-500/10 rounded-full blur-3xl animate-pulse" style={{ animationDelay: "2s" }} />
+        <div
+          className="absolute -bottom-40 -left-40 w-96 h-96 bg-purple-500/15 rounded-full blur-3xl animate-pulse"
+          style={{ animationDelay: "1s" }}
+        />
+        <div
+          className="absolute top-1/3 left-1/4 w-64 h-64 bg-cyan-500/10 rounded-full blur-3xl animate-pulse"
+          style={{ animationDelay: "2s" }}
+        />
 
         {/* Grid pattern overlay */}
         <div
           className="absolute inset-0 opacity-[0.03]"
           style={{
-            backgroundImage: "linear-gradient(rgba(255,255,255,0.1) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.1) 1px, transparent 1px)",
+            backgroundImage:
+              "linear-gradient(rgba(255,255,255,0.1) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.1) 1px, transparent 1px)",
             backgroundSize: "60px 60px",
           }}
         />
@@ -101,7 +117,7 @@ export default function LoginPage() {
       <div className="relative z-10 w-full max-w-md px-4">
         {/* Logo and title */}
         <div className="text-center mb-8">
-          <div className="inline-flex items-center justify-center w-16 h-16 bg-gradient-to-br from-blue-500 to-blue-700 rounded-2xl shadow-lg shadow-blue-500/25 mb-4">
+          <div className="inline-flex items-center justify-center w-16 h-16 bg-linear-to-brrom-blue-500 to-blue-700 rounded-2xl shadow-lg shadow-blue-500/25 mb-4">
             <span className="text-2xl font-bold text-white">F</span>
           </div>
           <h1 className="text-3xl font-bold text-white tracking-tight">
@@ -115,9 +131,11 @@ export default function LoginPage() {
         {/* Session continuation card */}
         {hasSession && (
           <div className="mb-6 bg-white/[0.07] backdrop-blur-xl border border-white/10 rounded-2xl p-5 shadow-2xl">
-            <p className="text-sm text-blue-300/80 mb-3">เซสชั่นที่ยังใช้งานอยู่</p>
+            <p className="text-sm text-blue-300/80 mb-3">
+              เซสชั่นที่ยังใช้งานอยู่
+            </p>
             <div className="flex items-center gap-3 mb-4">
-              <div className="w-11 h-11 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-full flex items-center justify-center text-white font-bold text-lg shadow-lg shadow-blue-500/20">
+              <div className="w-11 h-11 bg-linear-to-brrom-blue-500 to-indigo-600 rounded-full flex items-center justify-center text-white font-bold text-lg shadow-lg shadow-blue-500/20">
                 {userData?.name?.[0] || user?.email?.[0]?.toUpperCase() || "U"}
               </div>
               <div className="flex-1 min-w-0">
@@ -132,7 +150,7 @@ export default function LoginPage() {
             <div className="flex gap-2">
               <button
                 onClick={handleContinue}
-                className="flex-1 flex items-center justify-center gap-2 bg-gradient-to-r from-blue-500 to-blue-600 text-white py-2.5 rounded-xl text-sm font-semibold hover:from-blue-600 hover:to-blue-700 transition-all shadow-lg shadow-blue-500/20 hover:shadow-blue-500/30"
+                className="flex-1 flex items-center justify-center gap-2 bg-linear-to-r from-blue-500 to-blue-600 text-white py-2.5 rounded-xl text-sm font-semibold hover:from-blue-600 hover:to-blue-700 transition-all shadow-lg shadow-blue-500/20 hover:shadow-blue-500/30"
               >
                 ดำเนินการต่อ
                 <ArrowRight className="w-4 h-4" />
@@ -153,7 +171,9 @@ export default function LoginPage() {
           {hasSession && (
             <div className="flex items-center gap-2 mb-4">
               <div className="flex-1 h-px bg-white/10" />
-              <span className="text-xs text-blue-300/50 px-2">หรือเข้าสู่ระบบด้วยบัญชีอื่น</span>
+              <span className="text-xs text-blue-300/50 px-2">
+                หรือเข้าสู่ระบบด้วยบัญชีอื่น
+              </span>
               <div className="flex-1 h-px bg-white/10" />
             </div>
           )}
@@ -174,7 +194,7 @@ export default function LoginPage() {
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   required
-                  className="w-full pl-10 pr-4 py-3 bg-white/[0.06] border border-white/10 rounded-xl text-white placeholder-blue-300/30 focus:ring-2 focus:ring-blue-500/40 focus:border-blue-500/40 focus:bg-white/[0.08] transition-all outline-none text-sm"
+                  className="w-full pl-10 pr-4 py-3 bg-white/6 border border-white/10 rounded-xl text-white placeholder-blue-300/30 focus:ring-2 focus:ring-blue-500/40 focus:border-blue-500/40 focus:bg-white/8 transition-all outline-none text-sm"
                   placeholder="your@email.com"
                 />
               </div>
@@ -195,7 +215,7 @@ export default function LoginPage() {
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   required
-                  className="w-full pl-10 pr-11 py-3 bg-white/[0.06] border border-white/10 rounded-xl text-white placeholder-blue-300/30 focus:ring-2 focus:ring-blue-500/40 focus:border-blue-500/40 focus:bg-white/[0.08] transition-all outline-none text-sm"
+                  className="w-full pl-10 pr-11 py-3 bg-white/6 border border-white/10 rounded-xl text-white placeholder-blue-300/30 focus:ring-2 focus:ring-blue-500/40 focus:border-blue-500/40 focus:bg-white/8 transition-all outline-none text-sm"
                   placeholder="••••••••"
                 />
                 <button
@@ -215,7 +235,7 @@ export default function LoginPage() {
             <button
               type="submit"
               disabled={loading}
-              className="w-full flex items-center justify-center gap-2 bg-gradient-to-r from-blue-500 to-blue-600 text-white py-3 rounded-xl font-semibold hover:from-blue-600 hover:to-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-lg shadow-blue-500/20 hover:shadow-blue-500/30 text-sm"
+              className="w-full flex items-center justify-center gap-2 bg-linear-to-r from-blue-500 to-blue-600 text-white py-3 rounded-xl font-semibold hover:from-blue-600 hover:to-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-lg shadow-blue-500/20 hover:shadow-blue-500/30 text-sm"
             >
               {loading ? (
                 <>
@@ -245,7 +265,7 @@ export default function LoginPage() {
           <button
             onClick={handleGoogleLogin}
             disabled={loading}
-            className="w-full flex items-center justify-center gap-3 bg-white/[0.06] border border-white/10 text-white py-3 rounded-xl font-medium hover:bg-white/[0.1] disabled:opacity-50 disabled:cursor-not-allowed transition-all text-sm"
+            className="w-full flex items-center justify-center gap-3 bg-white/6 border border-white/10 text-white py-3 rounded-xl font-medium hover:bg-white/10 disabled:opacity-50 disabled:cursor-not-allowed transition-all text-sm"
           >
             <svg className="w-4 h-4" viewBox="0 0 24 24">
               <path
