@@ -25,7 +25,7 @@ export type WorkflowStatus =
   | "exported"
   | "confirmed";
 
-export type ExportStatus = "draft" | "confirmed";
+export type ExportStatus = "draft" | "confirmed" | "cancelled";
 
 // --- Document Interfaces ---
 
@@ -37,6 +37,9 @@ export interface ExportDocument {
   exportedAt: Timestamp;
   confirmedAt?: Timestamp;
   confirmedBy?: string;
+  cancelledAt?: Timestamp;
+  cancelledBy?: string;
+  cancelReason?: string;
   status: ExportStatus;
   rowCount: number;
   passedCount: number;

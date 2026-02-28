@@ -18,13 +18,17 @@ export async function POST(
     }
 
     const body = await req.json();
-    const { action, confirmedBy } = body;
+    const { action, confirmedBy, cancelledBy, cancelReason } = body;
 
-    if (!action || !["confirm", "unconfirm"].includes(action)) {
+    if (
+      !action ||
+      !["confirm", "unconfirm", "cancel", "uncancel"].includes(action)
+    ) {
       return NextResponse.json(
         {
           error: {
-            message: "Invalid action. Must be 'confirm' or 'unconfirm'",
+            message:
+              "Invalid action. Must be 'confirm', 'unconfirm', 'cancel', or 'uncancel'",
           },
         },
         { status: 400 },
@@ -43,19 +47,42 @@ export async function POST(
 
     const now = new Date().toISOString();
     let update: Record<string, unknown>;
+    let newStatus: string;
 
     if (action === "confirm") {
       update = {
         status: "confirmed",
         confirmedAt: Timestamp.now(),
         confirmedBy: confirmedBy || null,
+        cancelledAt: null,
+        cancelledBy: null,
+        cancelReason: null,
       };
+      newStatus = "confirmed";
+    } else if (action === "cancel") {
+      update = {
+        status: "cancelled",
+        cancelledAt: Timestamp.now(),
+        cancelledBy: cancelledBy || null,
+        cancelReason: cancelReason || null,
+      };
+      newStatus = "cancelled";
+    } else if (action === "uncancel") {
+      update = {
+        status: "draft",
+        cancelledAt: null,
+        cancelledBy: null,
+        cancelReason: null,
+      };
+      newStatus = "draft";
     } else {
+      // unconfirm
       update = {
         status: "draft",
         confirmedAt: null,
         confirmedBy: null,
       };
+      newStatus = "draft";
     }
 
     await docRef.update(update);
@@ -64,13 +91,20 @@ export async function POST(
       success: true,
       data: {
         id,
-        status: action === "confirm" ? "confirmed" : "draft",
+        status: newStatus,
         confirmedAt: action === "confirm" ? now : null,
         confirmedBy: action === "confirm" ? confirmedBy || null : null,
+        cancelledAt: action === "cancel" ? now : null,
+        cancelledBy: action === "cancel" ? cancelledBy || null : null,
+        cancelReason: action === "cancel" ? cancelReason || null : null,
         message:
           action === "confirm"
             ? "Export confirmed successfully"
-            : "Export unconfirmed successfully",
+            : action === "cancel"
+              ? "Export cancelled successfully"
+              : action === "uncancel"
+                ? "Export restored to draft"
+                : "Export unconfirmed successfully",
       },
     });
   } catch (error) {

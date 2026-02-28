@@ -1,7 +1,10 @@
 "use client";
 
 import { UndoRedoControls } from "@/components/watson/editor/UndoRedoControls";
-import { ExportSuccessModal } from "@/components/watson/export/ExportSuccessModal";
+import {
+  ExportStatusFull,
+  ExportSuccessModal,
+} from "@/components/watson/export/ExportSuccessModal";
 import { ActivityLogsSidebar } from "@/components/watson/logs/ActivityLogsSidebar";
 import { OfflinePage } from "@/components/watson/OfflinePage";
 import {
@@ -1640,7 +1643,7 @@ export default function WatsonExcelValidatorPage() {
     supplierCode: string;
     rowCount: number;
     reportDate: string;
-    initialStatus: "draft" | "confirmed";
+    initialStatus: ExportStatusFull;
   }>({
     open: false,
     exportId: "",
@@ -2986,6 +2989,7 @@ export default function WatsonExcelValidatorPage() {
         initialStatus={exportSuccessModal.initialStatus}
         onStatusChange={(status) => {
           const isConfirmed = status === "confirmed";
+          const isCancelled = status === "cancelled";
           // Lock/unlock read-only immediately
           if (isConfirmed) {
             setConfirmedExportId(exportSuccessModal.exportId);
@@ -2997,11 +3001,11 @@ export default function WatsonExcelValidatorPage() {
             ...prev,
             initialStatus: status,
           }));
-          // Update invoice workflow status
+          // Update invoice workflow status (cancelled → back to exported)
           if (currentRecordId) {
             updateInvoiceStatus(
               currentRecordId,
-              isConfirmed ? "confirmed" : "exported",
+              isConfirmed ? "confirmed" : isCancelled ? "exported" : "exported",
             );
           }
         }}
