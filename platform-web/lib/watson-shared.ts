@@ -23,7 +23,8 @@ export type WorkflowStatus =
   | "validated"
   | "calculated"
   | "exported"
-  | "confirmed";
+  | "confirmed"
+  | "cancelled";
 
 export type ExportStatus = "draft" | "confirmed" | "cancelled";
 

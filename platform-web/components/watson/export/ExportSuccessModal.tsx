@@ -75,11 +75,13 @@ export function ExportSuccessModal({
   const [exportedAt, setExportedAt] = useState<string | null>(null);
 
   useEffect(() => {
-    if (open) {
+    if (open && exportId) {
       setStatus(initialStatus);
+      setActivity([]);
+      setExportedAt(null);
       fetchActivity();
     }
-  }, [open, initialStatus]);
+  }, [open, exportId, initialStatus]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const fetchActivity = async () => {
     if (!exportId) return;

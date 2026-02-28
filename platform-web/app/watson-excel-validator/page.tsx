@@ -101,6 +101,12 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 // Helper function to get status badge display
 function getStatusBadge(status?: WorkflowStatus) {
   switch (status) {
+    case "cancelled":
+      return (
+        <Badge className="bg-red-500 text-white text-[10px] px-1.5 py-0 h-4">
+          ยกเลิกแล้ว
+        </Badge>
+      );
     case "confirmed":
       return (
         <Badge className="bg-green-500 text-white text-[10px] px-1.5 py-0 h-4">
@@ -204,6 +210,7 @@ export default function WatsonExcelValidatorPage() {
     updateRecord: updateInvoiceUpload,
     updateStatus: updateInvoiceStatus,
     removeRecord: removeInvoiceUpload,
+    refetchHistory: refetchInvoiceHistory,
   } = useInvoiceUploadHistory();
 
   // Track current loaded record ID for auto-save
@@ -245,6 +252,7 @@ export default function WatsonExcelValidatorPage() {
       confirmedAt: string | null;
       confirmedBy: string | null;
       exportedAt: string;
+      status?: "confirmed" | "cancelled";
     }[]
   >([]);
   const [confirmedExportsTotal, setConfirmedExportsTotal] = useState(0);
@@ -258,7 +266,7 @@ export default function WatsonExcelValidatorPage() {
       setIsLoadingConfirmedExports(true);
       const offset = page * CONFIRMED_PAGE_SIZE;
       const params = new URLSearchParams({
-        status: "confirmed",
+        status: "confirmed,cancelled",
         limit: String(CONFIRMED_PAGE_SIZE),
         offset: String(offset),
       });
@@ -429,7 +437,6 @@ export default function WatsonExcelValidatorPage() {
           JSON.stringify({
             validationResult,
             showPriceColumns,
-            confirmedExportId,
             qtyOverrides: Array.from(qtyOverrides.entries()),
           }),
         );
@@ -437,7 +444,7 @@ export default function WatsonExcelValidatorPage() {
         // Quota exceeded or unavailable — ignore
       }
     },
-    [validationResult, showPriceColumns, confirmedExportId, qtyOverrides],
+    [validationResult, showPriceColumns, qtyOverrides],
   );
 
   useEffect(() => {
@@ -454,8 +461,6 @@ export default function WatsonExcelValidatorPage() {
         if (parsed.validationResult)
           setValidationResult(parsed.validationResult);
         if (parsed.showPriceColumns) setShowPriceColumns(true);
-        if (parsed.confirmedExportId)
-          setConfirmedExportId(parsed.confirmedExportId);
         if (parsed.qtyOverrides) setQtyOverrides(new Map(parsed.qtyOverrides));
         return true;
       } catch {
@@ -1033,12 +1038,87 @@ export default function WatsonExcelValidatorPage() {
             reportRunDateTime: record.reportDate || null,
             reportParameters: record.supplierCode || null,
           });
-          // Check if file is confirmed - if so, lock it and show export ID
-          // Use fallback "confirmed" when lastExportId is absent so the lock
-          // still applies for any user who opens this record.
-          if (record.status === "confirmed") {
-            setConfirmedExportId(record.lastExportId || "confirmed");
-            setShowPriceColumns(true); // Show the full data view
+          // Check if file is confirmed/cancelled and reconcile with
+          // the actual export status in case it was changed externally.
+          if (record.status === "confirmed" || record.status === "cancelled") {
+            if (record.lastExportId && record.status === "confirmed") {
+              // Verify against the actual export's status
+              try {
+                const expRes = await fetch(
+                  `/api/internal/exports/${record.lastExportId}/status`,
+                );
+                if (expRes.ok) {
+                  const expJson = await expRes.json();
+                  const realStatus = expJson?.data?.status;
+                  if (realStatus === "cancelled" || realStatus === "draft") {
+                    // Export was cancelled/reverted externally — unlock
+                    setConfirmedExportId(null);
+                    // Sync the invoice record
+                    const syncStatus =
+                      realStatus === "cancelled" ? "cancelled" : "exported";
+                    updateInvoiceStatus(recordId, syncStatus as WorkflowStatus);
+                  } else {
+                    setConfirmedExportId(record.lastExportId || "confirmed");
+                    setShowPriceColumns(true);
+                  }
+                } else {
+                  // API failed — trust local status
+                  setConfirmedExportId(record.lastExportId || "confirmed");
+                  setShowPriceColumns(true);
+                }
+              } catch {
+                // Network error — trust local status
+                setConfirmedExportId(record.lastExportId || "confirmed");
+                setShowPriceColumns(true);
+              }
+            } else if (record.status === "confirmed") {
+              // No lastExportId — try to find the linked export by invoiceUploadId
+              try {
+                const searchRes = await fetch(
+                  `/api/exports?invoiceUploadId=${recordId}&limit=1`,
+                );
+                if (searchRes.ok) {
+                  const searchJson = await searchRes.json();
+                  const linkedExport = searchJson?.data?.[0];
+                  if (linkedExport) {
+                    // Found the linked export — reconcile status
+                    const realStatus = linkedExport.status;
+                    if (realStatus === "cancelled" || realStatus === "draft") {
+                      setConfirmedExportId(null);
+                      const syncStatus =
+                        realStatus === "cancelled" ? "cancelled" : "exported";
+                      updateInvoiceStatus(
+                        recordId,
+                        syncStatus as WorkflowStatus,
+                        {
+                          lastExportId: linkedExport.id,
+                        },
+                      );
+                    } else {
+                      // Still confirmed — persist the link
+                      setConfirmedExportId(linkedExport.id);
+                      setShowPriceColumns(true);
+                      updateInvoiceStatus(recordId, "confirmed", {
+                        lastExportId: linkedExport.id,
+                      });
+                    }
+                  } else {
+                    // No linked export found — might have been deleted; unlock
+                    setConfirmedExportId(null);
+                    updateInvoiceStatus(recordId, "exported" as WorkflowStatus);
+                  }
+                } else {
+                  setConfirmedExportId("confirmed");
+                  setShowPriceColumns(true);
+                }
+              } catch {
+                setConfirmedExportId("confirmed");
+                setShowPriceColumns(true);
+              }
+            } else {
+              // status === "cancelled"
+              setConfirmedExportId(null);
+            }
           } else {
             setConfirmedExportId(null);
           }
@@ -1053,7 +1133,14 @@ export default function WatsonExcelValidatorPage() {
         setIsGlobalLoading(false);
       }
     },
-    [loadInvoiceUpload, setData, setFileName, setReportMeta, restoreSession],
+    [
+      loadInvoiceUpload,
+      setData,
+      setFileName,
+      setReportMeta,
+      restoreSession,
+      updateInvoiceStatus,
+    ],
   );
 
   // Helper to update URL
@@ -1135,10 +1222,84 @@ export default function WatsonExcelValidatorPage() {
         reportRunDateTime: record.reportDate || null,
         reportParameters: record.supplierCode || null,
       });
-      // Check if file is confirmed - if so, lock it and show export ID
+      // Check if file is confirmed/cancelled
       if (record.status === "confirmed") {
-        setConfirmedExportId(record.lastExportId || "confirmed");
-        setShowPriceColumns(true);
+        if (record.lastExportId) {
+          // Verify against actual export status
+          try {
+            const expRes = await fetch(
+              `/api/internal/exports/${record.lastExportId}/status`,
+            );
+            if (expRes.ok) {
+              const expJson = await expRes.json();
+              const realStatus = expJson?.data?.status;
+              if (realStatus === "cancelled" || realStatus === "draft") {
+                setConfirmedExportId(null);
+                const syncStatus =
+                  realStatus === "cancelled" ? "cancelled" : "exported";
+                updateInvoiceStatus(
+                  existingRecordForDuplicate.id,
+                  syncStatus as WorkflowStatus,
+                );
+              } else {
+                setConfirmedExportId(record.lastExportId || "confirmed");
+                setShowPriceColumns(true);
+              }
+            } else {
+              setConfirmedExportId(record.lastExportId || "confirmed");
+              setShowPriceColumns(true);
+            }
+          } catch {
+            setConfirmedExportId(record.lastExportId || "confirmed");
+            setShowPriceColumns(true);
+          }
+        } else {
+          // No lastExportId — try to find the linked export
+          try {
+            const searchRes = await fetch(
+              `/api/exports?invoiceUploadId=${existingRecordForDuplicate.id}&limit=1`,
+            );
+            if (searchRes.ok) {
+              const searchJson = await searchRes.json();
+              const linkedExport = searchJson?.data?.[0];
+              if (linkedExport) {
+                const realStatus = linkedExport.status;
+                if (realStatus === "cancelled" || realStatus === "draft") {
+                  setConfirmedExportId(null);
+                  const syncStatus =
+                    realStatus === "cancelled" ? "cancelled" : "exported";
+                  updateInvoiceStatus(
+                    existingRecordForDuplicate.id,
+                    syncStatus as WorkflowStatus,
+                    { lastExportId: linkedExport.id },
+                  );
+                } else {
+                  setConfirmedExportId(linkedExport.id);
+                  setShowPriceColumns(true);
+                  updateInvoiceStatus(
+                    existingRecordForDuplicate.id,
+                    "confirmed",
+                    { lastExportId: linkedExport.id },
+                  );
+                }
+              } else {
+                setConfirmedExportId(null);
+                updateInvoiceStatus(
+                  existingRecordForDuplicate.id,
+                  "exported" as WorkflowStatus,
+                );
+              }
+            } else {
+              setConfirmedExportId("confirmed");
+              setShowPriceColumns(true);
+            }
+          } catch {
+            setConfirmedExportId("confirmed");
+            setShowPriceColumns(true);
+          }
+        }
+      } else if (record.status === "cancelled") {
+        setConfirmedExportId(null);
       } else {
         setConfirmedExportId(null);
       }
@@ -1150,6 +1311,7 @@ export default function WatsonExcelValidatorPage() {
     setFileName,
     setReportMeta,
     reset,
+    updateInvoiceStatus,
   ]);
 
   // Handle duplicate file dialog: Overwrite with new data
@@ -1698,6 +1860,7 @@ export default function WatsonExcelValidatorPage() {
         lowConfidenceCount,
         companyId: userData?.companyId || null,
         companyName: userData?.companyName || null,
+        invoiceUploadId: currentRecordId || null,
       });
 
       // Auto-confirm the export immediately
@@ -2105,7 +2268,7 @@ export default function WatsonExcelValidatorPage() {
                     <div className="flex items-center justify-between">
                       <CardTitle className="text-sm font-medium text-green-700 flex items-center gap-2">
                         <CheckCircle className="h-4 w-4" />
-                        ยืนยันแล้ว — พร้อมให้ระบบอื่นใช้งาน
+                        Export ทั้งหมด
                         {confirmedExportsTotal > 0 && (
                           <span className="text-xs font-normal text-green-600 bg-green-100 px-2 py-0.5 rounded-full">
                             {confirmedExportsTotal} รายการ
@@ -2143,15 +2306,37 @@ export default function WatsonExcelValidatorPage() {
                           {confirmedExports.map((exp) => (
                             <div
                               key={exp.id}
-                              className="grid grid-cols-[2fr_1.2fr_3rem_1.2fr_1.4fr_1fr] gap-x-4 px-6 py-2.5 hover:bg-green-50 transition-colors"
+                              className={`grid grid-cols-[2fr_1.2fr_3rem_1.2fr_1.4fr_1fr] gap-x-4 px-6 py-2.5 transition-colors cursor-pointer ${
+                                exp.status === "cancelled"
+                                  ? "bg-red-50 hover:bg-red-100 opacity-75"
+                                  : "hover:bg-green-50"
+                              }`}
+                              onClick={() =>
+                                setExportSuccessModal({
+                                  open: true,
+                                  exportId: exp.id,
+                                  supplierCode: exp.supplierCode,
+                                  rowCount: exp.rowCount,
+                                  reportDate: exp.exportedAt,
+                                  initialStatus:
+                                    exp.status === "cancelled"
+                                      ? "cancelled"
+                                      : "confirmed",
+                                })
+                              }
                             >
                               <span
-                                className="text-sm text-gray-800 truncate font-medium"
+                                className="text-sm text-gray-800 truncate font-medium flex items-center gap-1.5"
                                 title={exp.fileName || exp.id}
                               >
                                 {exp.fileName || (
                                   <span className="text-gray-400 italic">
                                     (ไม่ระบุ)
+                                  </span>
+                                )}
+                                {exp.status === "cancelled" && (
+                                  <span className="text-[10px] font-semibold text-red-600 bg-red-100 px-1.5 py-0.5 rounded shrink-0">
+                                    ยกเลิกแล้ว
                                   </span>
                                 )}
                               </span>
@@ -2179,7 +2364,13 @@ export default function WatsonExcelValidatorPage() {
                                     })
                                   : "—"}
                               </span>
-                              <span className="font-mono text-[10px] text-green-700 bg-green-50 border border-green-100 px-1.5 py-0.5 rounded self-center truncate">
+                              <span
+                                className={`font-mono text-[10px] px-1.5 py-0.5 rounded self-center truncate ${
+                                  exp.status === "cancelled"
+                                    ? "text-red-700 bg-red-50 border border-red-200"
+                                    : "text-green-700 bg-green-50 border border-green-100"
+                                }`}
+                              >
                                 {exp.id.substring(0, 8)}
                               </span>
                             </div>
@@ -2978,6 +3169,8 @@ export default function WatsonExcelValidatorPage() {
               }
               return { ...prev, open: false };
             });
+            // Refetch from cloud to reflect latest state
+            fetchConfirmedExports(confirmedExportsPage);
           } else {
             setExportSuccessModal((prev) => ({ ...prev, open: true }));
           }
@@ -2996,18 +3189,37 @@ export default function WatsonExcelValidatorPage() {
           } else {
             setConfirmedExportId(null);
           }
-          // Keep modal initialStatus in sync so onOpenChange knows final status
+          // Keep modal initialStatus in sync
           setExportSuccessModal((prev) => ({
             ...prev,
             initialStatus: status,
           }));
-          // Update invoice workflow status (cancelled → back to exported)
-          if (currentRecordId) {
+          // Refetch from cloud so table reflects real Firestore state
+          fetchConfirmedExports(confirmedExportsPage);
+          // The confirm API already synced the invoice record server-side.
+          // Update local state: find by currentRecordId OR by lastExportId
+          const targetRecordId =
+            currentRecordId ||
+            invoiceUploadHistory.find(
+              (r) => r.lastExportId === exportSuccessModal.exportId,
+            )?.id;
+          const newInvoiceStatus = isConfirmed
+            ? "confirmed"
+            : isCancelled
+              ? "cancelled"
+              : "exported";
+          if (targetRecordId) {
             updateInvoiceStatus(
-              currentRecordId,
-              isConfirmed ? "confirmed" : isCancelled ? "exported" : "exported",
+              targetRecordId,
+              newInvoiceStatus as WorkflowStatus,
+              isConfirmed
+                ? { lastExportId: exportSuccessModal.exportId }
+                : undefined,
             );
           }
+          // Always refetch invoice history to pick up server-side sync
+          // (handles the case where targetRecordId is null, e.g. home page)
+          refetchInvoiceHistory();
         }}
       />
 

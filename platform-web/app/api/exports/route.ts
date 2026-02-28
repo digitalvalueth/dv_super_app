@@ -20,6 +20,7 @@ export async function POST(req: NextRequest) {
       metadata,
       companyId,
       companyName,
+      invoiceUploadId,
     } = body;
 
     if (!supplierCode || !headers || !data) {
@@ -91,6 +92,7 @@ export async function POST(req: NextRequest) {
       storageUrl,
       companyId: companyId || null,
       companyName: companyName || null,
+      invoiceUploadId: invoiceUploadId || null,
     });
 
     return NextResponse.json({ success: true, data: { id: docId } });
@@ -125,6 +127,7 @@ export async function GET(req: NextRequest) {
     const offset = parseInt(searchParams.get("offset") || "0", 10);
 
     const companyIdFilter = searchParams.get("companyId");
+    const invoiceUploadId = searchParams.get("invoiceUploadId");
 
     let query = adminDb.collection(
       COLLECTIONS.EXPORTS,
@@ -134,11 +137,22 @@ export async function GET(req: NextRequest) {
     if (companyIdFilter) {
       query = query.where("companyId", "==", companyIdFilter);
     }
+    if (invoiceUploadId) {
+      query = query.where("invoiceUploadId", "==", invoiceUploadId);
+    }
     if (supplierCode) {
       query = query.where("supplierCode", "==", supplierCode);
     }
     if (status) {
-      query = query.where("status", "==", status);
+      const statuses = status
+        .split(",")
+        .map((s) => s.trim())
+        .filter(Boolean);
+      if (statuses.length === 1) {
+        query = query.where("status", "==", statuses[0]);
+      } else if (statuses.length > 1) {
+        query = query.where("status", "in", statuses);
+      }
     }
 
     // Range filters — orderBy must be on the same field as the range filter
