@@ -5,6 +5,7 @@ import { useAuthStore } from "@/stores/auth.store";
 import { format, subDays } from "date-fns";
 import { th } from "date-fns/locale";
 import {
+  addDoc,
   collection,
   doc,
   getDocs,
@@ -12,7 +13,6 @@ import {
   Timestamp,
   updateDoc,
   where,
-  addDoc,
 } from "firebase/firestore";
 import {
   AlertTriangle,
@@ -22,8 +22,6 @@ import {
   Eye,
   Search,
   Shield,
-  Users,
-  X,
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
@@ -93,10 +91,7 @@ export default function AlertsPage() {
         where("companyId", "==", userData.companyId),
       );
       const alertsSnap = await getDocs(alertsQuery);
-      const existingAlerts = new Map<
-        string,
-        { id: string; status: string }
-      >();
+      const existingAlerts = new Map<string, { id: string; status: string }>();
       alertsSnap.docs.forEach((d) => {
         const data = d.data();
         if (data.userId && data.status !== "resolved") {
@@ -374,9 +369,7 @@ export default function AlertsPage() {
                     className="px-6 py-12 text-center text-gray-500 dark:text-gray-400"
                   >
                     <Shield className="w-12 h-12 mx-auto text-green-400 mb-4" />
-                    <p className="text-lg font-medium">
-                      ไม่มีการแจ้งเตือน
-                    </p>
+                    <p className="text-lg font-medium">ไม่มีการแจ้งเตือน</p>
                     <p className="text-sm">ทุกคนเช็คอินสม่ำเสมอ</p>
                   </td>
                 </tr>

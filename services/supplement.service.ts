@@ -1,3 +1,5 @@
+import { db } from "@/config/firebase";
+import type { SupplementSession } from "@/types";
 import {
   addDoc,
   collection,
@@ -8,8 +10,6 @@ import {
   updateDoc,
   where,
 } from "firebase/firestore";
-import { db } from "@/config/firebase";
-import type { SupplementSession } from "@/types";
 
 const COLLECTION = "supplementSessions";
 
@@ -79,10 +79,7 @@ export async function getCompanySupplements(
 export async function getUserSupplements(
   userId: string,
 ): Promise<SupplementSession[]> {
-  const q = query(
-    collection(db, COLLECTION),
-    where("userId", "==", userId),
-  );
+  const q = query(collection(db, COLLECTION), where("userId", "==", userId));
   const snap = await getDocs(q);
   return snap.docs.map((d) => ({
     id: d.id,

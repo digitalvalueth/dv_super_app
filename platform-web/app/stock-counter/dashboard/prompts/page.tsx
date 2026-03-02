@@ -14,7 +14,6 @@ import {
   query,
   Timestamp,
   updateDoc,
-  where,
 } from "firebase/firestore";
 import {
   Check,
@@ -22,7 +21,6 @@ import {
   Copy,
   Edit3,
   Eye,
-  Layers,
   Plus,
   Search,
   Sparkles,
@@ -88,7 +86,6 @@ export default function PromptsPage() {
   useEffect(() => {
     if (!userData) return;
     fetchPrompts();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [userData]);
 
   const fetchPrompts = async () => {
@@ -223,9 +220,7 @@ export default function PromptsPage() {
         isActive: !prompt.isActive,
         updatedAt: Timestamp.now(),
       });
-      toast.success(
-        prompt.isActive ? "ปิดใช้งาน Prompt" : "เปิดใช้งาน Prompt",
-      );
+      toast.success(prompt.isActive ? "ปิดใช้งาน Prompt" : "เปิดใช้งาน Prompt");
       fetchPrompts();
     } catch (error) {
       console.error("Error toggling:", error);
@@ -259,8 +254,7 @@ export default function PromptsPage() {
   });
 
   const canManage =
-    userData &&
-    ["super_admin", "admin"].includes(userData.role);
+    userData && ["super_admin", "admin"].includes(userData.role);
 
   if (loading) {
     return (
@@ -363,8 +357,7 @@ export default function PromptsPage() {
                         {prompt.name}
                       </h3>
                       <p className="text-xs text-gray-500 dark:text-gray-400">
-                        v{prompt.version} · {prompt.platform} ·{" "}
-                        {prompt.modelId}
+                        v{prompt.version} · {prompt.platform} · {prompt.modelId}
                       </p>
                     </div>
                   </div>
@@ -425,9 +418,7 @@ export default function PromptsPage() {
                             ? "text-green-600 hover:bg-green-50 dark:hover:bg-green-900/20"
                             : "text-gray-400 hover:text-green-600 hover:bg-green-50 dark:hover:bg-green-900/20"
                         }`}
-                        title={
-                          prompt.isActive ? "ปิดใช้งาน" : "เปิดใช้งาน"
-                        }
+                        title={prompt.isActive ? "ปิดใช้งาน" : "เปิดใช้งาน"}
                       >
                         <Zap className="w-4 h-4" />
                       </button>

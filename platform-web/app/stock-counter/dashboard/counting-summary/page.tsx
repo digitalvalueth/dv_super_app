@@ -9,12 +9,19 @@ import { useAuthStore } from "@/stores/auth.store";
 import { CountingSession, User } from "@/types";
 import { format } from "date-fns";
 import { th } from "date-fns/locale";
-import { collection, doc, getDocs, query, Timestamp, updateDoc, where } from "firebase/firestore";
+import {
+  collection,
+  doc,
+  getDocs,
+  query,
+  Timestamp,
+  updateDoc,
+  where,
+} from "firebase/firestore";
 import {
   Check,
   ChevronDown,
   Download,
-  Edit3,
   Eye,
   FileSpreadsheet,
   FileText,
@@ -1033,29 +1040,43 @@ function SessionDetailModal({
   session: CountingSession;
   onClose: () => void;
   userData: User | null;
-  onOverrideSuccess?: (sessionId: string, finalCount: number, source: "ai" | "employee" | "custom") => void;
+  onOverrideSuccess?: (
+    sessionId: string,
+    finalCount: number,
+    source: "ai" | "employee" | "custom",
+  ) => void;
 }) {
   const [showOverride, setShowOverride] = useState(false);
-  const [overrideSource, setOverrideSource] = useState<"ai" | "employee" | "custom">("ai");
+  const [overrideSource, setOverrideSource] = useState<
+    "ai" | "employee" | "custom"
+  >("ai");
   const [customCount, setCustomCount] = useState("");
   const [overrideReason, setOverrideReason] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
-  const canOverride = userData && ["super_admin", "admin", "supervisor", "manager"].includes(userData.role);
+  const canOverride =
+    userData &&
+    ["super_admin", "admin", "supervisor", "manager"].includes(userData.role);
   const isAlreadyOverridden = !!session.supervisorOverride;
 
   const getOverrideCount = () => {
     switch (overrideSource) {
-      case "ai": return session.aiCount ?? 0;
-      case "employee": return session.userReportedCount ?? session.aiCount ?? 0;
-      case "custom": return parseInt(customCount) || 0;
+      case "ai":
+        return session.aiCount ?? 0;
+      case "employee":
+        return session.userReportedCount ?? session.aiCount ?? 0;
+      case "custom":
+        return parseInt(customCount) || 0;
     }
   };
 
   const handleOverride = async () => {
     if (!session.id || !userData) return;
     const finalCount = getOverrideCount();
-    if (overrideSource === "custom" && (!customCount || isNaN(parseInt(customCount)))) {
+    if (
+      overrideSource === "custom" &&
+      (!customCount || isNaN(parseInt(customCount)))
+    ) {
       toast.error("กรุณากรอกจำนวนที่ถูกต้อง");
       return;
     }
@@ -1074,7 +1095,9 @@ function SessionDetailModal({
           employeeCount: session.userReportedCount ?? 0,
           selectedCount: finalCount,
           source: overrideSource,
-          ...(overrideSource === "custom" && { customCount: parseInt(customCount) }),
+          ...(overrideSource === "custom" && {
+            customCount: parseInt(customCount),
+          }),
           ...(overrideReason && { reason: overrideReason }),
         },
         reviewedBy: userData.uid || userData.id,
@@ -1371,21 +1394,31 @@ function SessionDetailModal({
               <div className="grid grid-cols-3 gap-3 text-sm">
                 <div>
                   <span className="text-gray-500">ยอดที่ยืนยัน:</span>
-                  <span className="ml-1 font-bold text-green-700 dark:text-green-300">{session.supervisorOverride.selectedCount}</span>
+                  <span className="ml-1 font-bold text-green-700 dark:text-green-300">
+                    {session.supervisorOverride.selectedCount}
+                  </span>
                 </div>
                 <div>
                   <span className="text-gray-500">แหล่งที่มา:</span>
                   <span className="ml-1 font-semibold">
-                    {session.supervisorOverride.source === 'ai' ? '🤖 AI' : session.supervisorOverride.source === 'employee' ? '👤 พนักงาน' : '✏️ กรอกเอง'}
+                    {session.supervisorOverride.source === "ai"
+                      ? "🤖 AI"
+                      : session.supervisorOverride.source === "employee"
+                        ? "👤 พนักงาน"
+                        : "✏️ กรอกเอง"}
                   </span>
                 </div>
                 <div>
                   <span className="text-gray-500">โดย:</span>
-                  <span className="ml-1 font-semibold">{session.supervisorOverride.overriddenByName}</span>
+                  <span className="ml-1 font-semibold">
+                    {session.supervisorOverride.overriddenByName}
+                  </span>
                 </div>
               </div>
               {session.supervisorOverride.reason && (
-                <p className="mt-2 text-sm text-gray-600 dark:text-gray-400">หมายเหตุ: {session.supervisorOverride.reason}</p>
+                <p className="mt-2 text-sm text-gray-600 dark:text-gray-400">
+                  หมายเหตุ: {session.supervisorOverride.reason}
+                </p>
               )}
             </div>
           )}
@@ -1400,7 +1433,9 @@ function SessionDetailModal({
                 <span className="flex items-center gap-2 font-semibold text-blue-700 dark:text-blue-400">
                   <Shield className="w-4 h-4" /> Override ยอดนับ (Supervisor)
                 </span>
-                <ChevronDown className={`w-4 h-4 text-blue-500 transition-transform ${showOverride ? 'rotate-180' : ''}`} />
+                <ChevronDown
+                  className={`w-4 h-4 text-blue-500 transition-transform ${showOverride ? "rotate-180" : ""}`}
+                />
               </button>
 
               {showOverride && (
@@ -1408,43 +1443,53 @@ function SessionDetailModal({
                   {/* Source selection */}
                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                     <button
-                      onClick={() => setOverrideSource('ai')}
+                      onClick={() => setOverrideSource("ai")}
                       className={`p-3 rounded-lg border-2 text-left transition-all ${
-                        overrideSource === 'ai'
-                          ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/20'
-                          : 'border-gray-200 dark:border-gray-600 hover:border-blue-300'
+                        overrideSource === "ai"
+                          ? "border-blue-500 bg-blue-50 dark:bg-blue-900/20"
+                          : "border-gray-200 dark:border-gray-600 hover:border-blue-300"
                       }`}
                     >
                       <div className="text-sm text-gray-500">🤖 AI นับได้</div>
-                      <div className="text-xl font-bold text-blue-600">{session.aiCount ?? 0}</div>
-                      {overrideSource === 'ai' && <Check className="w-4 h-4 text-blue-500 mt-1" />}
+                      <div className="text-xl font-bold text-blue-600">
+                        {session.aiCount ?? 0}
+                      </div>
+                      {overrideSource === "ai" && (
+                        <Check className="w-4 h-4 text-blue-500 mt-1" />
+                      )}
                     </button>
 
                     {session.userReportedCount != null && (
                       <button
-                        onClick={() => setOverrideSource('employee')}
+                        onClick={() => setOverrideSource("employee")}
                         className={`p-3 rounded-lg border-2 text-left transition-all ${
-                          overrideSource === 'employee'
-                            ? 'border-orange-500 bg-orange-50 dark:bg-orange-900/20'
-                            : 'border-gray-200 dark:border-gray-600 hover:border-orange-300'
+                          overrideSource === "employee"
+                            ? "border-orange-500 bg-orange-50 dark:bg-orange-900/20"
+                            : "border-gray-200 dark:border-gray-600 hover:border-orange-300"
                         }`}
                       >
-                        <div className="text-sm text-gray-500">👤 พนักงานรายงาน</div>
-                        <div className="text-xl font-bold text-orange-600">{session.userReportedCount}</div>
-                        {overrideSource === 'employee' && <Check className="w-4 h-4 text-orange-500 mt-1" />}
+                        <div className="text-sm text-gray-500">
+                          👤 พนักงานรายงาน
+                        </div>
+                        <div className="text-xl font-bold text-orange-600">
+                          {session.userReportedCount}
+                        </div>
+                        {overrideSource === "employee" && (
+                          <Check className="w-4 h-4 text-orange-500 mt-1" />
+                        )}
                       </button>
                     )}
 
                     <button
-                      onClick={() => setOverrideSource('custom')}
+                      onClick={() => setOverrideSource("custom")}
                       className={`p-3 rounded-lg border-2 text-left transition-all ${
-                        overrideSource === 'custom'
-                          ? 'border-green-500 bg-green-50 dark:bg-green-900/20'
-                          : 'border-gray-200 dark:border-gray-600 hover:border-green-300'
+                        overrideSource === "custom"
+                          ? "border-green-500 bg-green-50 dark:bg-green-900/20"
+                          : "border-gray-200 dark:border-gray-600 hover:border-green-300"
                       }`}
                     >
                       <div className="text-sm text-gray-500">✏️ กรอกเอง</div>
-                      {overrideSource === 'custom' ? (
+                      {overrideSource === "custom" ? (
                         <input
                           type="number"
                           value={customCount}
@@ -1456,13 +1501,17 @@ function SessionDetailModal({
                       ) : (
                         <div className="text-xl font-bold text-gray-400">—</div>
                       )}
-                      {overrideSource === 'custom' && <Check className="w-4 h-4 text-green-500 mt-1" />}
+                      {overrideSource === "custom" && (
+                        <Check className="w-4 h-4 text-green-500 mt-1" />
+                      )}
                     </button>
                   </div>
 
                   {/* Reason */}
                   <div>
-                    <label className="block text-sm text-gray-600 dark:text-gray-400 mb-1">หมายเหตุ (ไม่บังคับ)</label>
+                    <label className="block text-sm text-gray-600 dark:text-gray-400 mb-1">
+                      หมายเหตุ (ไม่บังคับ)
+                    </label>
                     <textarea
                       value={overrideReason}
                       onChange={(e) => setOverrideReason(e.target.value)}
@@ -1475,8 +1524,12 @@ function SessionDetailModal({
                   {/* Preview & confirm */}
                   <div className="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-700 rounded-lg">
                     <div>
-                      <span className="text-sm text-gray-500">ยอดที่จะยืนยัน:</span>
-                      <span className="ml-2 text-2xl font-bold text-green-600">{getOverrideCount()} ชิ้น</span>
+                      <span className="text-sm text-gray-500">
+                        ยอดที่จะยืนยัน:
+                      </span>
+                      <span className="ml-2 text-2xl font-bold text-green-600">
+                        {getOverrideCount()} ชิ้น
+                      </span>
                     </div>
                     <button
                       onClick={handleOverride}
