@@ -3,6 +3,7 @@
 import { useAuthStore } from "@/stores/auth.store";
 import { useSidebarStore } from "@/stores/sidebar.store";
 import {
+  AlertTriangle,
   BarChart3,
   Building2,
   ChevronLeft,
@@ -18,6 +19,7 @@ import {
   Menu,
   Package,
   Shield,
+  Sparkles,
   Truck,
   Users,
   X,
@@ -83,6 +85,17 @@ const navigation = [
     hideForSupervisor: true,
   },
   { name: "รายงาน", href: "/stock-counter/dashboard/reports", icon: BarChart3 },
+  {
+    name: "แจ้งเตือนขาดงาน",
+    href: "/stock-counter/dashboard/alerts",
+    icon: AlertTriangle,
+  },
+  {
+    name: "AI Prompts",
+    href: "/stock-counter/dashboard/prompts",
+    icon: Sparkles,
+    adminOnly: true,
+  },
   {
     name: "เชิญผู้ใช้",
     href: "/stock-counter/dashboard/invitations",

@@ -187,6 +187,21 @@ export interface CountingSession {
     longitude?: number;
   };
 
+  // Supervisor override
+  finalCountSource?: "ai" | "employee" | "custom";
+  approvalStatus?: "pending" | "approved" | "rejected";
+  supervisorOverride?: {
+    overriddenBy: string;
+    overriddenByName?: string;
+    overriddenAt: Date;
+    aiCount: number;
+    employeeCount: number;
+    selectedCount: number;
+    source: "ai" | "employee" | "custom";
+    customCount?: number;
+    reason?: string;
+  };
+
   createdAt?: Date;
   reviewedAt?: Date;
   reviewedBy?: string;
