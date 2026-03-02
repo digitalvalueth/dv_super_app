@@ -1625,10 +1625,14 @@ export default function WatsonExcelValidatorPage() {
                 String(currentOverride.qtyPro ?? displayRow?.["QtyPro"] ?? "0"),
               ) || 0;
 
-        // Validate: QtyBuy1 + QtyPro must not exceed Qty
+        // Validate: QtyBuy1 + QtyPro must match Qty
         const totalQty = currentQtyBuy1 + currentQtyPro;
-        if (totalQty > originalQty) {
-          // Open modal instead of alert
+        if (
+          totalQty > originalQty ||
+          (totalQty < originalQty && totalQty > 0)
+        ) {
+          // Open modal when total exceeds OR is less than original qty
+          // (but not when going to 0:0 — that's a deliberate full-clear)
           setQtyEditData({
             rowIndex,
             editField: columnName as "QtyBuy1" | "QtyPro",
@@ -1640,17 +1644,29 @@ export default function WatsonExcelValidatorPage() {
           return;
         }
 
-        // Save to qtyOverrides
+        // Save to qtyOverrides — also clear stale price overrides for the
+        // field being zeroed out so residual user edits don't "stick".
         const oldValue =
           currentOverride[columnName === "QtyBuy1" ? "qtyBuy1" : "qtyPro"] ||
           String(displayRow?.[columnName] ?? "-");
 
         setQtyOverrides((prev) => {
           const newMap = new Map(prev);
-          newMap.set(rowIndex, {
+          const patch: Record<string, string | undefined> = {
             ...currentOverride,
             [columnName === "QtyBuy1" ? "qtyBuy1" : "qtyPro"]: String(newQty),
-          });
+          };
+          // When qty goes to 0, remove any direct price override for that tier
+          if (newQty === 0) {
+            if (columnName === "QtyBuy1") {
+              delete patch.priceBuy1Invoice;
+              delete patch.priceBuy1Com;
+            } else {
+              delete patch.priceProInvoice;
+              delete patch.priceProCom;
+            }
+          }
+          newMap.set(rowIndex, patch);
           return newMap;
         });
 
@@ -1695,10 +1711,13 @@ export default function WatsonExcelValidatorPage() {
                 ).replace(/[^0-9]/g, ""),
               ) || 0;
 
-        // Validate: Std Qty + Promo Qty should not exceed original QTY
+        // Validate: Std Qty + Promo Qty should match original QTY
         const totalQty = currentStdQty + currentPromoQty;
-        if (totalQty > originalQty) {
-          // Open modal for Std Qty / Promo Qty as well
+        if (
+          totalQty > originalQty ||
+          (totalQty < originalQty && totalQty > 0)
+        ) {
+          // Open modal when total exceeds OR is less than original qty
           setQtyEditData({
             rowIndex,
             editField: columnName === "Std Qty" ? "QtyBuy1" : "QtyPro",
@@ -1776,11 +1795,21 @@ export default function WatsonExcelValidatorPage() {
       setQtyOverrides((prev) => {
         const newMap = new Map(prev);
         const existing = newMap.get(rowIndex) || {};
-        newMap.set(rowIndex, {
+        const patch: Record<string, string | undefined> = {
           ...existing,
           qtyBuy1: String(newQtyBuy1),
           qtyPro: String(newQtyPro),
-        });
+        };
+        // Clear stale price overrides for zeroed-out tiers
+        if (newQtyBuy1 === 0) {
+          delete patch.priceBuy1Invoice;
+          delete patch.priceBuy1Com;
+        }
+        if (newQtyPro === 0) {
+          delete patch.priceProInvoice;
+          delete patch.priceProCom;
+        }
+        newMap.set(rowIndex, patch);
         return newMap;
       });
       logEditCell(rowIndex, "QtyBuy1", "-", String(newQtyBuy1));
