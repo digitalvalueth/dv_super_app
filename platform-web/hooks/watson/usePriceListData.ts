@@ -851,12 +851,14 @@ export function usePriceListData() {
               // from different time periods but no real promo distinction).
               // Also treat single-tier items as "all same" — there's no real promo
               // tier to split into when only 1 price is available.
-              const allSameTier = validPrices.length <= 1 || validPrices.every(
-                (vp) => {
-                  const r = (vp.remark || "Buy1").toLowerCase().replace(/\s/g, "");
+              const allSameTier =
+                validPrices.length <= 1 ||
+                validPrices.every((vp) => {
+                  const r = (vp.remark || "Buy1")
+                    .toLowerCase()
+                    .replace(/\s/g, "");
                   return r === "buy1" || r === "std" || r === "standard";
-                },
-              );
+                });
 
               if (allSameTier) {
                 calcLog.push(``);
@@ -891,13 +893,18 @@ export function usePriceListData() {
                 qtyBuy1 = effectiveStdQty;
                 // Display: per-unit Invoice 62% IncV (not total)
                 priceBuy1InvoiceFormula =
-                  rawItem?.invoice62IncV || (stdAlloc?.price ?? validPrices[0].price);
+                  rawItem?.invoice62IncV ||
+                  (stdAlloc?.price ?? validPrices[0].price);
                 // Comm Calculate = Comm Price IncV (not invoice62)
                 priceBuy1ComCalculate =
-                  rawItem?.priceIncVat || stdAlloc?.priceIncVat || validPrices[0].priceIncVat || 0;
+                  rawItem?.priceIncVat ||
+                  stdAlloc?.priceIncVat ||
+                  validPrices[0].priceIncVat ||
+                  0;
                 // Store per-unit prices for manual override recalculation
                 _stdPricePerUnit = stdAlloc?.price ?? validPrices[0].price;
-                _stdCommPerUnit = stdAlloc?.priceIncVat || validPrices[0].priceIncVat || 0;
+                _stdCommPerUnit =
+                  stdAlloc?.priceIncVat || validPrices[0].priceIncVat || 0;
                 _stdInvoice62PerUnit = rawItem?.invoice62IncV || 0;
               }
 
@@ -908,7 +915,8 @@ export function usePriceListData() {
                 // PricePro_Invoice_Formula should show Invoice 62% IncV (same as
                 // PriceBuy1_Invoice_Formula shows Invoice 62% IncV).
                 // alloc.invoice62IncV carries the promo tier's own Invoice 62% IncV.
-                priceProInvoiceFormula = alloc.invoice62IncV || alloc.priceIncVat || alloc.price;
+                priceProInvoiceFormula =
+                  alloc.invoice62IncV || alloc.priceIncVat || alloc.price;
                 // Comm Calculate = actual promo Comm Price IncV
                 priceProComCalculate = alloc.priceIncVat || 0;
                 // Store per-unit promo price (use first/dominant promo)
