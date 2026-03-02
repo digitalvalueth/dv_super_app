@@ -400,6 +400,8 @@ export default function PreviewScreen() {
         assignmentId: params.assignmentId,
         beforeQty: params.beforeQty,
         watermarkData: params.watermarkData,
+        // Barcode match status — used to block save on mismatch
+        barcodeMatchStatus: barcodeMatch === false ? "mismatch" : "match",
         // Dispute / error-report fields
         userReportedCount: disputeCount.trim() || "",
         disputeRemark: disputeRemark.trim() || "",

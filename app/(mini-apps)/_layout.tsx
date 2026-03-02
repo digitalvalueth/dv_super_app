@@ -55,6 +55,13 @@ export default function MiniAppsLayout() {
           headerShown: true,
         }}
       />
+      <Stack.Screen
+        name="supervisor"
+        options={{
+          headerShown: false,
+          title: "Supervisor",
+        }}
+      />
     </Stack>
   );
 }

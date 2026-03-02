@@ -36,9 +36,14 @@ export default function ResultScreen() {
     watermarkData?: string;
     assignmentId?: string;
     beforeQty?: string;
+    barcodeMatchStatus?: string;
     userReportedCount?: string;
     disputeRemark?: string;
   }>();
+
+  // Block save when barcode mismatch
+  const isBarcodeMatch = params.barcodeMatchStatus !== "mismatch";
+  const canSave = isBarcodeMatch && !isSaving;
 
   const barcodeCount = parseInt(params.barcodeCount || "0", 10);
   const processingTime = parseInt(params.processingTime || "0", 10);
@@ -222,15 +227,63 @@ export default function ResultScreen() {
         contentContainerStyle={styles.contentContainer}
         showsVerticalScrollIndicator={false}
       >
+        {/* Barcode Mismatch Warning */}
+        {!isBarcodeMatch && (
+          <View
+            style={[
+              styles.resultCard,
+              {
+                backgroundColor: "#fef2f2",
+                borderWidth: 2,
+                borderColor: "#ef4444",
+              },
+            ]}
+          >
+            <Ionicons name="warning" size={48} color="#ef4444" />
+            <Text
+              style={{
+                fontSize: 18,
+                fontWeight: "700",
+                color: "#dc2626",
+                textAlign: "center",
+                marginTop: 8,
+              }}
+            >
+              ⚠️ บาร์โค้ดไม่ตรงกับสินค้า
+            </Text>
+            <Text
+              style={{
+                fontSize: 14,
+                color: "#991b1b",
+                textAlign: "center",
+                marginTop: 4,
+              }}
+            >
+              ไม่สามารถบันทึกได้ กรุณาถ่ายรูปสินค้าที่ถูกต้องใหม่
+            </Text>
+          </View>
+        )}
+
         {/* Success Icon */}
         <View style={styles.successContainer}>
           <View
-            style={[styles.successIcon, { backgroundColor: "#10b981" + "20" }]}
+            style={[
+              styles.successIcon,
+              {
+                backgroundColor: isBarcodeMatch
+                  ? "#10b981" + "20"
+                  : "#ef4444" + "20",
+              },
+            ]}
           >
-            <Ionicons name="checkmark-circle" size={64} color="#10b981" />
+            <Ionicons
+              name={isBarcodeMatch ? "checkmark-circle" : "close-circle"}
+              size={64}
+              color={isBarcodeMatch ? "#10b981" : "#ef4444"}
+            />
           </View>
           <Text style={[styles.successTitle, { color: colors.text }]}>
-            วิเคราะห์เสร็จสิ้น!
+            {isBarcodeMatch ? "วิเคราะห์เสร็จสิ้น!" : "บาร์โค้ดไม่ตรง"}
           </Text>
         </View>
 
@@ -424,18 +477,24 @@ export default function ResultScreen() {
           style={[
             styles.actionButton,
             styles.saveButton,
-            { backgroundColor: isSaving ? "#9ca3af" : "#10b981" },
+            { backgroundColor: !canSave ? "#9ca3af" : "#10b981" },
           ]}
           onPress={handleSave}
-          disabled={isSaving}
+          disabled={!canSave}
         >
           {isSaving ? (
             <ActivityIndicator size="small" color="#fff" />
+          ) : !isBarcodeMatch ? (
+            <Ionicons name="close-circle-outline" size={20} color="#fff" />
           ) : (
             <Ionicons name="save-outline" size={20} color="#fff" />
           )}
           <Text style={[styles.actionButtonText, { color: "#fff" }]}>
-            {isSaving ? "กำลังบันทึก..." : "บันทึกผล"}
+            {isSaving
+              ? "กำลังบันทึก..."
+              : !isBarcodeMatch
+                ? "บาร์โค้ดไม่ตรง — กรุณาถ่ายใหม่"
+                : "บันทึกผล"}
           </Text>
         </TouchableOpacity>
       </View>

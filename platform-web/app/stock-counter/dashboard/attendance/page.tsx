@@ -17,6 +17,7 @@ import {
   Calendar,
   Check,
   Clock,
+  Download,
   Eye,
   MapPin,
   Phone,
@@ -24,6 +25,7 @@ import {
   Users,
   X,
 } from "lucide-react";
+import * as XLSX from "xlsx";
 import Image from "next/image";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
@@ -173,6 +175,67 @@ export default function AttendancePage() {
     return format(date, "d MMM yyyy HH:mm", { locale: th });
   };
 
+  const handleExportExcel = () => {
+    try {
+      const wb = XLSX.utils.book_new();
+      const rows = [
+        [
+          "พนักงาน",
+          "อีเมล",
+          "สาขา",
+          "ประเภท",
+          "วันที่",
+          "เวลา",
+          "สถานะ",
+          "สายกี่นาที",
+          "ตำแหน่ง",
+          "พิกัด",
+          "หมายเหตุ",
+        ],
+        ...filteredCheckIns.map((c) => {
+          let location = "";
+          let coords = "";
+          if (c.watermarkData) {
+            try {
+              const w = typeof c.watermarkData === 'string' ? JSON.parse(c.watermarkData) : c.watermarkData;
+              location = w.location || "";
+              if (w.coordinates?.lat != null && w.coordinates?.lng != null) {
+                coords = `${w.coordinates.lat}, ${w.coordinates.lng}`;
+              }
+            } catch { /* ignore */ }
+          }
+          return [
+            c.userName || "",
+            c.userEmail || "",
+            c.branchName || "",
+            c.type === "check-in" ? "เข้างาน" : "เลิกงาน",
+            c.createdAt ? format(c.createdAt, "dd/MM/yyyy") : "",
+            c.createdAt ? format(c.createdAt, "HH:mm:ss") : "",
+            c.type === "check-in" ? (c.isLate ? "สาย" : "ตรงเวลา") : "-",
+            c.isLate && c.lateMinutes ? c.lateMinutes : "",
+            location,
+            coords,
+            c.remarks || "",
+          ];
+        }),
+      ];
+
+      const ws = XLSX.utils.aoa_to_sheet(rows);
+      // Auto column width
+      ws["!cols"] = rows[0].map((_, i) => ({
+        wch: Math.max(...rows.map(r => String(r[i] || "").length), 10),
+      }));
+      XLSX.utils.book_append_sheet(wb, ws, "เช็คชื่อพนักงาน");
+
+      const dateLabel = format(new Date(filterDate), "dd-MM-yyyy");
+      XLSX.writeFile(wb, `attendance_${dateLabel}.xlsx`);
+      toast.success("ส่งออก Excel สำเร็จ");
+    } catch (error) {
+      console.error("Export error:", error);
+      toast.error("เกิดข้อผิดพลาดในการส่งออก");
+    }
+  };
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-full">
@@ -195,6 +258,18 @@ export default function AttendancePage() {
         <p className="text-gray-600 dark:text-gray-400 mt-1">
           ดูรายงานการเข้า-ออกงานของพนักงาน
         </p>
+      </div>
+
+      {/* Export Button */}
+      <div className="flex justify-end">
+        <button
+          onClick={handleExportExcel}
+          disabled={filteredCheckIns.length === 0}
+          className="flex items-center gap-2 px-4 py-2 bg-green-600 hover:bg-green-700 disabled:bg-gray-400 text-white rounded-lg font-medium transition-colors"
+        >
+          <Download className="w-4 h-4" />
+          ส่งออก Excel ({filteredCheckIns.length} รายการ)
+        </button>
       </div>
 
       {/* Stats Cards */}

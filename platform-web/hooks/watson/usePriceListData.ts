@@ -557,7 +557,9 @@ export function usePriceListData() {
               (r) => r.itemCode === itemCode,
             );
             if (candidates.length === 0) return undefined;
-            const byDate = candidates.find((r) => {
+
+            // Filter candidates within the invoice date range
+            const byDateAll = candidates.filter((r) => {
               if (!r.priceStartDate) return false;
               const start = new Date(r.priceStartDate);
               const end = r.priceEndDate ? new Date(r.priceEndDate) : null;
@@ -566,12 +568,36 @@ export function usePriceListData() {
                 (end === null || toDateOnly(invoiceDate) <= toDateOnly(end))
               );
             });
-            if (byDate) {
+
+            if (byDateAll.length > 0) {
+              // Best: date range + priceExtVat match (select the tier matching invoice price)
+              if (actualPrice !== null) {
+                const byDateAndPrice = byDateAll.find(
+                  (r) => Math.abs(r.priceExtVat - actualPrice) < 0.02,
+                );
+                if (byDateAndPrice) {
+                  calcLog.push(
+                    `  → จับคู่ราคา: invoice ${actualPrice.toFixed(2)} ≈ PL ${byDateAndPrice.priceExtVat.toFixed(2)} (${byDateAndPrice.remarki1 || "Buy1"})`,
+                  );
+                  calcLog.push(
+                    `  → ใช้ช่วง: ${byDateAndPrice.priceStartDate ? new Date(byDateAndPrice.priceStartDate).toLocaleDateString("th-TH") : "?"} – ${byDateAndPrice.priceEndDate ? new Date(byDateAndPrice.priceEndDate).toLocaleDateString("th-TH") : "?"}`,
+                  );
+                  return byDateAndPrice;
+                }
+              }
+              // Fallback: date range only (first match)
+              const byDate = byDateAll[0];
               calcLog.push(
                 `  → ใช้ช่วง: ${byDate.priceStartDate ? new Date(byDate.priceStartDate).toLocaleDateString("th-TH") : "?"} – ${byDate.priceEndDate ? new Date(byDate.priceEndDate).toLocaleDateString("th-TH") : "?"}`,
               );
+              if (actualPrice !== null) {
+                calcLog.push(
+                  `  ⚠️ ไม่พบ tier ที่ตรงราคา ${actualPrice.toFixed(2)} — ใช้ tier แรก (${byDate.priceExtVat.toFixed(2)})`,
+                );
+              }
               return byDate;
             }
+
             // No exact date match — don't guess, report as no matching period
             calcLog.push(
               `  ⚠️ ไม่พบช่วงราคาที่ตรงวันที่ Invoice (${invoiceDate.toLocaleDateString("th-TH")})`,
@@ -606,14 +632,47 @@ export function usePriceListData() {
           // ❓ ไม่มีช่วงราคา instead of auto-passing.
           const hasPeriodMatch = !!rawItemSingle;
 
+          // Determine if matched tier is promo or std.
+          // The std tier is the one with the HIGHEST priceExtVat for this date range.
+          // If the matched rawItemSingle has a lower priceExtVat than the highest, it's promo.
+          const allTiersForDate = hasPeriodMatch
+            ? priceListRaw.filter((r) => {
+                if (r.itemCode !== itemCode || !r.priceStartDate) return false;
+                const start = new Date(r.priceStartDate);
+                const end = r.priceEndDate ? new Date(r.priceEndDate) : null;
+                return (
+                  toDateOnly(invoiceDate) >= toDateOnly(start) &&
+                  (end === null || toDateOnly(invoiceDate) <= toDateOnly(end))
+                );
+              })
+            : [];
+          const stdTierForDate =
+            allTiersForDate.length > 0
+              ? allTiersForDate.reduce((best, r) =>
+                  r.priceExtVat > best.priceExtVat ? r : best,
+                )
+              : rawItemSingle;
+          const isPromoTier =
+            hasPeriodMatch &&
+            rawItemSingle &&
+            stdTierForDate &&
+            Math.abs(rawItemSingle.priceExtVat - stdTierForDate.priceExtVat) >
+              0.02;
+
+          if (isPromoTier) {
+            calcLog.push(
+              `  🏷️ Promo tier: invoice ฿${rawItemSingle!.priceExtVat.toFixed(2)} ≠ std ฿${stdTierForDate!.priceExtVat.toFixed(2)} → QtyPro=1`,
+            );
+          }
+
           return {
             ...row,
-            "Expected Price": rawItemSingle?.price?.toFixed(2) || "-",
+            "Expected Price": rawItemSingle?.priceExtVat?.toFixed(2) || "-",
             "Price Match": hasPeriodMatch ? "⏭️ Qty=1" : "❓ No period (Qty=1)",
             "Period Start": singlePeriodStart,
             "Matched Period": singleMatchedPeriod,
-            "Std Qty": "1",
-            "Promo Qty": "0",
+            "Std Qty": isPromoTier ? "0" : "1",
+            "Promo Qty": isPromoTier ? "1" : "0",
             "Calc Amt": rawAmt.toFixed(2),
             Diff: "-",
             Confidence: hasPeriodMatch ? "100%" : "-",
@@ -632,28 +691,46 @@ export function usePriceListData() {
               ? `฿${fmt2(rawItemSingle.priceIncVat)}`
               : "-",
             "Calc Log": calcLog.join("\n"),
-            // New export columns
-            QtyBuy1: "1",
-            PriceBuy1_Invoice_Formula: rawItemSingle?.invoice62IncV
-              ? fmt2(rawItemSingle.invoice62IncV)
-              : fmt2(rawAmt),
-            PriceBuy1_Com_Calculate: rawItemSingle?.priceIncVat
-              ? fmt2(rawItemSingle.priceIncVat)
+            // New export columns — assign to correct tier
+            QtyBuy1: isPromoTier ? "0" : "1",
+            PriceBuy1_Invoice_Formula: isPromoTier
+              ? ""
+              : rawItemSingle?.invoice62IncV
+                ? fmt2(rawItemSingle.invoice62IncV)
+                : fmt2(rawAmt),
+            PriceBuy1_Com_Calculate: isPromoTier
+              ? ""
+              : rawItemSingle?.priceIncVat
+                ? fmt2(rawItemSingle.priceIncVat)
+                : "",
+            QtyPro: isPromoTier ? "1" : "0",
+            PricePro_Invoice_Formula: isPromoTier
+              ? rawItemSingle?.invoice62IncV
+                ? fmt2(rawItemSingle.invoice62IncV)
+                : fmt2(rawAmt)
               : "",
-            QtyPro: "0",
-            PricePro_Invoice_Formula: "",
-            PricePro_Com_Calculate: "",
+            PricePro_Com_Calculate: isPromoTier
+              ? rawItemSingle?.priceIncVat
+                ? fmt2(rawItemSingle.priceIncVat)
+                : ""
+              : "",
             Remark: rawItemSingle?.remarki1 || "-",
             FMProductCode: getFMProductCode(itemCode),
             ReportRunDateTime: reportRunDateTime || "",
             // Hidden metadata for manual qty override recalculation
-            _stdPriceExtVat: rawAmt, // single item = entire amount
-            _stdPriceIncVat: rawItemSingle?.priceIncVat || 0,
-            _stdInvoice62IncV: rawItemSingle?.invoice62IncV || 0,
-            _proPriceExtVat: rawAmt, // fallback to std for manual promo split
-            _proPriceIncVat: rawItemSingle?.priceIncVat || 0,
-            _proInvoice62IncV: rawItemSingle?.invoice62IncV || 0,
-            _proRemark: "Buy1",
+            _stdPriceExtVat: stdTierForDate?.priceExtVat || rawAmt,
+            _stdPriceIncVat: stdTierForDate?.priceIncVat || 0,
+            _stdInvoice62IncV: stdTierForDate?.invoice62IncV || 0,
+            _proPriceExtVat: isPromoTier
+              ? rawItemSingle!.priceExtVat
+              : stdTierForDate?.priceExtVat || rawAmt,
+            _proPriceIncVat: isPromoTier
+              ? rawItemSingle!.priceIncVat || 0
+              : stdTierForDate?.priceIncVat || 0,
+            _proInvoice62IncV: isPromoTier
+              ? rawItemSingle!.invoice62IncV || 0
+              : stdTierForDate?.invoice62IncV || 0,
+            _proRemark: rawItemSingle?.remarki1 || "Buy1",
           };
         }
 
