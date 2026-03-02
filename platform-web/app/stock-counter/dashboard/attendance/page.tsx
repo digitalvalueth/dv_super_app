@@ -25,10 +25,10 @@ import {
   Users,
   X,
 } from "lucide-react";
-import * as XLSX from "xlsx";
 import Image from "next/image";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
+import * as XLSX from "xlsx";
 
 export default function AttendancePage() {
   const { userData } = useAuthStore();
@@ -197,12 +197,17 @@ export default function AttendancePage() {
           let coords = "";
           if (c.watermarkData) {
             try {
-              const w = typeof c.watermarkData === 'string' ? JSON.parse(c.watermarkData) : c.watermarkData;
+              const w =
+                typeof c.watermarkData === "string"
+                  ? JSON.parse(c.watermarkData)
+                  : c.watermarkData;
               location = w.location || "";
               if (w.coordinates?.lat != null && w.coordinates?.lng != null) {
                 coords = `${w.coordinates.lat}, ${w.coordinates.lng}`;
               }
-            } catch { /* ignore */ }
+            } catch {
+              /* ignore */
+            }
           }
           return [
             c.userName || "",
@@ -223,7 +228,7 @@ export default function AttendancePage() {
       const ws = XLSX.utils.aoa_to_sheet(rows);
       // Auto column width
       ws["!cols"] = rows[0].map((_, i) => ({
-        wch: Math.max(...rows.map(r => String(r[i] || "").length), 10),
+        wch: Math.max(...rows.map((r) => String(r[i] || "").length), 10),
       }));
       XLSX.utils.book_append_sheet(wb, ws, "เช็คชื่อพนักงาน");
 

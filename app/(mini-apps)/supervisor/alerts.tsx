@@ -1,6 +1,16 @@
+import { db } from "@/config/firebase";
 import { useAuthStore } from "@/stores/auth.store";
 import { useTheme } from "@/stores/theme.store";
 import { Ionicons } from "@expo/vector-icons";
+import {
+  collection,
+  doc,
+  getDocs,
+  query,
+  Timestamp,
+  updateDoc,
+  where,
+} from "firebase/firestore";
 import { useCallback, useEffect, useState } from "react";
 import {
   ActivityIndicator,
@@ -12,16 +22,6 @@ import {
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import {
-  collection,
-  doc,
-  getDocs,
-  query,
-  Timestamp,
-  updateDoc,
-  where,
-} from "firebase/firestore";
-import { db } from "@/config/firebase";
 
 interface AlertItem {
   uid: string;
@@ -69,7 +69,10 @@ export default function AlertsScreen() {
       checkInsSnap.docs.forEach((d) => {
         const data = d.data();
         if (data.userId) {
-          const dateStr = data.timestamp?.toDate?.()?.toISOString()?.split("T")[0];
+          const dateStr = data.timestamp
+            ?.toDate?.()
+            ?.toISOString()
+            ?.split("T")[0];
           if (dateStr) {
             if (!userCheckInDays.has(data.userId)) {
               userCheckInDays.set(data.userId, new Set());
@@ -138,7 +141,9 @@ export default function AlertsScreen() {
       });
 
       // Sort by most missing days first
-      alertItems.sort((a, b) => b.consecutiveMissingDays - a.consecutiveMissingDays);
+      alertItems.sort(
+        (a, b) => b.consecutiveMissingDays - a.consecutiveMissingDays,
+      );
       setAlerts(alertItems);
     } catch (error) {
       console.error("Error loading alerts:", error);
@@ -206,11 +211,14 @@ export default function AlertsScreen() {
           onPress: async () => {
             if (item.alertDocId) {
               try {
-                await updateDoc(doc(db, "missingCheckInAlerts", item.alertDocId), {
-                  status: "resolved",
-                  resolvedBy: user?.uid,
-                  resolvedAt: Timestamp.now(),
-                });
+                await updateDoc(
+                  doc(db, "missingCheckInAlerts", item.alertDocId),
+                  {
+                    status: "resolved",
+                    resolvedBy: user?.uid,
+                    resolvedAt: Timestamp.now(),
+                  },
+                );
                 setAlerts((prev) => prev.filter((a) => a.uid !== item.uid));
               } catch (error) {
                 console.error("Error resolving:", error);
@@ -238,8 +246,14 @@ export default function AlertsScreen() {
       <View style={styles.alertHeader}>
         <View style={styles.alertInfo}>
           <View style={styles.alertNameRow}>
-            <Ionicons name="warning" size={18} color={statusColor(item.alertStatus)} />
-            <Text style={[styles.alertName, { color: colors.text }]}>{item.name}</Text>
+            <Ionicons
+              name="warning"
+              size={18}
+              color={statusColor(item.alertStatus)}
+            />
+            <Text style={[styles.alertName, { color: colors.text }]}>
+              {item.name}
+            </Text>
           </View>
           {item.branchName ? (
             <Text style={[styles.alertBranch, { color: colors.textSecondary }]}>
@@ -248,9 +262,14 @@ export default function AlertsScreen() {
           ) : null}
         </View>
         <View
-          style={[styles.badge, { backgroundColor: statusColor(item.alertStatus) + "20" }]}
+          style={[
+            styles.badge,
+            { backgroundColor: statusColor(item.alertStatus) + "20" },
+          ]}
         >
-          <Text style={[styles.badgeText, { color: statusColor(item.alertStatus) }]}>
+          <Text
+            style={[styles.badgeText, { color: statusColor(item.alertStatus) }]}
+          >
             {item.alertStatus === "new" ? "ใหม่" : "รับทราบ"}
           </Text>
         </View>
@@ -265,7 +284,11 @@ export default function AlertsScreen() {
         </View>
         {item.lastCheckIn && (
           <View style={styles.detailRow}>
-            <Ionicons name="time-outline" size={14} color={colors.textSecondary} />
+            <Ionicons
+              name="time-outline"
+              size={14}
+              color={colors.textSecondary}
+            />
             <Text style={[styles.detailText, { color: colors.textSecondary }]}>
               เช็คอินล่าสุด:{" "}
               {item.lastCheckIn.toLocaleDateString("th-TH", {
@@ -301,7 +324,10 @@ export default function AlertsScreen() {
   );
 
   return (
-    <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]} edges={[]}>
+    <SafeAreaView
+      style={[styles.container, { backgroundColor: colors.background }]}
+      edges={[]}
+    >
       {/* Header info */}
       <View style={[styles.infoCard, { backgroundColor: "#fef2f2" }]}>
         <Ionicons name="information-circle" size={20} color="#ef4444" />

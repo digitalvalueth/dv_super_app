@@ -1,7 +1,9 @@
+import { db } from "@/config/firebase";
 import { useAuthStore } from "@/stores/auth.store";
 import { useTheme } from "@/stores/theme.store";
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
+import { collection, getDocs, query, where } from "firebase/firestore";
 import { useCallback, useEffect, useState } from "react";
 import {
   RefreshControl,
@@ -12,8 +14,6 @@ import {
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { collection, getDocs, query, where } from "firebase/firestore";
-import { db } from "@/config/firebase";
 
 interface DashboardStats {
   totalBA: number;
@@ -48,9 +48,7 @@ export default function SupervisorDashboard() {
         collection(db, "users"),
         where("companyId", "==", user.companyId),
         where("role", "==", "employee"),
-        ...(user.branchId
-          ? [where("branchId", "==", user.branchId)]
-          : []),
+        ...(user.branchId ? [where("branchId", "==", user.branchId)] : []),
       );
       const usersSnap = await getDocs(usersQuery);
       const totalBA = usersSnap.size;
@@ -62,9 +60,7 @@ export default function SupervisorDashboard() {
         collection(db, "checkIns"),
         where("companyId", "==", user.companyId),
         where("type", "==", "check-in"),
-        ...(user.branchId
-          ? [where("branchId", "==", user.branchId)]
-          : []),
+        ...(user.branchId ? [where("branchId", "==", user.branchId)] : []),
       );
       const checkInsSnap = await getDocs(checkInsQuery);
       const todayCheckIns = checkInsSnap.docs.filter((d) => {
@@ -77,9 +73,7 @@ export default function SupervisorDashboard() {
         collection(db, "countingSessions"),
         where("companyId", "==", user.companyId),
         where("status", "==", "completed"),
-        ...(user.branchId
-          ? [where("branchId", "==", user.branchId)]
-          : []),
+        ...(user.branchId ? [where("branchId", "==", user.branchId)] : []),
       );
       const sessionsSnap = await getDocs(sessionsQuery);
       const pendingReview = sessionsSnap.docs.filter((d) => {
@@ -178,7 +172,9 @@ export default function SupervisorDashboard() {
           <Text style={[styles.headerTitle, { color: colors.text }]}>
             Supervisor Dashboard
           </Text>
-          <Text style={[styles.headerSubtitle, { color: colors.textSecondary }]}>
+          <Text
+            style={[styles.headerSubtitle, { color: colors.textSecondary }]}
+          >
             {user?.branchName || "ทุกสาขา"}
           </Text>
         </View>
@@ -229,9 +225,7 @@ export default function SupervisorDashboard() {
         </View>
 
         {/* Menu Items */}
-        <Text style={[styles.sectionTitle, { color: colors.text }]}>
-          เมนู
-        </Text>
+        <Text style={[styles.sectionTitle, { color: colors.text }]}>เมนู</Text>
         {menuItems.map((item) => (
           <TouchableOpacity
             key={item.id}
@@ -280,7 +274,12 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     gap: 12,
   },
-  headerButton: { width: 40, height: 40, justifyContent: "center", alignItems: "center" },
+  headerButton: {
+    width: 40,
+    height: 40,
+    justifyContent: "center",
+    alignItems: "center",
+  },
   headerTitle: { fontSize: 18, fontWeight: "700" },
   headerSubtitle: { fontSize: 13 },
   content: { flex: 1 },

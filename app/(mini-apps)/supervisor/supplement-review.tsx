@@ -1,7 +1,12 @@
+import {
+  approveSupplementSession,
+  getCompanySupplements,
+  rejectSupplementSession,
+} from "@/services/supplement.service";
 import { useAuthStore } from "@/stores/auth.store";
 import { useTheme } from "@/stores/theme.store";
+import type { SupplementSession } from "@/types";
 import { Ionicons } from "@expo/vector-icons";
-import { router, useLocalSearchParams } from "expo-router";
 import { useCallback, useEffect, useState } from "react";
 import {
   ActivityIndicator,
@@ -10,33 +15,22 @@ import {
   Modal,
   StyleSheet,
   Text,
-  TextInput,
   TouchableOpacity,
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import {
-  collection,
-  getDocs,
-  query,
-  Timestamp,
-  where,
-} from "firebase/firestore";
-import { db } from "@/config/firebase";
-import {
-  approveSupplementSession,
-  getCompanySupplements,
-  rejectSupplementSession,
-} from "@/services/supplement.service";
-import type { SupplementSession } from "@/types";
 
 export default function SupplementCountScreen() {
   const { colors } = useTheme();
   const user = useAuthStore((s) => s.user);
   const [supplements, setSupplements] = useState<SupplementSession[]>([]);
   const [loading, setLoading] = useState(true);
-  const [filterStatus, setFilterStatus] = useState<"all" | "pending" | "approved" | "rejected">("pending");
-  const [selectedItem, setSelectedItem] = useState<SupplementSession | null>(null);
+  const [filterStatus, setFilterStatus] = useState<
+    "all" | "pending" | "approved" | "rejected"
+  >("pending");
+  const [selectedItem, setSelectedItem] = useState<SupplementSession | null>(
+    null,
+  );
   const [submitting, setSubmitting] = useState(false);
 
   const loadSupplements = useCallback(async () => {
@@ -87,7 +81,7 @@ export default function SupplementCountScreen() {
               );
               setSelectedItem(null);
               Alert.alert("สำเร็จ", "อนุมัติเรียบร้อย");
-            } catch (error) {
+            } catch {
               Alert.alert("เกิดข้อผิดพลาด", "กรุณาลองใหม่");
             } finally {
               setSubmitting(false);
@@ -100,39 +94,47 @@ export default function SupplementCountScreen() {
 
   const handleReject = async (item: SupplementSession) => {
     if (!user?.uid) return;
-    Alert.alert(
-      "ปฏิเสธ",
-      `ปฏิเสธการนับเสริม ${item.productName}?`,
-      [
-        { text: "ยกเลิก", style: "cancel" },
-        {
-          text: "ปฏิเสธ",
-          style: "destructive",
-          onPress: async () => {
-            setSubmitting(true);
-            try {
-              await rejectSupplementSession(item.id, user.uid);
-              setSupplements((prev) =>
-                prev.map((s) =>
-                  s.id === item.id ? { ...s, status: "rejected" } : s,
-                ),
-              );
-              setSelectedItem(null);
-            } catch (error) {
-              Alert.alert("เกิดข้อผิดพลาด", "กรุณาลองใหม่");
-            } finally {
-              setSubmitting(false);
-            }
-          },
+    Alert.alert("ปฏิเสธ", `ปฏิเสธการนับเสริม ${item.productName}?`, [
+      { text: "ยกเลิก", style: "cancel" },
+      {
+        text: "ปฏิเสธ",
+        style: "destructive",
+        onPress: async () => {
+          setSubmitting(true);
+          try {
+            await rejectSupplementSession(item.id, user.uid);
+            setSupplements((prev) =>
+              prev.map((s) =>
+                s.id === item.id ? { ...s, status: "rejected" } : s,
+              ),
+            );
+            setSelectedItem(null);
+          } catch {
+            Alert.alert("เกิดข้อผิดพลาด", "กรุณาลองใหม่");
+          } finally {
+            setSubmitting(false);
+          }
         },
-      ],
-    );
+      },
+    ]);
   };
 
   const statusConfig = {
-    pending: { label: "รออนุมัติ", color: "#f59e0b", icon: "time-outline" as const },
-    approved: { label: "อนุมัติ", color: "#10b981", icon: "checkmark-circle-outline" as const },
-    rejected: { label: "ปฏิเสธ", color: "#ef4444", icon: "close-circle-outline" as const },
+    pending: {
+      label: "รออนุมัติ",
+      color: "#f59e0b",
+      icon: "time-outline" as const,
+    },
+    approved: {
+      label: "อนุมัติ",
+      color: "#10b981",
+      icon: "checkmark-circle-outline" as const,
+    },
+    rejected: {
+      label: "ปฏิเสธ",
+      color: "#ef4444",
+      icon: "close-circle-outline" as const,
+    },
   };
 
   const renderItem = ({ item }: { item: SupplementSession }) => {
@@ -144,14 +146,22 @@ export default function SupplementCountScreen() {
       >
         <View style={styles.cardHeader}>
           <View style={{ flex: 1 }}>
-            <Text style={[styles.productName, { color: colors.text }]} numberOfLines={1}>
+            <Text
+              style={[styles.productName, { color: colors.text }]}
+              numberOfLines={1}
+            >
               {item.productName || "Unknown"}
             </Text>
             <Text style={[styles.userName, { color: colors.textSecondary }]}>
               {item.userName}
             </Text>
           </View>
-          <View style={[styles.statusBadge, { backgroundColor: config.color + "20" }]}>
+          <View
+            style={[
+              styles.statusBadge,
+              { backgroundColor: config.color + "20" },
+            ]}
+          >
             <Ionicons name={config.icon} size={14} color={config.color} />
             <Text style={[styles.statusText, { color: config.color }]}>
               {config.label}
@@ -180,7 +190,10 @@ export default function SupplementCountScreen() {
         </View>
 
         {item.reason ? (
-          <Text style={[styles.reason, { color: colors.textSecondary }]} numberOfLines={2}>
+          <Text
+            style={[styles.reason, { color: colors.textSecondary }]}
+            numberOfLines={2}
+          >
             เหตุผล: {item.reason}
           </Text>
         ) : null}
@@ -196,7 +209,10 @@ export default function SupplementCountScreen() {
   ];
 
   return (
-    <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]} edges={[]}>
+    <SafeAreaView
+      style={[styles.container, { backgroundColor: colors.background }]}
+      edges={[]}
+    >
       {/* Filter Tabs */}
       <View style={styles.filterRow}>
         {filterOptions.map((opt) => (
@@ -212,7 +228,10 @@ export default function SupplementCountScreen() {
             <Text
               style={[
                 styles.filterTabText,
-                { color: filterStatus === opt.key ? "#fff" : colors.textSecondary },
+                {
+                  color:
+                    filterStatus === opt.key ? "#fff" : colors.textSecondary,
+                },
               ]}
             >
               {opt.label}
@@ -227,7 +246,11 @@ export default function SupplementCountScreen() {
         </View>
       ) : supplements.length === 0 ? (
         <View style={styles.center}>
-          <Ionicons name="layers-outline" size={64} color={colors.textSecondary} />
+          <Ionicons
+            name="layers-outline"
+            size={64}
+            color={colors.textSecondary}
+          />
           <Text style={[styles.emptyText, { color: colors.textSecondary }]}>
             ไม่มีรายการนับเสริม
           </Text>
@@ -246,7 +269,9 @@ export default function SupplementCountScreen() {
       {selectedItem && (
         <Modal visible animationType="slide" transparent>
           <View style={styles.modalOverlay}>
-            <View style={[styles.modalContent, { backgroundColor: colors.card }]}>
+            <View
+              style={[styles.modalContent, { backgroundColor: colors.card }]}
+            >
               <View style={styles.modalHeader}>
                 <Text style={[styles.modalTitle, { color: colors.text }]}>
                   รายละเอียดนับเสริม
@@ -260,24 +285,40 @@ export default function SupplementCountScreen() {
                 <Text style={[styles.modalProduct, { color: colors.text }]}>
                   {selectedItem.productName}
                 </Text>
-                <Text style={[styles.modalUser, { color: colors.textSecondary }]}>
+                <Text
+                  style={[styles.modalUser, { color: colors.textSecondary }]}
+                >
                   โดย: {selectedItem.userName}
                 </Text>
 
                 <View style={styles.modalCountGrid}>
                   <View style={styles.modalCountBox}>
-                    <Text style={[styles.modalCountLabel, { color: colors.textSecondary }]}>
+                    <Text
+                      style={[
+                        styles.modalCountLabel,
+                        { color: colors.textSecondary },
+                      ]}
+                    >
                       🤖 AI นับได้
                     </Text>
-                    <Text style={[styles.modalCountValue, { color: "#3b82f6" }]}>
+                    <Text
+                      style={[styles.modalCountValue, { color: "#3b82f6" }]}
+                    >
                       {selectedItem.aiCount}
                     </Text>
                   </View>
                   <View style={styles.modalCountBox}>
-                    <Text style={[styles.modalCountLabel, { color: colors.textSecondary }]}>
+                    <Text
+                      style={[
+                        styles.modalCountLabel,
+                        { color: colors.textSecondary },
+                      ]}
+                    >
                       ➕ นับเสริม
                     </Text>
-                    <Text style={[styles.modalCountValue, { color: "#10b981" }]}>
+                    <Text
+                      style={[styles.modalCountValue, { color: "#10b981" }]}
+                    >
                       +{selectedItem.additionalCount}
                     </Text>
                   </View>
@@ -286,7 +327,9 @@ export default function SupplementCountScreen() {
                 {selectedItem.reason ? (
                   <View style={styles.reasonBox}>
                     <Text style={styles.reasonBoxLabel}>เหตุผล:</Text>
-                    <Text style={styles.reasonBoxText}>{selectedItem.reason}</Text>
+                    <Text style={styles.reasonBoxText}>
+                      {selectedItem.reason}
+                    </Text>
                   </View>
                 ) : null}
 
@@ -310,7 +353,11 @@ export default function SupplementCountScreen() {
                         <ActivityIndicator size="small" color="#fff" />
                       ) : (
                         <>
-                          <Ionicons name="checkmark-circle" size={18} color="#fff" />
+                          <Ionicons
+                            name="checkmark-circle"
+                            size={18}
+                            color="#fff"
+                          />
                           <Text style={styles.approveBtnText}>อนุมัติ</Text>
                         </>
                       )}

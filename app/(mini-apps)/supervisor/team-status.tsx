@@ -1,6 +1,14 @@
+import { db } from "@/config/firebase";
 import { useAuthStore } from "@/stores/auth.store";
 import { useTheme } from "@/stores/theme.store";
 import { Ionicons } from "@expo/vector-icons";
+import {
+  collection,
+  getDocs,
+  query,
+  Timestamp,
+  where,
+} from "firebase/firestore";
 import { useCallback, useEffect, useState } from "react";
 import {
   ActivityIndicator,
@@ -10,14 +18,6 @@ import {
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import {
-  collection,
-  getDocs,
-  query,
-  Timestamp,
-  where,
-} from "firebase/firestore";
-import { db } from "@/config/firebase";
 
 interface TeamMember {
   uid: string;
@@ -158,7 +158,9 @@ export default function TeamStatusScreen() {
         ]}
       />
       <View style={styles.memberInfo}>
-        <Text style={[styles.memberName, { color: colors.text }]}>{item.name}</Text>
+        <Text style={[styles.memberName, { color: colors.text }]}>
+          {item.name}
+        </Text>
         {item.branchName ? (
           <Text style={[styles.branchText, { color: colors.textSecondary }]}>
             {item.branchName}
@@ -174,11 +176,19 @@ export default function TeamStatusScreen() {
             </Text>
           </View>
         ) : (
-          <Text style={[styles.notCheckedIn, { color: "#ef4444" }]}>ยังไม่เช็คอิน</Text>
+          <Text style={[styles.notCheckedIn, { color: "#ef4444" }]}>
+            ยังไม่เช็คอิน
+          </Text>
         )}
         <View style={styles.memberStatRow}>
-          <Ionicons name="camera-outline" size={14} color={colors.textSecondary} />
-          <Text style={[styles.memberStatText, { color: colors.textSecondary }]}>
+          <Ionicons
+            name="camera-outline"
+            size={14}
+            color={colors.textSecondary}
+          />
+          <Text
+            style={[styles.memberStatText, { color: colors.textSecondary }]}
+          >
             นับ {item.countingSessionsToday} รายการ
           </Text>
         </View>
@@ -187,24 +197,43 @@ export default function TeamStatusScreen() {
   );
 
   return (
-    <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]} edges={[]}>
+    <SafeAreaView
+      style={[styles.container, { backgroundColor: colors.background }]}
+      edges={[]}
+    >
       {/* Summary Stats */}
       <View style={styles.statsRow}>
         <View style={[styles.statBox, { backgroundColor: colors.card }]}>
-          <Text style={[styles.statValue, { color: colors.primary }]}>{stats.total}</Text>
-          <Text style={[styles.statLabel, { color: colors.textSecondary }]}>ทั้งหมด</Text>
+          <Text style={[styles.statValue, { color: colors.primary }]}>
+            {stats.total}
+          </Text>
+          <Text style={[styles.statLabel, { color: colors.textSecondary }]}>
+            ทั้งหมด
+          </Text>
         </View>
         <View style={[styles.statBox, { backgroundColor: colors.card }]}>
-          <Text style={[styles.statValue, { color: "#10b981" }]}>{stats.checkedIn}</Text>
-          <Text style={[styles.statLabel, { color: colors.textSecondary }]}>เช็คอิน</Text>
+          <Text style={[styles.statValue, { color: "#10b981" }]}>
+            {stats.checkedIn}
+          </Text>
+          <Text style={[styles.statLabel, { color: colors.textSecondary }]}>
+            เช็คอิน
+          </Text>
         </View>
         <View style={[styles.statBox, { backgroundColor: colors.card }]}>
-          <Text style={[styles.statValue, { color: "#ef4444" }]}>{stats.notCheckedIn}</Text>
-          <Text style={[styles.statLabel, { color: colors.textSecondary }]}>ยังไม่เช็คอิน</Text>
+          <Text style={[styles.statValue, { color: "#ef4444" }]}>
+            {stats.notCheckedIn}
+          </Text>
+          <Text style={[styles.statLabel, { color: colors.textSecondary }]}>
+            ยังไม่เช็คอิน
+          </Text>
         </View>
         <View style={[styles.statBox, { backgroundColor: colors.card }]}>
-          <Text style={[styles.statValue, { color: "#3b82f6" }]}>{stats.withCounting}</Text>
-          <Text style={[styles.statLabel, { color: colors.textSecondary }]}>มีนับสต็อก</Text>
+          <Text style={[styles.statValue, { color: "#3b82f6" }]}>
+            {stats.withCounting}
+          </Text>
+          <Text style={[styles.statLabel, { color: colors.textSecondary }]}>
+            มีนับสต็อก
+          </Text>
         </View>
       </View>
 
@@ -214,7 +243,11 @@ export default function TeamStatusScreen() {
         </View>
       ) : members.length === 0 ? (
         <View style={styles.center}>
-          <Ionicons name="people-outline" size={64} color={colors.textSecondary} />
+          <Ionicons
+            name="people-outline"
+            size={64}
+            color={colors.textSecondary}
+          />
           <Text style={[styles.emptyText, { color: colors.textSecondary }]}>
             ไม่พบข้อมูลทีม
           </Text>

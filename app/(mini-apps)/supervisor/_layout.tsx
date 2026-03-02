@@ -1,5 +1,5 @@
-import { Stack } from "expo-router";
 import { useTheme } from "@/stores/theme.store";
+import { Stack } from "expo-router";
 
 export default function SupervisorLayout() {
   const { colors } = useTheme();
