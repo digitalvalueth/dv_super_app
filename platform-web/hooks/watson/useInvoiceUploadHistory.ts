@@ -357,6 +357,10 @@ export function useInvoiceUploadHistory(): InvoiceUploadHistoryReturn {
           promoQty?: string;
           qtyBuy1?: string;
           qtyPro?: string;
+          priceBuy1Invoice?: string;
+          priceBuy1Com?: string;
+          priceProInvoice?: string;
+          priceProCom?: string;
         }
       >,
     ) => {
