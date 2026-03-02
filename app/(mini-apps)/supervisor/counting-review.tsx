@@ -1,6 +1,18 @@
+import { db } from "@/config/firebase";
 import { useAuthStore } from "@/stores/auth.store";
 import { useTheme } from "@/stores/theme.store";
+import type { FinalCountSource } from "@/types";
 import { Ionicons } from "@expo/vector-icons";
+import { Image } from "expo-image";
+import {
+  collection,
+  doc,
+  getDocs,
+  query,
+  Timestamp,
+  updateDoc,
+  where,
+} from "firebase/firestore";
 import { useCallback, useEffect, useState } from "react";
 import {
   ActivityIndicator,
@@ -14,18 +26,6 @@ import {
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { Image } from "expo-image";
-import {
-  collection,
-  doc,
-  getDocs,
-  query,
-  Timestamp,
-  updateDoc,
-  where,
-} from "firebase/firestore";
-import { db } from "@/config/firebase";
-import type { FinalCountSource } from "@/types";
 
 interface ReviewItem {
   id: string;
@@ -132,7 +132,10 @@ export default function CountingReviewScreen() {
     if (!selectedItem || !user?.uid) return;
 
     const finalCount = getSelectedCount();
-    if (selectedSource === "custom" && (!customCount || isNaN(parseInt(customCount)))) {
+    if (
+      selectedSource === "custom" &&
+      (!customCount || isNaN(parseInt(customCount)))
+    ) {
       Alert.alert("กรุณากรอกจำนวน", "กรอกจำนวนที่ต้องการใช้");
       return;
     }
@@ -151,7 +154,9 @@ export default function CountingReviewScreen() {
           employeeCount: selectedItem.employeeCount ?? 0,
           selectedCount: finalCount,
           source: selectedSource,
-          ...(selectedSource === "custom" && { customCount: parseInt(customCount) }),
+          ...(selectedSource === "custom" && {
+            customCount: parseInt(customCount),
+          }),
           ...(reason && { reason }),
         },
         updatedAt: new Date(),
@@ -175,14 +180,25 @@ export default function CountingReviewScreen() {
       onPress={() => openReviewModal(item)}
     >
       {item.imageUrl ? (
-        <Image source={{ uri: item.imageUrl }} style={styles.thumbnail} contentFit="cover" />
+        <Image
+          source={{ uri: item.imageUrl }}
+          style={styles.thumbnail}
+          contentFit="cover"
+        />
       ) : (
         <View style={[styles.thumbnail, { backgroundColor: colors.border }]}>
-          <Ionicons name="image-outline" size={24} color={colors.textSecondary} />
+          <Ionicons
+            name="image-outline"
+            size={24}
+            color={colors.textSecondary}
+          />
         </View>
       )}
       <View style={styles.cardContent}>
-        <Text style={[styles.productName, { color: colors.text }]} numberOfLines={1}>
+        <Text
+          style={[styles.productName, { color: colors.text }]}
+          numberOfLines={1}
+        >
           {item.productName}
         </Text>
         <Text style={[styles.branchName, { color: colors.textSecondary }]}>
@@ -210,7 +226,10 @@ export default function CountingReviewScreen() {
   );
 
   return (
-    <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]} edges={[]}>
+    <SafeAreaView
+      style={[styles.container, { backgroundColor: colors.background }]}
+      edges={[]}
+    >
       {loading ? (
         <View style={styles.center}>
           <ActivityIndicator size="large" color={colors.primary} />
@@ -250,14 +269,18 @@ export default function CountingReviewScreen() {
                 <Text style={[styles.modalProduct, { color: colors.text }]}>
                   {selectedItem.productName}
                 </Text>
-                <Text style={[styles.modalBranch, { color: colors.textSecondary }]}>
+                <Text
+                  style={[styles.modalBranch, { color: colors.textSecondary }]}
+                >
                   {selectedItem.branchName} — {selectedItem.userName}
                 </Text>
 
                 {selectedItem.disputeRemark && (
                   <View style={styles.remarkBox}>
                     <Text style={styles.remarkLabel}>หมายเหตุจากพนักงาน:</Text>
-                    <Text style={styles.remarkText}>{selectedItem.disputeRemark}</Text>
+                    <Text style={styles.remarkText}>
+                      {selectedItem.disputeRemark}
+                    </Text>
                   </View>
                 )}
 
@@ -267,19 +290,31 @@ export default function CountingReviewScreen() {
                     style={[
                       styles.sourceOption,
                       selectedSource === "ai" && styles.sourceOptionSelected,
-                      { borderColor: selectedSource === "ai" ? "#3b82f6" : colors.border },
+                      {
+                        borderColor:
+                          selectedSource === "ai" ? "#3b82f6" : colors.border,
+                      },
                     ]}
                     onPress={() => setSelectedSource("ai")}
                   >
                     <Text style={styles.sourceIcon}>🤖</Text>
-                    <Text style={[styles.sourceLabel, { color: colors.textSecondary }]}>
+                    <Text
+                      style={[
+                        styles.sourceLabel,
+                        { color: colors.textSecondary },
+                      ]}
+                    >
                       AI นับได้
                     </Text>
                     <Text style={[styles.sourceCount, { color: "#3b82f6" }]}>
                       {selectedItem.aiCount}
                     </Text>
                     {selectedSource === "ai" && (
-                      <Ionicons name="checkmark-circle" size={20} color="#3b82f6" />
+                      <Ionicons
+                        name="checkmark-circle"
+                        size={20}
+                        color="#3b82f6"
+                      />
                     )}
                   </TouchableOpacity>
 
@@ -287,23 +322,35 @@ export default function CountingReviewScreen() {
                     <TouchableOpacity
                       style={[
                         styles.sourceOption,
-                        selectedSource === "employee" && styles.sourceOptionSelected,
+                        selectedSource === "employee" &&
+                          styles.sourceOptionSelected,
                         {
                           borderColor:
-                            selectedSource === "employee" ? "#f59e0b" : colors.border,
+                            selectedSource === "employee"
+                              ? "#f59e0b"
+                              : colors.border,
                         },
                       ]}
                       onPress={() => setSelectedSource("employee")}
                     >
                       <Text style={styles.sourceIcon}>👤</Text>
-                      <Text style={[styles.sourceLabel, { color: colors.textSecondary }]}>
+                      <Text
+                        style={[
+                          styles.sourceLabel,
+                          { color: colors.textSecondary },
+                        ]}
+                      >
                         พนักงานรายงาน
                       </Text>
                       <Text style={[styles.sourceCount, { color: "#f59e0b" }]}>
                         {selectedItem.employeeCount}
                       </Text>
                       {selectedSource === "employee" && (
-                        <Ionicons name="checkmark-circle" size={20} color="#f59e0b" />
+                        <Ionicons
+                          name="checkmark-circle"
+                          size={20}
+                          color="#f59e0b"
+                        />
                       )}
                     </TouchableOpacity>
                   )}
@@ -311,21 +358,32 @@ export default function CountingReviewScreen() {
                   <TouchableOpacity
                     style={[
                       styles.sourceOption,
-                      selectedSource === "custom" && styles.sourceOptionSelected,
+                      selectedSource === "custom" &&
+                        styles.sourceOptionSelected,
                       {
                         borderColor:
-                          selectedSource === "custom" ? "#10b981" : colors.border,
+                          selectedSource === "custom"
+                            ? "#10b981"
+                            : colors.border,
                       },
                     ]}
                     onPress={() => setSelectedSource("custom")}
                   >
                     <Text style={styles.sourceIcon}>✏️</Text>
-                    <Text style={[styles.sourceLabel, { color: colors.textSecondary }]}>
+                    <Text
+                      style={[
+                        styles.sourceLabel,
+                        { color: colors.textSecondary },
+                      ]}
+                    >
                       กรอกเอง
                     </Text>
                     {selectedSource === "custom" && (
                       <TextInput
-                        style={[styles.customInput, { color: colors.text, borderColor: colors.border }]}
+                        style={[
+                          styles.customInput,
+                          { color: colors.text, borderColor: colors.border },
+                        ]}
                         value={customCount}
                         onChangeText={setCustomCount}
                         keyboardType="numeric"
@@ -334,7 +392,11 @@ export default function CountingReviewScreen() {
                       />
                     )}
                     {selectedSource === "custom" && (
-                      <Ionicons name="checkmark-circle" size={20} color="#10b981" />
+                      <Ionicons
+                        name="checkmark-circle"
+                        size={20}
+                        color="#10b981"
+                      />
                     )}
                   </TouchableOpacity>
                 </View>
@@ -354,7 +416,9 @@ export default function CountingReviewScreen() {
 
                 {/* Final Count Preview */}
                 <View style={styles.finalPreview}>
-                  <Text style={[styles.finalLabel, { color: colors.textSecondary }]}>
+                  <Text
+                    style={[styles.finalLabel, { color: colors.textSecondary }]}
+                  >
                     ยอดที่จะยืนยัน:
                   </Text>
                   <Text style={[styles.finalCount, { color: "#10b981" }]}>
@@ -365,10 +429,16 @@ export default function CountingReviewScreen() {
                 {/* Actions */}
                 <View style={styles.modalActions}>
                   <TouchableOpacity
-                    style={[styles.modalBtn, styles.cancelBtn, { borderColor: colors.border }]}
+                    style={[
+                      styles.modalBtn,
+                      styles.cancelBtn,
+                      { borderColor: colors.border },
+                    ]}
                     onPress={() => setModalVisible(false)}
                   >
-                    <Text style={[styles.cancelBtnText, { color: colors.text }]}>
+                    <Text
+                      style={[styles.cancelBtnText, { color: colors.text }]}
+                    >
                       ยกเลิก
                     </Text>
                   </TouchableOpacity>
@@ -495,7 +565,12 @@ const styles = StyleSheet.create({
   finalLabel: { fontSize: 14 },
   finalCount: { fontSize: 28, fontWeight: "800" },
   modalActions: { flexDirection: "row", gap: 12, marginTop: 4 },
-  modalBtn: { flex: 1, paddingVertical: 14, borderRadius: 12, alignItems: "center" },
+  modalBtn: {
+    flex: 1,
+    paddingVertical: 14,
+    borderRadius: 12,
+    alignItems: "center",
+  },
   cancelBtn: { borderWidth: 1 },
   cancelBtnText: { fontSize: 16, fontWeight: "600" },
   confirmBtn: {},
