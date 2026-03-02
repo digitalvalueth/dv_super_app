@@ -65,6 +65,8 @@ export function QtyEditModal({
 
   const totalQty = qtyBuy1 + qtyPro;
   const isOverLimit = totalQty > maxQty;
+  const isUnderLimit = totalQty < maxQty && totalQty > 0;
+  const isExactMatch = totalQty === maxQty;
   const isValid = totalQty <= maxQty && totalQty > 0;
 
   // Get price info from hidden metadata
@@ -166,10 +168,14 @@ export function QtyEditModal({
         <DialogHeader className="shrink-0">
           <DialogTitle
             className={`flex items-center gap-2 ${
-              isValid ? "text-green-600" : "text-amber-600"
+              isExactMatch
+                ? "text-green-600"
+                : isValid
+                  ? "text-amber-600"
+                  : "text-red-600"
             }`}
           >
-            {isValid ? (
+            {isExactMatch ? (
               <Check className="h-5 w-5" />
             ) : (
               <AlertTriangle className="h-5 w-5" />
@@ -181,11 +187,19 @@ export function QtyEditModal({
         {/* Scrollable body */}
         <div className="overflow-y-auto flex-1 space-y-3 pr-1">
           {/* Warning Message */}
-          {!isValid && (
+          {isOverLimit && (
+            <div className="bg-red-50 border border-red-200 rounded-lg p-2.5 text-sm">
+              <p className="text-red-800 font-medium">
+                QtyBuy1 + QtyPro = {totalQty} เกินจำนวน Qty ({maxQty}) อยู่{" "}
+                {totalQty - maxQty} ชิ้น
+              </p>
+            </div>
+          )}
+          {isUnderLimit && (
             <div className="bg-amber-50 border border-amber-200 rounded-lg p-2.5 text-sm">
               <p className="text-amber-800 font-medium">
-                คุณได้กรอก {data.editField} = {data.attemptedValue} ซึ่งทำให้
-                QtyBuy1 + QtyPro เกินจำนวน Qty ({maxQty})
+                QtyBuy1 + QtyPro = {totalQty} ไม่ครบจำนวน Qty ({maxQty}) ขาดอีก{" "}
+                {maxQty - totalQty} ชิ้น
               </p>
             </div>
           )}
@@ -357,9 +371,11 @@ export function QtyEditModal({
                 className={`rounded-lg px-3 py-2 text-sm flex items-center justify-between ${
                   isOverLimit
                     ? "bg-red-50 border border-red-200"
-                    : isValid
+                    : isExactMatch
                       ? "bg-green-50 border border-green-200"
-                      : "bg-gray-50 border border-gray-200"
+                      : isUnderLimit
+                        ? "bg-amber-50 border border-amber-200"
+                        : "bg-gray-50 border border-gray-200"
                 }`}
               >
                 <span className="font-medium text-xs">
@@ -369,10 +385,14 @@ export function QtyEditModal({
                   <Badge className="bg-red-100 text-red-700">
                     เกิน {totalQty - maxQty}
                   </Badge>
-                ) : isValid ? (
+                ) : isExactMatch ? (
                   <Badge className="bg-green-100 text-green-700">
                     <Check className="h-3 w-3 mr-1" />
                     OK
+                  </Badge>
+                ) : isUnderLimit ? (
+                  <Badge className="bg-amber-100 text-amber-700">
+                    ขาด {maxQty - totalQty}
                   </Badge>
                 ) : (
                   <Badge variant="secondary">กรุณากรอก</Badge>
