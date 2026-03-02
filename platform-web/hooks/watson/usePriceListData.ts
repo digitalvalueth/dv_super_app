@@ -566,15 +566,48 @@ export function usePriceListData() {
                 (end === null || toDateOnly(invoiceDate) <= toDateOnly(end))
               );
             });
-            return byDate || candidates[0];
+            if (byDate) {
+              calcLog.push(
+                `  → ใช้ช่วง: ${byDate.priceStartDate ? new Date(byDate.priceStartDate).toLocaleDateString("th-TH") : "?"} – ${byDate.priceEndDate ? new Date(byDate.priceEndDate).toLocaleDateString("th-TH") : "?"}`,
+              );
+              return byDate;
+            }
+            // No exact date match — don't guess, report as no matching period
+            calcLog.push(
+              `  ⚠️ ไม่พบช่วงราคาที่ตรงวันที่ Invoice (${invoiceDate.toLocaleDateString("th-TH")})`,
+            );
+            if (candidates.length > 0) {
+              candidates.forEach((c) => {
+                const s = c.priceStartDate
+                  ? new Date(c.priceStartDate).toLocaleDateString("th-TH")
+                  : "?";
+                const e = c.priceEndDate
+                  ? new Date(c.priceEndDate).toLocaleDateString("th-TH")
+                  : "?";
+                calcLog.push(`    - ช่วงที่มี: ${s} – ${e}`);
+              });
+            }
+            return undefined;
           })();
+
+          // Build period info string for Qty=1
+          const singlePeriodStart = rawItemSingle?.priceStartDate
+            ? new Date(rawItemSingle.priceStartDate).toLocaleDateString("th-TH")
+            : "-";
+          const singlePeriodEnd = rawItemSingle?.priceEndDate
+            ? new Date(rawItemSingle.priceEndDate).toLocaleDateString("th-TH")
+            : "-";
+          const singleMatchedPeriod =
+            singlePeriodStart !== "-"
+              ? `${singlePeriodStart} → ${singlePeriodEnd}`
+              : "-";
 
           return {
             ...row,
             "Expected Price": rawItemSingle?.price?.toFixed(2) || "-",
             "Price Match": "⏭️ Qty=1",
-            "Period Start": "-",
-            "Matched Period": "-",
+            "Period Start": singlePeriodStart,
+            "Matched Period": singleMatchedPeriod,
             "Std Qty": "1",
             "Promo Qty": "0",
             "Calc Amt": rawAmt.toFixed(2),

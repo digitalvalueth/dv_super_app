@@ -82,7 +82,7 @@ export function WatsonSidebar() {
                     Watson Excel
                   </h1>
                   <span className="text-xs font-semibold text-blue-400 dark:text-blue-500 bg-blue-50 dark:bg-blue-900/30 px-1.5 py-0.5 rounded">
-                    v6.02
+                    v6.02.0.1
                   </span>
                 </div>
                 <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
