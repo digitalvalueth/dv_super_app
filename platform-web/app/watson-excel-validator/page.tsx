@@ -598,8 +598,11 @@ export default function WatsonExcelValidatorPage() {
               confidence: "คืน",
             });
           }
-        } else if (priceMatch.includes("Qty=1")) {
-          // Single item purchases are acceptable (skip validation)
+        } else if (
+          priceMatch.includes("Qty=1") &&
+          !priceMatch.includes("No period")
+        ) {
+          // Single item purchases WITH a matching period are acceptable
           acceptable.add(idx);
           const existing = passedMap.get(itemCode);
           if (existing) {

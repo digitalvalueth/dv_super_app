@@ -602,17 +602,21 @@ export function usePriceListData() {
               ? `${singlePeriodStart} → ${singlePeriodEnd}`
               : "-";
 
+          // When no period matches, mark as "No period" so it shows as
+          // ❓ ไม่มีช่วงราคา instead of auto-passing.
+          const hasPeriodMatch = !!rawItemSingle;
+
           return {
             ...row,
             "Expected Price": rawItemSingle?.price?.toFixed(2) || "-",
-            "Price Match": "⏭️ Qty=1",
+            "Price Match": hasPeriodMatch ? "⏭️ Qty=1" : "❓ No period (Qty=1)",
             "Period Start": singlePeriodStart,
             "Matched Period": singleMatchedPeriod,
             "Std Qty": "1",
             "Promo Qty": "0",
             "Calc Amt": rawAmt.toFixed(2),
             Diff: "-",
-            Confidence: "100%",
+            Confidence: hasPeriodMatch ? "100%" : "-",
             "PL Name": rawItemSingle?.prodName || "-",
             "PL Remark": rawItemSingle?.remarki1 || "-",
             "PL Full Price": rawItemSingle?.price
