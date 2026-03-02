@@ -801,6 +801,7 @@ export function usePriceListData() {
               startDate: p.startDate,
               priceIncVat: p.priceIncVat, // Comm Price IncV
               stdPrice: p.price, // Standard Price IncV
+              invoice62IncV: p.invoice62IncV, // Invoice 62% IncV
             }));
 
           if (validPrices.length > 0 && rawAmt > 0 && qty > 0) {
@@ -846,15 +847,38 @@ export function usePriceListData() {
             }
 
             if (result.allocations.length > 0) {
+              // Detect if all tiers are effectively the same type (e.g. all "buy 1"
+              // from different time periods but no real promo distinction).
+              // Also treat single-tier items as "all same" — there's no real promo
+              // tier to split into when only 1 price is available.
+              const allSameTier = validPrices.length <= 1 || validPrices.every(
+                (vp) => {
+                  const r = (vp.remark || "Buy1").toLowerCase().replace(/\s/g, "");
+                  return r === "buy1" || r === "std" || r === "standard";
+                },
+              );
+
+              if (allSameTier) {
+                calcLog.push(``);
+                calcLog.push(
+                  `🔀 Tier merge: ${validPrices.length <= 1 ? "single tier — all qty → QtyBuy1" : "all tiers are buy1 — merged into QtyBuy1"}`,
+                );
+              }
+
               // Parse allocations
               const stdAlloc = result.allocations.find(
                 (a) => a.label === "Std",
               );
-              const promoAllocs = result.allocations.filter(
-                (a) => a.label !== "Std",
-              );
+              const promoAllocs = allSameTier
+                ? [] // When single tier or all buy1, don't split to promo
+                : result.allocations.filter((a) => a.label !== "Std");
 
-              stdQty = stdAlloc ? String(stdAlloc.qty) : "0";
+              // When single tier or all tiers are buy1, merge total qty into stdAlloc
+              const effectiveStdQty = allSameTier
+                ? result.allocations.reduce((sum, a) => sum + a.qty, 0)
+                : stdAlloc?.qty || 0;
+
+              stdQty = String(effectiveStdQty);
               promoQty =
                 promoAllocs.length > 0
                   ? formatAllocationString(promoAllocs)
@@ -863,17 +887,17 @@ export function usePriceListData() {
 
               // Calculate new export columns
               // Buy1 (Std) allocation
-              if (stdAlloc) {
-                qtyBuy1 = stdAlloc.qty;
+              if (effectiveStdQty > 0) {
+                qtyBuy1 = effectiveStdQty;
                 // Display: per-unit Invoice 62% IncV (not total)
                 priceBuy1InvoiceFormula =
-                  rawItem?.invoice62IncV || stdAlloc.price;
+                  rawItem?.invoice62IncV || (stdAlloc?.price ?? validPrices[0].price);
                 // Comm Calculate = Comm Price IncV (not invoice62)
                 priceBuy1ComCalculate =
-                  rawItem?.priceIncVat || stdAlloc.priceIncVat || 0;
+                  rawItem?.priceIncVat || stdAlloc?.priceIncVat || validPrices[0].priceIncVat || 0;
                 // Store per-unit prices for manual override recalculation
-                _stdPricePerUnit = stdAlloc.price;
-                _stdCommPerUnit = stdAlloc.priceIncVat || 0;
+                _stdPricePerUnit = stdAlloc?.price ?? validPrices[0].price;
+                _stdCommPerUnit = stdAlloc?.priceIncVat || validPrices[0].priceIncVat || 0;
                 _stdInvoice62PerUnit = rawItem?.invoice62IncV || 0;
               }
 
@@ -881,11 +905,10 @@ export function usePriceListData() {
               const remarks: string[] = [];
               promoAllocs.forEach((alloc) => {
                 qtyPro += alloc.qty;
-                // Use the actual promo-tier price (not the standard item's invoice62).
-                // For a "1 baht" promo, alloc.price ≈ 0.58 (ExtVat) and
-                // alloc.priceIncVat = 1.00; using rawItem.invoice62IncV here would
-                // incorrectly show the full-price 179.18 instead.
-                priceProInvoiceFormula = alloc.price;
+                // PricePro_Invoice_Formula should show Invoice 62% IncV (same as
+                // PriceBuy1_Invoice_Formula shows Invoice 62% IncV).
+                // alloc.invoice62IncV carries the promo tier's own Invoice 62% IncV.
+                priceProInvoiceFormula = alloc.invoice62IncV || alloc.priceIncVat || alloc.price;
                 // Comm Calculate = actual promo Comm Price IncV
                 priceProComCalculate = alloc.priceIncVat || 0;
                 // Store per-unit promo price (use first/dominant promo)
@@ -893,7 +916,8 @@ export function usePriceListData() {
                   _proPricePerUnit = alloc.price;
                   _proCommPerUnit = alloc.priceIncVat || 0;
                   _proRemarkStr = alloc.remark || "";
-                  _proInvoice62PerUnit = rawItem?.invoice62IncV || 0;
+                  // For promo tiers use the promo's own invoice62IncV
+                  _proInvoice62PerUnit = alloc.invoice62IncV || 0;
                 }
                 if (alloc.remark) {
                   remarks.push(alloc.remark);
