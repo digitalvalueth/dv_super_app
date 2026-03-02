@@ -290,7 +290,7 @@ export default function WatsonExcelValidatorPage() {
     fetchConfirmedExports(0);
   }, [data.length, fetchConfirmedExports]);
 
-  // User overrides for Std Qty / Promo Qty / QtyBuy1 / QtyPro (rowIndex -> overrides)
+  // User overrides for Std Qty / Promo Qty / QtyBuy1 / QtyPro / Price columns (rowIndex -> overrides)
   const [qtyOverrides, setQtyOverrides] = useState<
     Map<
       number,
@@ -299,6 +299,10 @@ export default function WatsonExcelValidatorPage() {
         promoQty?: string;
         qtyBuy1?: string;
         qtyPro?: string;
+        priceBuy1Invoice?: string;
+        priceBuy1Com?: string;
+        priceProInvoice?: string;
+        priceProCom?: string;
       }
     >
   >(new Map());
@@ -826,8 +830,91 @@ export default function WatsonExcelValidatorPage() {
         return updated;
       });
 
+      // Apply direct price column overrides (user manually edited formula/calculate cells)
+      const dataWithPriceOverrides = dataWithOverrides.map((row) => {
+        const originalIdx = row._originalIdx as number;
+        const override = qtyOverrides.get(originalIdx);
+        if (
+          !override ||
+          (override.priceBuy1Invoice === undefined &&
+            override.priceBuy1Com === undefined &&
+            override.priceProInvoice === undefined &&
+            override.priceProCom === undefined)
+        ) {
+          return row;
+        }
+
+        const updated: typeof row & Record<string, unknown> = { ...row };
+        if (override.priceBuy1Invoice !== undefined) {
+          updated["PriceBuy1_Invoice_Formula"] = override.priceBuy1Invoice;
+        }
+        if (override.priceBuy1Com !== undefined) {
+          updated["PriceBuy1_Com_Calculate"] = override.priceBuy1Com;
+        }
+        if (override.priceProInvoice !== undefined) {
+          updated["PricePro_Invoice_Formula"] = override.priceProInvoice;
+        }
+        if (override.priceProCom !== undefined) {
+          updated["PricePro_Com_Calculate"] = override.priceProCom;
+        }
+
+        // Recalculate Calc Amt / Diff / Confidence based on overridden per-unit prices
+        const qtyBuy1 = parseInt(String(updated["QtyBuy1"])) || 0;
+        const qtyPro = parseInt(String(updated["QtyPro"])) || 0;
+        const buy1Ext =
+          override.priceBuy1Invoice !== undefined
+            ? parseFloat(override.priceBuy1Invoice) || 0
+            : Number(updated["_stdPriceExtVat"]) || 0;
+        const proExt =
+          override.priceProInvoice !== undefined
+            ? parseFloat(override.priceProInvoice) || 0
+            : Number(updated["_proPriceExtVat"]) || 0;
+
+        const calcAmt = qtyBuy1 * buy1Ext + qtyPro * proExt;
+        const rawAmtHeader = headers.find(
+          (h) =>
+            h.toLowerCase().includes("total cost") &&
+            h.toLowerCase().includes("exclusive"),
+        );
+        const rawAmt = rawAmtHeader
+          ? Math.abs(Number(updated[rawAmtHeader]) || 0)
+          : 0;
+
+        if (calcAmt > 0 && rawAmt > 0) {
+          const diff = calcAmt - rawAmt;
+          const confidence =
+            rawAmt > 0 ? Math.max(0, (1 - Math.abs(diff) / rawAmt) * 100) : 0;
+          const thresholdPercent = confidenceThreshold * 100;
+          const isOk = confidence >= thresholdPercent;
+          updated["Calc Amt"] = fmt2(calcAmt);
+          updated["Diff"] = isOk ? `✓ ${fmt2(diff)}` : `⚠ ${fmt2(diff)}`;
+          updated["Confidence"] = `${confidence.toFixed(0)}%`;
+          updated["Price Match"] = isOk
+            ? "✅ OK"
+            : diff > 0
+              ? `⬆️ +${fmt2(diff)}`
+              : `⬇️ ${fmt2(diff)}`;
+        }
+
+        // Recalculate Total Comm if price overrides provided
+        const buy1Com =
+          override.priceBuy1Com !== undefined
+            ? parseFloat(override.priceBuy1Com) || 0
+            : Number(updated["_stdPriceIncVat"]) || 0;
+        const proCom =
+          override.priceProCom !== undefined
+            ? parseFloat(override.priceProCom) || 0
+            : Number(updated["_proPriceIncVat"]) || 0;
+        const totalComm = qtyBuy1 * buy1Com + qtyPro * proCom;
+        if (totalComm > 0) {
+          updated["Total Comm"] = `฿${fmt2(totalComm)}`;
+        }
+
+        return updated;
+      });
+
       // Filter if showOnlyLowConfidence is enabled
-      let filteredData = dataWithOverrides;
+      let filteredData = dataWithPriceOverrides;
       if (showOnlyLowConfidence || priceFilterCategory) {
         const categoryRowSet = priceFilterCategory
           ? priceFilterCategory === "passed"
@@ -839,7 +926,7 @@ export default function WatsonExcelValidatorPage() {
                 : lowMatchRowSet
           : null;
 
-        filteredData = dataWithOverrides.filter((row) => {
+        filteredData = dataWithPriceOverrides.filter((row) => {
           const idx = row._originalIdx as number;
           // When filtering by 'passed', show only acceptable rows
           if (priceFilterCategory === "passed") {
@@ -1399,7 +1486,16 @@ export default function WatsonExcelValidatorPage() {
     // Convert Map to plain object for Firebase storage
     const qtyOverridesForStorage: Record<
       string,
-      { stdQty?: string; promoQty?: string; qtyBuy1?: string; qtyPro?: string }
+      {
+        stdQty?: string;
+        promoQty?: string;
+        qtyBuy1?: string;
+        qtyPro?: string;
+        priceBuy1Invoice?: string;
+        priceBuy1Com?: string;
+        priceProInvoice?: string;
+        priceProCom?: string;
+      }
     > = {};
     qtyOverrides.forEach((val, key) => {
       qtyOverridesForStorage[String(key)] = val;
@@ -1630,6 +1726,36 @@ export default function WatsonExcelValidatorPage() {
           ),
           value,
         );
+        return;
+      }
+
+      // Handle Price Formula / Com Calculate direct edits
+      // These columns are computed by enrichment, so we store overrides
+      // the same way as qty overrides — applied after enrichment in useMemo.
+      const PRICE_OVERRIDE_COLS: Record<string, string> = {
+        PriceBuy1_Invoice_Formula: "priceBuy1Invoice",
+        PriceBuy1_Com_Calculate: "priceBuy1Com",
+        PricePro_Invoice_Formula: "priceProInvoice",
+        PricePro_Com_Calculate: "priceProCom",
+      };
+      if (PRICE_OVERRIDE_COLS[columnName]) {
+        const overrideKey = PRICE_OVERRIDE_COLS[columnName];
+        const displayRow = displayData.find(
+          (r) => r._originalIdx === rowIndex,
+        ) as Record<string, unknown> | undefined;
+        const oldValue = String(displayRow?.[columnName] ?? "-");
+
+        setQtyOverrides((prev) => {
+          const newMap = new Map(prev);
+          const existing = newMap.get(rowIndex) || {};
+          newMap.set(rowIndex, {
+            ...existing,
+            [overrideKey]: value,
+          });
+          return newMap;
+        });
+
+        logEditCell(rowIndex, columnName, oldValue, value);
         return;
       }
 
