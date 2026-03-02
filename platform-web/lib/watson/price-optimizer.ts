@@ -10,6 +10,7 @@ export interface PriceOption {
   startDate?: Date; // วันที่เริ่มใช้ราคา
   priceIncVat?: number; // Comm Price IncV (ราคาคอม รวม VAT)
   stdPrice?: number; // Standard Price IncV (ราคาเต็ม)
+  invoice62IncV?: number; // Invoice 62% IncV (ราคาใบแจ้งหนี้ รวม VAT)
 }
 
 export interface PriceAllocation {
@@ -19,6 +20,7 @@ export interface PriceAllocation {
   remark?: string; // Promotion remark จาก Price List
   priceIncVat?: number; // Comm Price IncV (ราคาคอม รวม VAT)
   stdPrice?: number; // Standard Price IncV (ราคาเต็ม)
+  invoice62IncV?: number; // Invoice 62% IncV (ราคาใบแจ้งหนี้ รวม VAT)
 }
 
 export interface CalculationResult {
@@ -166,6 +168,7 @@ export function findBestPriceCombination(
         remark: limitedPrices[i].remark,
         priceIncVat: limitedPrices[i].priceIncVat,
         stdPrice: limitedPrices[i].stdPrice,
+        invoice62IncV: limitedPrices[i].invoice62IncV,
       });
       actualTotalQty += bestAllocation[i];
     }
