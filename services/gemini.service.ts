@@ -1,5 +1,10 @@
 import { GeminiCountResult } from "@/types";
 import { GoogleGenerativeAI } from "@google/generative-ai";
+import {
+  getPromptForFunction,
+  logPromptUsage,
+  replacePromptVariables,
+} from "./prompt.service";
 
 // --- Runtime API key fetching ---
 // Key is cached for 5 minutes to avoid hitting Firestore on every request.
@@ -73,59 +78,68 @@ export const countBarcodesInImage = async (
     const generationConfig = {
       temperature: 0, // fully deterministic — no randomness
       responseMimeType: "application/json" as const,
+      // NOTE: do NOT set maxOutputTokens — it truncates JSON mid-response with old prompts
     };
 
-    // Build prompt depending on whether we have an expected barcode
+    // Build prompt — try remote (Firestore) first, fallback to hardcoded
     let prompt: string;
-    if (expectedBarcode) {
+    let promptSource: "remote" | "hardcoded" = "hardcoded";
+    let remotePromptId: string | undefined;
+    let remotePromptVersion: number | undefined;
+
+    // Build variables for the unified barcode_scanner prompt
+    const promptVars: Record<string, string> = {
+      expectedBarcodeSection: expectedBarcode
+        ? `EXPECTED BARCODE: ${expectedBarcode}${productName ? ` (${productName})` : ""}`
+        : "NO EXPECTED BARCODE — scan all visible barcodes.",
+      matchRule: expectedBarcode
+        ? `barcodeMatch = true ONLY if "${expectedBarcode}" matches any detected sticker.`
+        : `barcodeMatch = true if ANY barcode sticker is detected.`,
+    };
+
+    // Try remote prompt via mapping: barcode_scanner → configurable prompt name
+    try {
+      const remote = await getPromptForFunction("barcode_scanner");
+      if (remote) {
+        prompt = replacePromptVariables(remote.prompt, promptVars);
+        promptSource = "remote";
+        remotePromptId = remote.id;
+        remotePromptVersion = remote.version;
+      }
+    } catch {
+      // Firestore unavailable — will use hardcoded below
+    }
+
+    // Fallback: hardcoded prompt
+    if (promptSource === "hardcoded") {
       prompt = `You are a barcode scanner, NOT a product counter.
 
 Your ONLY task is to detect PHYSICAL barcode stickers visible in the image.
 
-EXPECTED BARCODE: ${expectedBarcode}${productName ? ` (${productName})` : ""}
+${promptVars.expectedBarcodeSection}
 
 STRICT RULES:
-1. Each physical barcode sticker = ONE entry in detectedBarcodes.
-2. Even if all barcodes show the SAME digits, list them separately (one entry per sticker).
+1. Count each VISIBLE barcode sticker — put the total count in the "count" field.
+2. List only UNIQUE barcode values in "detectedBarcodes" (do NOT repeat same value multiple times).
 3. DO NOT estimate. DO NOT guess hidden items.
 4. DO NOT count boxes without visible barcode stickers.
-5. DO NOT assume grid patterns or infer hidden products.
-6. Only include stickers that are PHYSICALLY VISIBLE in the image.
-7. If part of a barcode is visible but clearly a real sticker, include it.
-8. barcodeMatch = true ONLY if "${expectedBarcode}" matches any detected sticker.
-9. barcodeMatch = false if showing a screen/monitor (FRAUD).
-
-CRITICAL: If unsure whether something is a barcode sticker, DO NOT include it.
+5. Only include stickers PHYSICALLY VISIBLE in the image.
+6. ${promptVars.matchRule}
+7. barcodeMatch = false if showing a screen/monitor (FRAUD).
 
 Return ONLY valid JSON:
 {
   "barcodeMatch": true,
-  "matchedBarcode": "<matched digits>",
-  "detectedBarcodes": ["<digits per sticker>"]
-}`;
-    } else {
-      prompt = `You are a barcode scanner, NOT a product counter.
-
-Your ONLY task is to detect PHYSICAL barcode stickers visible in the image.
-
-STRICT RULES:
-1. Each physical barcode sticker = ONE entry in detectedBarcodes.
-2. Even if all barcodes show the SAME digits, list them separately (one entry per sticker).
-3. DO NOT estimate. DO NOT guess hidden items.
-4. DO NOT count boxes without visible barcode stickers.
-5. DO NOT assume grid patterns or infer hidden products.
-6. Only include stickers that are PHYSICALLY VISIBLE in the image.
-7. If part of a barcode is visible but clearly a real sticker, include it.
-
-CRITICAL: If unsure whether something is a barcode sticker, DO NOT include it.
-
-Return ONLY valid JSON:
-{
-  "barcodeMatch": true,
-  "matchedBarcode": "",
-  "detectedBarcodes": ["<digits per sticker>"]
+  "matchedBarcode": "<matched digits or empty>",
+  "count": <total number of stickers visible>,
+  "detectedBarcodes": ["<unique barcode value>"]
 }`;
     }
+
+    console.log(
+      `[Gemini] Prompt source: ${promptSource}${remotePromptId ? ` (id: ${remotePromptId}, v${remotePromptVersion})` : ""}`,
+    );
+    const promptStartTime = Date.now();
 
     const TIMEOUT_MS = 45_000;
     const makeRequest = () =>
@@ -175,8 +189,18 @@ Return ONLY valid JSON:
 
     try {
       // Strip markdown code fences if present
-      const cleaned = text.replace(/^```[\w]*\n?|```$/gm, "").trim();
+      let cleaned = text.replace(/^```[\w]*\n?|```$/gm, "").trim();
+
+      // Handle cases where model prefixes response with text like "Here is the JSON requested:"
+      // Extract the JSON object/array from anywhere in the response
+      const jsonMatch = cleaned.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        cleaned = jsonMatch[0];
+      }
+
       const parsed = JSON.parse(cleaned);
+
+      console.log("[Gemini] Parsed JSON keys:", Object.keys(parsed));
 
       const detectedBarcodes: string[] = Array.isArray(parsed.detectedBarcodes)
         ? parsed.detectedBarcodes
@@ -191,14 +215,18 @@ Return ONLY valid JSON:
       }
 
       // COUNTING DECISION ENGINE — Scanner mode:
-      // Source of truth = number of physically detected barcode stickers.
-      // AI lists one entry per visible sticker; code does all the counting.
-      const barcodeCount = detectedBarcodes.length;
-      const parsedCount = barcodeCount;
+      // AI returns count (int) + unique detectedBarcodes.
+      // Use parsed.count if present; fall back to detectedBarcodes.length for backward compat.
+      const parsedCount: number =
+        typeof parsed.count === "number" && parsed.count > 0
+          ? parsed.count
+          : detectedBarcodes.length;
 
       console.log(
         `[Gemini] Scanner result: ${parsedCount} sticker(s) detected`,
         `| barcodes: [${detectedBarcodes.join(", ")}]`,
+        `| matchedBarcode: "${parsed.matchedBarcode || ""}"`,
+        `| AI barcodeMatch: ${parsed.barcodeMatch}`,
       );
 
       // Fuzzy barcode match: handle common AI misread of EAN-13 leading digit
@@ -262,10 +290,20 @@ Return ONLY valid JSON:
       const needsRecount = fuzzyOverride && aiCount === 0;
 
       // Scanner mode: when expectedBarcode is set, count ONLY stickers matching that barcode.
-      // When no expectedBarcode, use total detected sticker count.
-      const matchingCount = expectedBarcode
-        ? detectedBarcodes.filter((b) => fuzzyMatch(b, expectedBarcode)).length
-        : detectedBarcodes.length;
+      // Use parsed.count when all detectedBarcodes match (AI deduped them).
+      const allDetectedMatch =
+        detectedBarcodes.length > 0 &&
+        detectedBarcodes.every(
+          (b) => expectedBarcode && fuzzyMatch(b, expectedBarcode),
+        );
+
+      const matchingCount = !expectedBarcode
+        ? parsedCount
+        : allDetectedMatch
+          ? parsedCount // AI counted correctly, all barcodes matched
+          : detectedBarcodes.filter(
+              (b) => expectedBarcode && fuzzyMatch(b, expectedBarcode),
+            ).length;
 
       const finalCount = !expectedBarcode
         ? aiCount
@@ -275,6 +313,17 @@ Return ONLY valid JSON:
             : aiCount
           : 0;
 
+      // Log prompt usage (async, non-blocking)
+      if (remotePromptId && remotePromptVersion) {
+        logPromptUsage(
+          remotePromptId,
+          remotePromptVersion,
+          "system",
+          "success",
+          Date.now() - promptStartTime,
+        ).catch(() => {});
+      }
+
       return {
         count: finalCount,
         detectedBarcodes,
@@ -283,7 +332,24 @@ Return ONLY valid JSON:
         processingTime,
         needsRecount,
       };
-    } catch {
+    } catch (parseErr) {
+      // Log failure (async, non-blocking)
+      console.error("[Gemini] JSON parse failed:", parseErr);
+      console.error(
+        "[Gemini] Raw text that failed to parse:",
+        text?.slice(0, 500),
+      );
+      if (remotePromptId && remotePromptVersion) {
+        logPromptUsage(
+          remotePromptId,
+          remotePromptVersion,
+          "system",
+          "failure",
+          Date.now() - promptStartTime,
+          "JSON parse failed",
+        ).catch(() => {});
+      }
+
       // Fallback: if JSON parse fails, return safe default
       return {
         count: 0,
@@ -319,8 +385,35 @@ export const countProductsInImage = async (
       model: "gemini-2.5-flash", // Updated to latest model
     });
 
-    // Construct prompt
-    const prompt = constructCountingPrompt(productName, productDescription);
+    // Build prompt — try remote first, fallback to hardcoded
+    let prompt: string = constructCountingPrompt(
+      productName,
+      productDescription,
+    );
+    let countPromptSource: "remote" | "hardcoded" = "hardcoded";
+    let countPromptId: string | undefined;
+    let countPromptVersion: number | undefined;
+
+    try {
+      const remote = await getPromptForFunction("product_counter");
+      if (remote) {
+        prompt = replacePromptVariables(remote.prompt, {
+          productName,
+          productDescriptionLine: productDescription
+            ? `Product description: ${productDescription}`
+            : "",
+        });
+        countPromptSource = "remote";
+        countPromptId = remote.id;
+        countPromptVersion = remote.version;
+      }
+    } catch {
+      // Firestore unavailable — already using hardcoded default
+    }
+
+    console.log(
+      `[Gemini] Count prompt source: ${countPromptSource}${countPromptId ? ` (id: ${countPromptId}, v${countPromptVersion})` : ""}`,
+    );
 
     // Fetch image
     const imageData = await fetchImageAsBase64(imageUrl);
@@ -343,6 +436,17 @@ export const countProductsInImage = async (
     const count = parseCountFromResponse(text);
 
     const processingTime = Date.now() - startTime;
+
+    // Log prompt usage (async, non-blocking)
+    if (countPromptId && countPromptVersion) {
+      logPromptUsage(
+        countPromptId,
+        countPromptVersion,
+        "system",
+        "success",
+        processingTime,
+      ).catch(() => {});
+    }
 
     return {
       count,
