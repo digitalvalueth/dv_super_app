@@ -427,6 +427,7 @@ export default function WatsonExcelValidatorPage() {
 
   // Confirm-save modal
   const [confirmSaveOpen, setConfirmSaveOpen] = useState(false);
+  const [confirmLowAcknowledged, setConfirmLowAcknowledged] = useState(false);
 
   // --- Session Persistence (lightweight, keyed by recordId) ---
   // Stores ONLY: validationResult, showPriceColumns, confirmedExportId, qtyOverrides
@@ -483,6 +484,7 @@ export default function WatsonExcelValidatorPage() {
   // priceRecalcTrigger forces recalculation when user clicks "Recalculate"
   const {
     displayData,
+    allEnrichedData,
     displayHeaders,
     lowConfidenceCount,
     passedCount,
@@ -954,6 +956,7 @@ export default function WatsonExcelValidatorPage() {
 
       return {
         displayData: filteredData,
+        allEnrichedData: dataWithPriceOverrides,
         displayHeaders: enrichedHeaders,
         lowConfidenceCount: lowConfidenceTotal,
         passedCount: acceptable.size,
@@ -961,8 +964,10 @@ export default function WatsonExcelValidatorPage() {
       };
     }
     // Add _originalIdx for non-enriched data as well
+    const allRows = data.map((row, idx) => ({ ...row, _originalIdx: idx }));
     return {
-      displayData: data.map((row, idx) => ({ ...row, _originalIdx: idx })),
+      displayData: allRows,
+      allEnrichedData: allRows,
       displayHeaders: headers,
       lowConfidenceCount: 0,
       passedCount: 0,
@@ -1982,11 +1987,11 @@ export default function WatsonExcelValidatorPage() {
     const reportDate =
       reportMeta?.reportRunDateTime || new Date().toISOString();
 
-    // Guard: prevent saving when active filter hides all rows
-    if (displayData.length === 0) {
+    // Guard: prevent saving when no data is loaded
+    if (allEnrichedData.length === 0) {
       toast.error(
         "ไม่สามารถบันทึกได้",
-        "ข้อมูลที่แสดงอยู่มี 0 แถว กรุณาปิด Filter ก่อนบันทึก Export",
+        "ไม่มีข้อมูลที่จะบันทึก กรุณาโหลดไฟล์ก่อน",
       );
       return;
     }
@@ -1995,18 +2000,19 @@ export default function WatsonExcelValidatorPage() {
     setIsSavingToCloud(true);
     toast.info(
       "กำลังบันทึก...",
-      `กำลังอัปโหลดข้อมูล ${displayData.length} แถว`,
+      `กำลังอัปโหลดข้อมูล ${allEnrichedData.length} แถว`,
     );
     try {
       const exportHeaders = getExportHeaders(displayHeaders);
-      // Convert RawRow[] to array[][] format for API
-      const dataArray: (string | number | null)[][] = displayData.map((row) =>
-        exportHeaders.map((h) => {
-          const val = (row as Record<string, unknown>)[h];
-          if (val === undefined || val === null) return null;
-          if (typeof val === "string" || typeof val === "number") return val;
-          return String(val);
-        }),
+      // Convert all enriched rows (full dataset, not filtered view) to array[][] format
+      const dataArray: (string | number | null)[][] = allEnrichedData.map(
+        (row) =>
+          exportHeaders.map((h) => {
+            const val = (row as Record<string, unknown>)[h];
+            if (val === undefined || val === null) return null;
+            if (typeof val === "string" || typeof val === "number") return val;
+            return String(val);
+          }),
       );
 
       const exportId = await saveExportToCloud({
@@ -2056,7 +2062,7 @@ export default function WatsonExcelValidatorPage() {
         open: true,
         exportId,
         supplierCode,
-        rowCount: dataArray.length,
+        rowCount: allEnrichedData.length,
         reportDate,
         initialStatus: "confirmed",
       });
@@ -2790,7 +2796,7 @@ export default function WatsonExcelValidatorPage() {
                           <DropdownMenuItem
                             onClick={handleSaveToCloud}
                             disabled={
-                              isSavingToCloud || displayData.length === 0
+                              isSavingToCloud || allEnrichedData.length === 0
                             }
                           >
                             {isSavingToCloud ? (
@@ -2799,9 +2805,6 @@ export default function WatsonExcelValidatorPage() {
                               <Cloud className="h-4 w-4 mr-2" />
                             )}
                             Save to Cloud (API)
-                            {displayData.length === 0
-                              ? " — ปิด Filter ก่อน"
-                              : ""}
                           </DropdownMenuItem>
                         </DropdownMenuContent>
                       </DropdownMenu>
@@ -3405,7 +3408,13 @@ export default function WatsonExcelValidatorPage() {
       />
 
       {/* Confirm Save Modal */}
-      <Dialog open={confirmSaveOpen} onOpenChange={setConfirmSaveOpen}>
+      <Dialog
+        open={confirmSaveOpen}
+        onOpenChange={(open) => {
+          setConfirmSaveOpen(open);
+          if (!open) setConfirmLowAcknowledged(false);
+        }}
+      >
         <DialogContent className="max-w-md">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2 text-emerald-700">
@@ -3429,15 +3438,51 @@ export default function WatsonExcelValidatorPage() {
               </div>
               <div className="flex justify-between">
                 <span className="text-gray-500">จำนวนแถว:</span>
-                <span className="font-mono">{displayData.length} แถว</span>
+                <span className="font-mono">{allEnrichedData.length} แถว</span>
               </div>
               <div className="flex justify-between">
                 <span className="text-gray-500">ผ่านการตรวจ:</span>
                 <span className="font-mono text-green-700">
-                  {passedCount} / {displayData.length}
+                  {passedCount} / {allEnrichedData.length}
                 </span>
               </div>
             </div>
+            {(showOnlyLowConfidence || priceFilterCategory) && (
+              <div className="flex gap-2 items-start bg-amber-50 border border-amber-300 rounded-lg p-3 text-sm text-amber-800">
+                <span className="mt-0.5 shrink-0">⚠️</span>
+                <span>
+                  ขณะนี้มี <strong>Filter</strong> เปิดอยู่ (แสดง{" "}
+                  {displayData.length} แถว) แต่ระบบจะบันทึก{" "}
+                  <strong>ข้อมูลทั้งหมด {allEnrichedData.length} แถว</strong>{" "}
+                  ไม่ใช่เฉพาะแถวที่แสดง
+                </span>
+              </div>
+            )}
+            {lowConfidenceCount > 0 && (
+              <div className="bg-red-50 border border-red-300 rounded-lg p-3 space-y-2 text-sm text-red-800">
+                <div className="flex gap-2 items-start">
+                  <span className="mt-0.5 shrink-0">🔴</span>
+                  <span>
+                    ยังมี <strong>{lowConfidenceCount} แถว</strong>{" "}
+                    ที่ไม่ผ่านการตรวจ (ราคาไม่ตรง / ไม่พบข้อมูล)
+                    และยังไม่ได้แก้ไข
+                  </span>
+                </div>
+                <label className="flex items-center gap-2 cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    checked={confirmLowAcknowledged}
+                    onChange={(e) =>
+                      setConfirmLowAcknowledged(e.target.checked)
+                    }
+                    className="w-4 h-4 accent-red-600 cursor-pointer"
+                  />
+                  <span className="text-red-700 font-medium">
+                    ฉันรับทราบและยืนยันว่าต้องการบันทึกทั้งที่ยังมีข้อมูลที่ไม่ผ่านการตรวจ
+                  </span>
+                </label>
+              </div>
+            )}
             <p className="text-sm text-gray-600">
               ข้อมูลนี้จะถูกบันทึกไปยัง Cloud และสามารถเรียกดูผ่าน API ได้
               เมื่อยืนยันแล้วจะ<strong>ล็อคไฟล์</strong>ไม่สามารถแก้ไขได้อีก
@@ -3452,8 +3497,12 @@ export default function WatsonExcelValidatorPage() {
                 setConfirmSaveOpen(false);
                 handleSaveToCloud();
               }}
-              disabled={isSavingToCloud || displayData.length === 0}
-              className="bg-emerald-600 hover:bg-emerald-700 text-white"
+              disabled={
+                isSavingToCloud ||
+                allEnrichedData.length === 0 ||
+                (lowConfidenceCount > 0 && !confirmLowAcknowledged)
+              }
+              className="bg-emerald-600 hover:bg-emerald-700 text-white disabled:opacity-50"
             >
               {isSavingToCloud ? (
                 <Loader2 className="h-4 w-4 mr-2 animate-spin" />
