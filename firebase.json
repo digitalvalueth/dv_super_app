@@ -2,10 +2,12 @@
   "firestore": [
     {
       "rules": "firestore.rules",
+      "indexes": "firestore.indexes.json",
       "database": "fittsuperapp-dev"
     },
     {
       "rules": "firestore.rules",
+      "indexes": "firestore.indexes.json",
       "database": "fittsuperapp-prod"
     }
   ]

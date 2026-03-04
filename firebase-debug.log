@@ -1,0 +1,33 @@
+[debug] [2026-03-04T03:58:28.718Z] ----------------------------------------------------------------------
+[debug] [2026-03-04T03:58:28.719Z] Command:       /usr/local/bin/node /usr/local/bin/firebase deploy --only firestore:indexes
+[debug] [2026-03-04T03:58:28.720Z] CLI Version:   14.18.0
+[debug] [2026-03-04T03:58:28.720Z] Platform:      darwin
+[debug] [2026-03-04T03:58:28.720Z] Node Version:  v22.15.0
+[debug] [2026-03-04T03:58:28.720Z] Time:          Wed Mar 04 2026 10:58:28 GMT+0700 (Indochina Time)
+[debug] [2026-03-04T03:58:28.720Z] ----------------------------------------------------------------------
+[debug] 
+[debug] [2026-03-04T03:58:28.822Z] > command requires scopes: ["email","openid","https://www.googleapis.com/auth/cloudplatformprojects.readonly","https://www.googleapis.com/auth/firebase","https://www.googleapis.com/auth/cloud-platform"]
+[debug] [2026-03-04T03:58:28.823Z] > authorizing via signed-in user (wattchaichai@gmail.com)
+[debug] [2026-03-04T03:58:28.823Z] [iam] checking project fittbsa for permissions ["datastore.indexes.create","datastore.indexes.delete","datastore.indexes.list","datastore.indexes.update","firebase.projects.get"]
+[debug] [2026-03-04T03:58:28.823Z] Checked if tokens are valid: true, expires at: 1772600276813
+[debug] [2026-03-04T03:58:28.823Z] Checked if tokens are valid: true, expires at: 1772600276813
+[debug] [2026-03-04T03:58:28.824Z] >>> [apiv2][query] POST https://cloudresourcemanager.googleapis.com/v1/projects/fittbsa:testIamPermissions [none]
+[debug] [2026-03-04T03:58:28.824Z] >>> [apiv2][(partial)header] POST https://cloudresourcemanager.googleapis.com/v1/projects/fittbsa:testIamPermissions x-goog-quota-user=projects/fittbsa
+[debug] [2026-03-04T03:58:28.824Z] >>> [apiv2][body] POST https://cloudresourcemanager.googleapis.com/v1/projects/fittbsa:testIamPermissions {"permissions":["datastore.indexes.create","datastore.indexes.delete","datastore.indexes.list","datastore.indexes.update","firebase.projects.get"]}
+[debug] [2026-03-04T03:58:30.027Z] <<< [apiv2][status] POST https://cloudresourcemanager.googleapis.com/v1/projects/fittbsa:testIamPermissions 200
+[debug] [2026-03-04T03:58:30.027Z] <<< [apiv2][body] POST https://cloudresourcemanager.googleapis.com/v1/projects/fittbsa:testIamPermissions {"permissions":["datastore.indexes.create","datastore.indexes.delete","datastore.indexes.list","datastore.indexes.update","firebase.projects.get"]}
+[info] 
+[info] === Deploying to 'fittbsa'...
+[info] 
+[info] i  deploying firestore 
+[info] i  firestore: ensuring required API firestore.googleapis.com is enabled... 
+[info] i  firestore: ensuring required API firestore.googleapis.com is enabled... 
+[info] i  firestore: deploying indexes... 
+[debug] [2026-03-04T03:58:30.217Z] TypeError: Cannot read properties of undefined (reading 'map')
+    at deployIndexes (/usr/local/lib/node_modules/firebase-tools/lib/deploy/firestore/deploy.js:25:38)
+    at default_1 (/usr/local/lib/node_modules/firebase-tools/lib/deploy/firestore/deploy.js:52:11)
+    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at async chain (/usr/local/lib/node_modules/firebase-tools/lib/deploy/index.js:42:9)
+    at async deploy (/usr/local/lib/node_modules/firebase-tools/lib/deploy/index.js:120:5)
+[error] 
+[error] Error: An unexpected error has occurred.

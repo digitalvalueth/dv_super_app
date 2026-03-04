@@ -1,0 +1,87 @@
+{
+  "indexes": [
+    {
+      "collectionGroup": "watson_exports",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "status", "order": "ASCENDING" },
+        { "fieldPath": "confirmedAt", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "watson_exports",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "status", "order": "ASCENDING" },
+        { "fieldPath": "exportedAt", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "watson_exports",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "companyId", "order": "ASCENDING" },
+        { "fieldPath": "confirmedAt", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "watson_exports",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "companyId", "order": "ASCENDING" },
+        { "fieldPath": "exportedAt", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "watson_exports",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "companyId", "order": "ASCENDING" },
+        { "fieldPath": "status", "order": "ASCENDING" },
+        { "fieldPath": "confirmedAt", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "watson_exports",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "companyId", "order": "ASCENDING" },
+        { "fieldPath": "status", "order": "ASCENDING" },
+        { "fieldPath": "exportedAt", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "watson_exports",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "supplierCode", "order": "ASCENDING" },
+        { "fieldPath": "confirmedAt", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "watson_exports",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "supplierCode", "order": "ASCENDING" },
+        { "fieldPath": "exportedAt", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "watson_exports",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "invoiceUploadId", "order": "ASCENDING" },
+        { "fieldPath": "exportedAt", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "watson_exports",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "invoiceUploadId", "order": "ASCENDING" },
+        { "fieldPath": "confirmedAt", "order": "DESCENDING" }
+      ]
+    }
+  ],
+  "fieldOverrides": []
+}
