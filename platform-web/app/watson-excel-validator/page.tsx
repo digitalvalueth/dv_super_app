@@ -1982,6 +1982,15 @@ export default function WatsonExcelValidatorPage() {
     const reportDate =
       reportMeta?.reportRunDateTime || new Date().toISOString();
 
+    // Guard: prevent saving when active filter hides all rows
+    if (displayData.length === 0) {
+      toast.error(
+        "ไม่สามารถบันทึกได้",
+        "ข้อมูลที่แสดงอยู่มี 0 แถว กรุณาปิด Filter ก่อนบันทึก Export",
+      );
+      return;
+    }
+
     setIsGlobalLoading(true);
     setIsSavingToCloud(true);
     toast.info(
@@ -2780,7 +2789,9 @@ export default function WatsonExcelValidatorPage() {
                           </DropdownMenuItem>
                           <DropdownMenuItem
                             onClick={handleSaveToCloud}
-                            disabled={isSavingToCloud}
+                            disabled={
+                              isSavingToCloud || displayData.length === 0
+                            }
                           >
                             {isSavingToCloud ? (
                               <Loader2 className="h-4 w-4 mr-2 animate-spin" />
@@ -2788,6 +2799,9 @@ export default function WatsonExcelValidatorPage() {
                               <Cloud className="h-4 w-4 mr-2" />
                             )}
                             Save to Cloud (API)
+                            {displayData.length === 0
+                              ? " — ปิด Filter ก่อน"
+                              : ""}
                           </DropdownMenuItem>
                         </DropdownMenuContent>
                       </DropdownMenu>
@@ -3438,7 +3452,7 @@ export default function WatsonExcelValidatorPage() {
                 setConfirmSaveOpen(false);
                 handleSaveToCloud();
               }}
-              disabled={isSavingToCloud}
+              disabled={isSavingToCloud || displayData.length === 0}
               className="bg-emerald-600 hover:bg-emerald-700 text-white"
             >
               {isSavingToCloud ? (
