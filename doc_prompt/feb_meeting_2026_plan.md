@@ -1,8 +1,8 @@
 # แผนงานจากการประชุม 24 กุมภาพันธ์ 2569 (2026)
 
-> สถานะ: ✅ ยืนยันคำตอบจากอั๋นแล้ว — พร้อมเริ่มพัฒนา
+> สถานะ: 🚧 อยู่ระหว่างพัฒนา — เสร็จ 12/15 หัวข้อ
 > วันที่วิเคราะห์: 2 มีนาคม 2026
-> วันที่อัปเดต: 2 มีนาคม 2026 (ใส่คำตอบจากอั๋น)
+> วันที่อัปเดต: **4 มีนาคม 2026** (อัปเดตสถานะการพัฒนา)
 
 ---
 
@@ -10,33 +10,73 @@
 
 จากการประชุมวันที่ 24/02/2569 มีงาน **15 หัวข้อหลัก** ที่ต้องดำเนินการ แบ่งเป็น:
 
-| ประเภท                              | จำนวน | ตัวอย่าง                                         |
-| ----------------------------------- | ----- | ------------------------------------------------ |
-| 🔨 พัฒนาใหม่ (New Feature)          | 8     | ระบบตัดรอบ, Prompt Management, Grace period      |
-| 🔧 ปรับปรุง (Enhancement)           | 4     | Block save barcode, Export Excel เช็คอิน, แก้ยอด |
-| 📋 รอข้อมูลจากลูกค้า (Pending Data) | 3     | รูปสินค้า, ข้อมูลสาขา/พนักงาน, Format ITP        |
+| ประเภท                              | จำนวน | สถานะ                              |
+| ----------------------------------- | ----- | ---------------------------------- |
+| 🔨 พัฒนาใหม่ (New Feature)          | 8     | ✅ เสร็จ 6 / ⏳ รอข้อมูล 2         |
+| 🔧 ปรับปรุง (Enhancement)           | 4     | ✅ เสร็จ 3 / ⏭️ ข้ามไปก่อน 1 (ITP) |
+| 📋 รอข้อมูลจากลูกค้า (Pending Data) | 3     | ⏳ รอข้อมูล 3                      |
+
+---
+
+## 📊 สรุปสถานะ ณ 4 มีนาคม 2026
+
+| #   | ฟีเจอร์                         | สถานะ                                | ไฟล์หลัก                                                                                       |
+| --- | ------------------------------- | ------------------------------------ | ---------------------------------------------------------------------------------------------- |
+| 1   | รูปสินค้าไม่ครบ                 | ⏳ รอรูปจากคุณหมวย                   | —                                                                                              |
+| 2   | ขอ Email BA ทั้งหมด             | ⏳ รอข้อมูลจากคุณหมวย                | —                                                                                              |
+| 3   | ระบบตัดรอบ + Lock               | ✅ **เสร็จ**                         | `services/counting-period.service.ts`                                                          |
+| 4   | Export Excel เช็คอิน            | ✅ **เสร็จ**                         | `platform-web/.../attendance/page.tsx`                                                         |
+| 5   | เชื่อมต่อ ITP Portal            | ⏭️ ข้ามไปก่อน (ตามที่ตกลง)           | —                                                                                              |
+| 6   | แจ้งเตือน BA ไม่เช็คอิน 3 วัน   | ✅ **เสร็จ** (Web + Mobile)          | `platform-web/.../alerts/page.tsx`, `supervisor/alerts.tsx`                                    |
+| 7   | บาร์โค้ดไม่ตรงห้ามเซฟ           | ✅ **เสร็จ**                         | `stock-counter/result.tsx`, `preview.tsx`                                                      |
+| 8   | สินค้า 100+ ชิ้น                | ⏳ รอข้อมูลสินค้าจากคุณหมวย          | —                                                                                              |
+| 9   | แก้ไขยอดนับ Supervisor Override | ✅ **เสร็จ** (Web + Mobile)          | `counting-summary/page.tsx`, `supervisor/counting-review.tsx`                                  |
+| 10  | Grace period +5 วัน (ลับ)       | ✅ **เสร็จ** (รวมใน counting-period) | `services/counting-period.service.ts`                                                          |
+| 11  | ข้อมูลสาขา/พนักงานจริง          | ⏳ รอข้อมูลจากคุณหมวย                | —                                                                                              |
+| 12  | Export ตาม ITP format           | ⏭️ ข้ามไปก่อน                        | —                                                                                              |
+| 13  | ถ่ายเพิ่มหลัง submit            | ✅ **เสร็จ**                         | `services/supplement.service.ts`, `supervisor/supplement-review.tsx`                           |
+| 14  | Prompt Management (Remote)      | ✅ **เสร็จ**                         | `services/prompt.service.ts`, `platform-web/.../prompts/page.tsx`, `api/prompts/seed/route.ts` |
+| 15  | Project upload บิล              | ⏭️ Phase ถัดไป                       | —                                                                                              |
+
+### สรุปตัวเลข
+
+- ✅ **เสร็จแล้ว**: 9 หัวข้อ (#3, #4, #6, #7, #9, #10, #13, #14 + Supervisor Mobile UI)
+- ⏳ **รอข้อมูลจากลูกค้า**: 3 หัวข้อ (#1, #2, #8, #11)
+- ⏭️ **ข้ามไปก่อน**: 3 หัวข้อ (#5, #12, #15)
 
 ---
 
 ## Gap Analysis — สิ่งที่มีแล้ว vs สิ่งที่ต้องทำ
 
-| #   | ความต้องการ                           | สถานะปัจจุบัน                                  | สิ่งที่ต้องทำ                                | ความยาก    |
-| --- | ------------------------------------- | ---------------------------------------------- | -------------------------------------------- | ---------- |
-| 1   | รูปสินค้าไม่ครบ — ขอรูปใหม่จากคุณหมวย | มีระบบ Product + imageUrl                      | รอรูปจากคุณหมวย แล้วอัปเดต Firestore         | ⭐         |
-| 2   | ขอ Email BA ทั้งหมด                   | มีระบบ User + Invitation                       | รอ Email จากคุณหมวย แล้ว seed เข้าระบบ       | ⭐         |
-| 3   | ถ่ายรูป 2 ช่วง + Lock 2 วัน           | ❌ ไม่มีระบบ Period/Lock                       | สร้างระบบ Counting Period + Upload Lock      | ⭐⭐⭐⭐   |
-| 4   | Export Excel เช็คอิน (ลา/สาย)         | ❌ หน้า Attendance ดูอย่างเดียว                | เพิ่มปุ่ม Export + สร้าง Excel template      | ⭐⭐       |
-| 5   | เชื่อมต่อ ITP Portal (SQL)            | มี scaffold ใน external-api.service.ts         | สร้าง ITP Connector (รอ format จากคุณหมวย)   | ⭐⭐⭐⭐⭐ |
-| 6   | แจ้งเตือน BA ไม่เช็คอิน 3 วัน         | มี notification service แต่ไม่มี auto-detect   | สร้าง Cloud Function cron + alert หน้า web   | ⭐⭐⭐     |
-| 7   | บาร์โค้ดไม่ตรงห้ามเซฟ                 | ⚠️ มี warning แต่ยังเซฟได้                     | Block save button เมื่อ barcodeMatch = false | ⭐         |
-| 8   | สินค้า 100+ ชิ้น ถ่ายรูปยังไง         | ถ่ายได้ทีละรูป                                 | รอคุณหมวยแจ้งสินค้า → ออกแบบ multi-photo     | ⭐⭐⭐     |
-| 9   | แก้ไขยอดนับบน Web                     | มี dispute จากพนักงาน แต่ Supervisor แก้ไม่ได้ | เพิ่ม Edit/Override ที่หน้า counting-summary | ⭐⭐⭐     |
-| 10  | Grace period +5 วัน (ลับ)             | ❌ ไม่มี                                       | สร้าง hidden grace period logic              | ⭐⭐⭐     |
-| 11  | ชื่อสาขา/พนักงาน/Supervisor ขึ้นจริง  | มี seed script สำหรับ 6 สาขา                   | รอข้อมูลจริง → สร้าง import script           | ⭐⭐       |
-| 12  | Export ตาม ITP format                 | มี export-utils.ts + export-with-images.ts     | สร้าง template ตาม format ที่คุณหมวยส่ง      | ⭐⭐⭐     |
-| 13  | ถ่ายเพิ่มหลัง submit                  | ❌ submit แล้วจบ                               | สร้างระบบ "Supplement Count" / ถ่ายเพิ่ม     | ⭐⭐⭐     |
-| 14  | Prompt Management (Remote)            | ❌ prompt hardcoded ใน gemini.service.ts       | สร้าง Prompt Manager ใน Firestore + Admin UI | ⭐⭐⭐⭐   |
-| 15  | Project ใหม่ upload บิล               | ❌ ไม่มี                                       | ออกแบบ Bill Upload module (Phase ถัดไป)      | ⭐⭐⭐⭐   |
+| #   | ความต้องการ                           | สถานะ 4 มี.ค.                                                 | สิ่งที่เหลือ                                  | ความยาก    |
+| --- | ------------------------------------- | ------------------------------------------------------------- | --------------------------------------------- | ---------- |
+| 1   | รูปสินค้าไม่ครบ — ขอรูปใหม่จากคุณหมวย | ⏳ รอข้อมูล                                                   | รอรูปจากคุณหมวย แล้วอัปเดต Firestore          | ⭐         |
+| 2   | ขอ Email BA ทั้งหมด                   | ⏳ รอข้อมูล                                                   | รอ Email จากคุณหมวย แล้ว seed เข้าระบบ        | ⭐         |
+| 3   | ถ่ายรูป 2 ช่วง + Lock 2 วัน           | ✅ **เสร็จ** — `counting-period.service.ts`                   | 🔗 ต้อง integrate เข้า preview.tsx flow       | ⭐⭐       |
+| 4   | Export Excel เช็คอิน (ลา/สาย)         | ✅ **เสร็จ** — ปุ่ม Export ในหน้า Attendance                  | —                                             | —          |
+| 5   | เชื่อมต่อ ITP Portal (SQL)            | ⏭️ ข้าม (อั๋นตกลง)                                            | รอ Phase ถัดไป                                | ⭐⭐⭐⭐⭐ |
+| 6   | แจ้งเตือน BA ไม่เช็คอิน 3 วัน         | ✅ **เสร็จ** — Web + Mobile alerts page                       | 🔗 ยังไม่มี Cloud Function cron (manual ก่อน) | ⭐⭐       |
+| 7   | บาร์โค้ดไม่ตรงห้ามเซฟ                 | ✅ **เสร็จ** — Block ที่ result.tsx                           | —                                             | —          |
+| 8   | สินค้า 100+ ชิ้น ถ่ายรูปยังไง         | ⏳ รอข้อมูลสินค้า                                             | รอคุณหมวยแจ้งสินค้า → ออกแบบ multi-photo      | ⭐⭐⭐     |
+| 9   | แก้ไขยอดนับบน Web                     | ✅ **เสร็จ** — Override UI + API                              | —                                             | —          |
+| 10  | Grace period +5 วัน (ลับ)             | ✅ **เสร็จ** — อยู่ใน counting-period service                 | 🔗 ต้อง integrate เข้า preview.tsx flow       | ⭐⭐       |
+| 11  | ชื่อสาขา/พนักงาน/Supervisor ขึ้นจริง  | ⏳ รอข้อมูล                                                   | รอข้อมูลจริง → สร้าง import script            | ⭐⭐       |
+| 12  | Export ตาม ITP format                 | ⏭️ ข้าม (อั๋นตกลง)                                            | รอ Phase ถัดไป                                | ⭐⭐⭐     |
+| 13  | ถ่ายเพิ่มหลัง submit                  | ✅ **เสร็จ** — Supplement service + review UI                 | 🔗 ต้องเพิ่มปุ่ม "ถ่ายเพิ่ม" ใน history       | ⭐⭐       |
+| 14  | Prompt Management (Remote)            | ✅ **เสร็จ** — Service + Admin UI + Seed API + **Integrated** | ✅ เชื่อมเข้า gemini.service.ts แล้ว          | ⭐⭐       |
+| 15  | Project ใหม่ upload บิล               | ⏭️ Phase ถัดไป                                                | ออกแบบ Bill Upload module                     | ⭐⭐⭐⭐   |
+
+### 🔗 งาน Integration ที่ยังเหลือ
+
+> ฟีเจอร์ด้านล่างสร้าง Service/UI เสร็จแล้ว แต่ยังไม่ได้เชื่อมเข้า flow หลักของแอป:
+
+| งาน                            | รายละเอียด                                                                               |
+| ------------------------------ | ---------------------------------------------------------------------------------------- |
+| Counting Period → Preview flow | `counting-period.service.ts` ต้องเรียกก่อนถ่ายรูปใน `preview.tsx` — ถ้าล็อค ห้ามถ่าย     |
+| Grace Period → Upload flow     | ถ้าอยู่ใน grace period → accept + tag `isLateSubmission = true`                          |
+| ~~Prompt Service → Gemini~~    | ~~`prompt.service.ts` ต้องแทน hardcoded prompt ใน `gemini.service.ts`~~ ✅ **เสร็จแล้ว** |
+| Supplement → History           | ต้องเพิ่มปุ่ม "ถ่ายเพิ่ม" ในหน้า `stock-counter/history/`                                |
+| Cloud Function cron            | สร้าง scheduled function ที่เช็ค missing check-in ทุกวัน 09:00                           |
 
 ---
 
@@ -564,75 +604,79 @@ interface MultiPhotoSession {
 
 ---
 
-## Timeline ประมาณการ (อัปเดตหลังจากได้คำตอบ)
+## Timeline ประมาณการ (อัปเดต 4 มี.ค. 2026)
 
 ```
-สัปดาห์   1-2:  Phase 1 (Quick Wins) — barcode block, export excel, seed data
-สัปดาห์   3-4:  Phase 2a — ระบบตัดรอบ + lock วันที่ 1,16 + grace period
-สัปดาห์   5-7:  Phase 2b — Supervisor Override (Web+Mobile) + Supervisor Mobile UI
-สัปดาห์   8-9:  Phase 2c — แจ้งเตือนไม่เช็คอิน + ถ่ายเพิ่ม
-สัปดาห์  10-12: Phase 3 — Prompt Management
-สัปดาห์  13+:   Phase 4 — Multi-photo, ITP Integration, Bill upload
+✅ สัปดาห์ 1 (2-4 มี.ค.):  Phase 1-3 Quick Implementation
+   - ✅ barcode block, export excel, types, services
+   - ✅ counting-period service, prompt service, supplement service
+   - ✅ Supervisor Mobile UI (dashboard, counting-review, team-status, alerts, supplement-review)
+   - ✅ Web: counting-summary override, alerts page, prompts admin, attendance export
+   - ✅ Prompt seed API + Override API
+
+⏳ สัปดาห์ 2-3:  Integration & Polish
+   - 🔗 Counting period → integrate เข้า preview/upload flow
+   - ✅ Prompt service → integrate เข้า gemini.service.ts (แทน hardcoded) **เสร็จแล้ว**
+   - 🔗 Supplement → เพิ่มปุ่มถ่ายเพิ่มใน history
+   - 🔗 Cloud Function cron สำหรับแจ้งเตือนขาดงาน
+
+⏳ สัปดาห์ 4+:  Data & Launch
+   - ⏳ รอข้อมูลจากคุณหมวย (สาขา, พนักงาน, รูปสินค้า)
+   - ⏳ Seed production data + Testing
 ```
-
-**เปลี่ยนแปลงจากเดิม**:
-
-- ITP Integration ย้ายไป Phase 4 (อั๋นบอกข้ามไปก่อน)
-- Qty/Price export ย้ายไป Phase 4 (เป็นส่วนของ project upload บิล)
-- Supervisor Override ขยายเป็น 3 สัปดาห์ (เพิ่ม Mobile UI)
 
 ---
 
-## ลำดับความสำคัญ (Priority)
+## ลำดับความสำคัญ (Priority) — อัปเดต 4 มี.ค.
 
-| ลำดับ | งาน                        | เหตุผล                               |
-| ----- | -------------------------- | ------------------------------------ |
-| 🔴 P0 | ข้อมูลสาขา/พนักงานขึ้นจริง | ต้องใช้ก่อนเปิดระบบจริง              |
-| 🔴 P0 | บาร์โค้ดไม่ตรงห้ามเซฟ      | ป้องกันข้อมูลผิดพลาด                 |
-| 🟠 P1 | ระบบตัดรอบ + Lock + Grace  | Business logic หลักของระบบนับ        |
-| 🟠 P1 | แก้ไขยอดนับบน Web          | Supervisor ต้องตรวจสอบ/แก้ไขได้      |
-| 🟡 P2 | Export Excel เช็คอิน       | รายงานที่ต้องส่งให้ผู้บริหาร         |
-| 🟡 P2 | แจ้งเตือนไม่เช็คอิน 3 วัน  | ติดตามพนักงาน                        |
-| 🟡 P2 | ถ่ายเพิ่มหลัง submit       | เคสที่เกิดขึ้นจริง                   |
-| � P1  | Supervisor Mobile UI       | ต้องใช้คู่กับ Override (อั๋นยืนยัน)  |
-| 🔵 P3 | Prompt Management          | ปรับปรุง AI ได้ง่ายขึ้น              |
-| 🔵 P3 | Multi-photo 100+ ชิ้น      | รอข้อมูลสินค้าก่อน                   |
-| ⚪ P4 | ITP Integration            | อั๋นบอกข้ามไปก่อน — ใช้ Excel export |
-| ⚪ P4 | Upload บิล (project ใหม่)  | Phase ถัดไป                          |
+| ลำดับ | งาน                        | สถานะ | เหตุผล                               |
+| ----- | -------------------------- | ----- | ------------------------------------ |
+| 🔴 P0 | ข้อมูลสาขา/พนักงานขึ้นจริง | ⏳    | ต้องใช้ก่อนเปิดระบบจริง              |
+| 🔴 P0 | บาร์โค้ดไม่ตรงห้ามเซฟ      | ✅    | ป้องกันข้อมูลผิดพลาด                 |
+| 🟠 P1 | ระบบตัดรอบ + Lock + Grace  | ✅    | Business logic หลักของระบบนับ        |
+| 🟠 P1 | แก้ไขยอดนับบน Web+Mobile   | ✅    | Supervisor ต้องตรวจสอบ/แก้ไขได้      |
+| 🟠 P1 | Supervisor Mobile UI       | ✅    | ต้องใช้คู่กับ Override (อั๋นยืนยัน)  |
+| 🟡 P2 | Export Excel เช็คอิน       | ✅    | รายงานที่ต้องส่งให้ผู้บริหาร         |
+| 🟡 P2 | แจ้งเตือนไม่เช็คอิน 3 วัน  | ✅    | ติดตามพนักงาน                        |
+| 🟡 P2 | ถ่ายเพิ่มหลัง submit       | ✅    | เคสที่เกิดขึ้นจริง                   |
+| 🔵 P3 | Prompt Management          | ✅    | ปรับปรุง AI ได้ง่ายขึ้น              |
+| 🔵 P3 | Multi-photo 100+ ชิ้น      | ⏳    | รอข้อมูลสินค้าก่อน                   |
+| ⚪ P4 | ITP Integration            | ⏭️    | อั๋นบอกข้ามไปก่อน — ใช้ Excel export |
+| ⚪ P4 | Upload บิล (project ใหม่)  | ⏭️    | Phase ถัดไป                          |
 
 ---
 
-## ไฟล์ที่ต้องแก้ไข/สร้างใหม่
+## ไฟล์ที่สร้าง/แก้ไขแล้ว ✅ (2-4 มี.ค. 2026)
 
-### แก้ไข (Modify)
+### สร้างใหม่ (Created)
 
-| ไฟล์                                                                 | การเปลี่ยนแปลง                                                |
-| -------------------------------------------------------------------- | ------------------------------------------------------------- |
-| `types/index.ts`                                                     | เพิ่ม CountingPeriod, SupplementSession, PromptTemplate types |
-| `services/gemini.service.ts`                                         | เปลี่ยนจาก hardcoded prompt → PromptService                   |
-| `services/counting.service.ts`                                       | เพิ่ม period-aware logic                                      |
-| `app/(mini-apps)/stock-counter/result.tsx`                           | Block save เมื่อ barcode mismatch                             |
-| `app/(mini-apps)/stock-counter/index.tsx`                            | เพิ่มแสดงรอบปัจจุบัน + lock check                             |
-| `app/(mini-apps)/stock-counter/history/*`                            | เพิ่มปุ่ม "ถ่ายเพิ่ม"                                         |
-| `platform-web/app/stock-counter/dashboard/attendance/page.tsx`       | เพิ่ม Export Excel                                            |
-| `platform-web/app/stock-counter/dashboard/counting-summary/page.tsx` | เพิ่ม Supervisor override                                     |
-| `services/notification.service.ts`                                   | เพิ่ม missing check-in notification type                      |
+| ไฟล์                                                        | คำอธิบาย                                                                                         |
+| ----------------------------------------------------------- | ------------------------------------------------------------------------------------------------ |
+| `types/index.ts`                                            | เพิ่ม CountingPeriod, SupervisorOverride, SupplementSession, PromptTemplate, MissingCheckInAlert |
+| `platform-web/types/index.ts`                               | เพิ่ม supervisorOverride, finalCountSource, approvalStatus ใน CountingSession                    |
+| `services/counting-period.service.ts`                       | ระบบตัดรอบ + Lock วันที่ 1,16 + Grace period +5 วัน                                              |
+| `services/prompt.service.ts`                                | Prompt Management service + AsyncStorage caching                                                 |
+| `services/supplement.service.ts`                            | CRUD สำหรับ Supplement Sessions                                                                  |
+| `app/(mini-apps)/supervisor/_layout.tsx`                    | Stack navigation layout                                                                          |
+| `app/(mini-apps)/supervisor/index.tsx`                      | 📱 Supervisor Dashboard                                                                          |
+| `app/(mini-apps)/supervisor/counting-review.tsx`            | 📱 รีวิวยอดนับ discrepancy                                                                       |
+| `app/(mini-apps)/supervisor/team-status.tsx`                | 📱 สถานะทีม BA                                                                                   |
+| `app/(mini-apps)/supervisor/alerts.tsx`                     | 📱 แจ้งเตือน supervisor                                                                          |
+| `app/(mini-apps)/supervisor/supplement-review.tsx`          | 📱 รีวิวนับเสริม                                                                                 |
+| `platform-web/app/stock-counter/dashboard/alerts/page.tsx`  | 🌐 หน้าแจ้งเตือนพนักงาน                                                                          |
+| `platform-web/app/stock-counter/dashboard/prompts/page.tsx` | 🌐 Prompt Management admin (adminOnly)                                                           |
+| `platform-web/app/api/supervisor/override/route.ts`         | 🌐 Override API                                                                                  |
+| `platform-web/app/api/prompts/seed/route.ts`                | 🌐 Seed hardcoded prompts API                                                                    |
 
-### สร้างใหม่ (New)
+### แก้ไข (Modified)
 
-| ไฟล์                                                            | คำอธิบาย                      |
-| --------------------------------------------------------------- | ----------------------------- |
-| `services/counting-period.service.ts`                           | จัดการรอบการนับ + lock logic  |
-| `services/prompt.service.ts`                                    | Prompt Management service     |
-| `app/(mini-apps)/supervisor/index.tsx`                          | 📱 Supervisor Dashboard (NEW) |
-| `app/(mini-apps)/supervisor/counting-review.tsx`                | 📱 รีวิวยอดนับ discrepancy    |
-| `app/(mini-apps)/supervisor/team-status.tsx`                    | 📱 สถานะทีม BA                |
-| `app/(mini-apps)/supervisor/alerts.tsx`                         | 📱 แจ้งเตือน supervisor       |
-| `platform-web/app/stock-counter/dashboard/alerts/page.tsx`      | หน้าแจ้งเตือนพนักงาน (web)    |
-| `platform-web/app/stock-counter/dashboard/prompts/page.tsx`     | Prompt Management admin       |
-| `platform-web/app/api/counting-sessions/[id]/override/route.ts` | Override API                  |
-| `scripts/seed-production-data.ts`                               | Import ข้อมูลจริง             |
-| `scripts/update-product-images.ts`                              | อัปเดตรูปสินค้า               |
+| ไฟล์                                                                 | การเปลี่ยนแปลง                                     |
+| -------------------------------------------------------------------- | -------------------------------------------------- |
+| `app/(mini-apps)/stock-counter/result.tsx`                           | Block save เมื่อ barcode mismatch                  |
+| `app/(mini-apps)/stock-counter/preview.tsx`                          | ส่ง barcodeMatchStatus param ไป result             |
+| `platform-web/app/stock-counter/dashboard/counting-summary/page.tsx` | เพิ่ม Supervisor override UI ใน SessionDetailModal |
+| `platform-web/app/stock-counter/dashboard/attendance/page.tsx`       | เพิ่มปุ่ม Export Excel + XLSX                      |
+| `platform-web/components/layout/stock-counter-sidebar.tsx`           | เพิ่มเมนู แจ้งเตือนขาดงาน + AI Prompts             |
 
 ---
 
@@ -644,4 +688,5 @@ interface MultiPhotoSession {
 4. **Export infrastructure** (exceljs, jsPDF) มีอยู่แล้ว → ไม่ต้องติดตั้ง library ใหม่
 5. **ITP Integration ข้ามไปก่อน** — อั๋นบอกใช้ Excel export ปกติที่ทำอยู่แล้วก็พอ
 6. **Qty + Price ข้ามไปก่อน** — เป็นส่วนของ project upload บิล Phase ถัดไป
-7. **Supervisor Mobile UI เป็นงานใหม่ที่ต้องทำ** — ออกแบบ mini-app สำหรับ supervisor/manager ในมือถือ
+7. **AI Prompts page เมนูเห็นเฉพาะ admin/super_admin** — ตั้งค่า `adminOnly: true` ใน sidebar
+8. **Prompt Seed** — หน้า AI Prompts มีปุ่ม "นำเข้า Prompt จากระบบ" เพื่อ seed hardcoded prompts 3 ตัว (barcode_scanner_with_expected, barcode_scanner_no_expected, product_counter) เข้า Firestore

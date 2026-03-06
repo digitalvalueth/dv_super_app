@@ -50,8 +50,9 @@ const MONTH_MAP: Record<string, number> = {
 
 /**
  * Parse Watson Invoice date formats robustly.
- * Handles: "01-JAN-0026", "06-JAN-0026", "1/6/2026", Excel serial numbers.
+ * Handles: "01-JAN-0026", "06-JAN-0026", "1/6/2026", "31/1/26", Excel serial numbers.
  * Watson uses 2-digit year suffix of Buddhist Era: 0026 = BE 2569 = CE 2026.
+ * Short D/M/YY format: "31/1/26" → day=31, month=1, year=2026
  */
 function parseWatsonDate(dateVal: unknown): Date | null {
   if (dateVal === null || dateVal === undefined) return null;
@@ -83,7 +84,20 @@ function parseWatsonDate(dateVal: unknown): Date | null {
     }
   }
 
-  // Pattern 2: M/D/YYYY (US format common in Excel)
+  // Pattern 2: D/M/YY (Thai short format, 2-digit year)
+  // e.g. "31/1/26" → Jan 31 2026, "9/2/26" → Feb 9 2026
+  // Must check before M/D/YYYY to avoid ambiguity. Identified by 2-digit year.
+  const dmyShortMatch = trimmed.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2})$/);
+  if (dmyShortMatch) {
+    const day = parseInt(dmyShortMatch[1], 10);
+    const month = parseInt(dmyShortMatch[2], 10) - 1;
+    const year = 2000 + parseInt(dmyShortMatch[3], 10);
+    if (day >= 1 && day <= 31 && month >= 0 && month <= 11) {
+      return new Date(year, month, day);
+    }
+  }
+
+  // Pattern 3: M/D/YYYY (US format common in Excel, 4-digit year)
   const mdyMatch = trimmed.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
   if (mdyMatch) {
     const month = parseInt(mdyMatch[1], 10) - 1;
