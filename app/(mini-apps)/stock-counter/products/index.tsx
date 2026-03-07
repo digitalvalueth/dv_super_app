@@ -1,4 +1,3 @@
-import { db } from "@/config/firebase";
 import { usePaginationState } from "@/hooks/usePaginatedQuery";
 import { subscribeToProductsWithAssignments } from "@/services/product.service";
 import { useAuthStore } from "@/stores/auth.store";
@@ -8,7 +7,6 @@ import { ProductWithAssignment } from "@/types";
 import { Ionicons } from "@expo/vector-icons";
 import { Image } from "expo-image";
 import { router } from "expo-router";
-import { addDoc, collection, serverTimestamp } from "firebase/firestore";
 import { useEffect, useState } from "react";
 import {
   ActivityIndicator,
@@ -45,10 +43,10 @@ export default function HomeScreen() {
   const user = useAuthStore((state) => state.user);
   const { products, setProducts, setLoading, loading } = useProductStore();
   const { colors } = useTheme();
-  const { viewMode } = useViewMode();
+  const { viewMode, uploadStatus, periodMessage } = useViewMode();
   const [refreshing, setRefreshing] = useState(false);
   const [filter, setFilter] = useState<
-    "all" | "pending" | "in_progress" | "completed"
+    "all" | "pending" | "in_progress" | "completed" | "not_available"
   >("all");
   const [searchTerm, setSearchTerm] = useState("");
 
@@ -61,6 +59,7 @@ export default function HomeScreen() {
     pending: products.filter((p) => !p.status || p.status === "pending").length,
     in_progress: products.filter((p) => p.status === "in_progress").length,
     completed: products.filter((p) => p.status === "completed").length,
+    not_available: products.filter((p) => p.status === "not_available").length,
   };
 
   // Setup realtime listener for products
@@ -101,40 +100,28 @@ export default function HomeScreen() {
     setTimeout(() => setRefreshing(false), 500);
   };
 
-  // ฟังก์ชันข้ามสินค้า
-  const handleSkipProduct = async (product: ProductWithAssignment) => {
-    Alert.alert(
-      "ข้ามสินค้านี้?",
-      `คุณต้องการข้ามการนับ "${product.name}" ใช่หรือไม่?`,
-      [
-        { text: "ยกเลิก", style: "cancel" },
-        {
-          text: "ข้าม",
-          style: "destructive",
-          onPress: async () => {
-            try {
-              await addDoc(collection(db, "skippedProducts"), {
-                userId: user?.uid,
-                userName: user?.name,
-                productId: product.productId || product.sku,
-                productName: product.name,
-                branchId: user?.branchId,
-                companyId: user?.companyId,
-                reason: "user_skipped",
-                skippedAt: serverTimestamp(),
-              });
-              Alert.alert("สำเร็จ", "ข้ามสินค้าแล้ว");
-            } catch (error) {
-              console.error("Error skipping product:", error);
-              Alert.alert("เกิดข้อผิดพลาด", "ไม่สามารถข้ามสินค้าได้");
-            }
-          },
-        },
-      ],
-    );
-  };
-
   const handleProductPress = (product: ProductWithAssignment) => {
+    // บล็อคเมื่อสถานะ locked หรือ closed (ไม่ใช่ completed ที่ดูประวัติได้เสมอ)
+    if (
+      product.status !== "completed" &&
+      (uploadStatus === "locked" || uploadStatus === "closed")
+    ) {
+      Alert.alert(
+        uploadStatus === "locked" ? "🔒 ระบบปิดชั่วคราว" : "❌ หมดเวลาส่งรูป",
+        periodMessage ||
+          (uploadStatus === "locked"
+            ? "ระบบปิดรับรูปชั่วคราว กรุณากลับมาพรุ่งนี้"
+            : "หมดเวลาส่งรูปรอบนี้แล้ว"),
+        [{ text: "ตกลง" }],
+      );
+      return;
+    }
+
+    if (product.status === "not_available") {
+      // ไม่มีในสาขา → ไม่ให้กดเข้าไป
+      return;
+    }
+
     if (product.status === "completed") {
       // Navigate to completed product view with history
       router.push({
@@ -172,8 +159,10 @@ export default function HomeScreen() {
         return "#4caf50";
       case "in_progress":
         return "#ff9800";
+      case "not_available":
+        return "#9ca3af";
       default:
-        return "#fbbf24"; // เปลี่ยนจากเทาเป็นเหลือง
+        return "#fbbf24";
     }
   };
 
@@ -182,9 +171,11 @@ export default function HomeScreen() {
       case "completed":
         return "checkmark-circle";
       case "in_progress":
-        return "camera"; // เปลี่ยนจาก time เป็น camera
+        return "camera";
+      case "not_available":
+        return "close-circle";
       default:
-        return "time-outline"; // เปลี่ยนเป็นนาฬิกาให้ตรงกับ filter
+        return "time-outline";
     }
   };
 
@@ -193,7 +184,9 @@ export default function HomeScreen() {
       case "completed":
         return "นับแล้ว";
       case "in_progress":
-        return "แนบรูปแล้ว"; // เปลี่ยนจาก กำลังนับ
+        return "แนบรูปแล้ว";
+      case "not_available":
+        return "ไม่มีในสาขา";
       default:
         return "รอนับ";
     }
@@ -237,25 +230,35 @@ export default function HomeScreen() {
     {
       key: "pending" as const,
       label: "รอนับ",
-      icon: "time-outline" as keyof typeof Ionicons.glyphMap, // เปลี่ยนเป็นนาฬิกา
+      icon: "time-outline" as keyof typeof Ionicons.glyphMap,
     },
     {
       key: "in_progress" as const,
-      label: "แนบรูปแล้ว", // เปลี่ยนจาก กำลังนับ
-      icon: "camera" as keyof typeof Ionicons.glyphMap, // เปลี่ยนจาก time
+      label: "แนบรูปแล้ว",
+      icon: "camera" as keyof typeof Ionicons.glyphMap,
     },
     {
       key: "completed" as const,
       label: "นับแล้ว",
       icon: "checkmark-circle" as keyof typeof Ionicons.glyphMap,
     },
+    {
+      key: "not_available" as const,
+      label: "ไม่มีในสาขา",
+      icon: "close-circle" as keyof typeof Ionicons.glyphMap,
+    },
   ];
 
   const renderProductList = ({ item }: { item: ProductWithAssignment }) => (
     <TouchableOpacity
-      style={[styles.productListCard, { backgroundColor: colors.card }]}
+      style={[
+        styles.productListCard,
+        { backgroundColor: colors.card },
+        item.status === "not_available" && { opacity: 0.5 },
+      ]}
       onPress={() => handleProductPress(item)}
       activeOpacity={0.7}
+      disabled={item.status === "not_available"}
     >
       {/* Product Image */}
       <View style={styles.listImageContainer}>
@@ -349,114 +352,118 @@ export default function HomeScreen() {
         </View>
       </View>
 
-      {/* Skip Button */}
-      {item.status !== "completed" && (
-        <TouchableOpacity
-          style={styles.skipButton}
-          onPress={() => handleSkipProduct(item)}
-        >
-          <Ionicons name="close-circle" size={20} color="#f59e0b" />
-        </TouchableOpacity>
-      )}
-
       <Ionicons name="chevron-forward" size={20} color={colors.textSecondary} />
     </TouchableOpacity>
   );
 
   const renderProduct = ({ item }: { item: ProductWithAssignment }) => (
-    <TouchableOpacity
-      style={[styles.productCard, { backgroundColor: colors.card }]}
-      onPress={() => handleProductPress(item)}
-      activeOpacity={0.7}
+    <View
+      style={[
+        styles.productCard,
+        { backgroundColor: colors.card },
+        item.status === "not_available" && { opacity: 0.5 },
+      ]}
     >
-      {/* Product Image */}
-      <View style={styles.imageContainer}>
-        {item.imageUrl ? (
-          <Image
-            source={{ uri: fixFirebaseStorageUrl(item.imageUrl) }}
-            style={styles.productImage}
-            contentFit="cover"
-            transition={200}
-          />
-        ) : (
+      <TouchableOpacity
+        onPress={() => handleProductPress(item)}
+        activeOpacity={0.7}
+        disabled={item.status === "not_available"}
+      >
+        {/* Product Image */}
+        <View style={styles.imageContainer}>
+          {item.imageUrl ? (
+            <Image
+              source={{ uri: fixFirebaseStorageUrl(item.imageUrl) }}
+              style={styles.productImage}
+              contentFit="cover"
+              transition={200}
+            />
+          ) : (
+            <View
+              style={[
+                styles.placeholderImage,
+                { backgroundColor: colors.border },
+              ]}
+            >
+              <Ionicons
+                name="cube-outline"
+                size={40}
+                color={colors.textSecondary}
+              />
+            </View>
+          )}
+
+          {/* Status Badge */}
           <View
             style={[
-              styles.placeholderImage,
-              { backgroundColor: colors.border },
+              styles.statusBadge,
+              { backgroundColor: getStatusColor(item.status) },
             ]}
           >
             <Ionicons
-              name="cube-outline"
-              size={40}
-              color={colors.textSecondary}
-            />
-          </View>
-        )}
-
-        {/* Status Badge */}
-        <View
-          style={[
-            styles.statusBadge,
-            { backgroundColor: getStatusColor(item.status) },
-          ]}
-        >
-          <Ionicons name={getStatusIcon(item.status)} size={14} color="#fff" />
-        </View>
-      </View>
-
-      {/* Product Info */}
-      <View style={styles.productInfo}>
-        <Text style={styles.productSKU} numberOfLines={1}>
-          {item.barcode || item.sku}
-        </Text>
-
-        <Text
-          style={[styles.productName, { color: colors.text }]}
-          numberOfLines={2}
-        >
-          {item.name}
-        </Text>
-
-        {/* Metrics */}
-        <View style={styles.metricsRow}>
-          <View style={styles.metricItem}>
-            <Ionicons
-              name="cube-outline"
+              name={getStatusIcon(item.status)}
               size={14}
-              color={colors.textSecondary}
+              color="#fff"
             />
-            <Text style={[styles.metricText, { color: colors.textSecondary }]}>
-              {item.beforeCountQty || 0}
-            </Text>
           </View>
+        </View>
 
-          {item.variance !== undefined && (
+        {/* Product Info */}
+        <View style={styles.productInfo}>
+          <Text style={styles.productSKU} numberOfLines={1}>
+            {item.barcode || item.sku}
+          </Text>
+
+          <Text
+            style={[styles.productName, { color: colors.text }]}
+            numberOfLines={2}
+          >
+            {item.name}
+          </Text>
+
+          {/* Metrics */}
+          <View style={styles.metricsRow}>
             <View style={styles.metricItem}>
               <Ionicons
-                name={item.variance >= 0 ? "trending-up" : "trending-down"}
+                name="cube-outline"
                 size={14}
-                color={item.variance >= 0 ? "#4caf50" : "#f44336"}
+                color={colors.textSecondary}
               />
               <Text
-                style={[
-                  styles.metricText,
-                  { color: item.variance >= 0 ? "#4caf50" : "#f44336" },
-                ]}
+                style={[styles.metricText, { color: colors.textSecondary }]}
               >
-                {item.variance > 0 ? "+" : ""}
-                {item.variance}
+                {item.beforeCountQty || 0}
               </Text>
             </View>
-          )}
-        </View>
 
-        <Text
-          style={[styles.statusText, { color: getStatusColor(item.status) }]}
-        >
-          {getStatusText(item.status)}
-        </Text>
-      </View>
-    </TouchableOpacity>
+            {item.variance !== undefined && (
+              <View style={styles.metricItem}>
+                <Ionicons
+                  name={item.variance >= 0 ? "trending-up" : "trending-down"}
+                  size={14}
+                  color={item.variance >= 0 ? "#4caf50" : "#f44336"}
+                />
+                <Text
+                  style={[
+                    styles.metricText,
+                    { color: item.variance >= 0 ? "#4caf50" : "#f44336" },
+                  ]}
+                >
+                  {item.variance > 0 ? "+" : ""}
+                  {item.variance}
+                </Text>
+              </View>
+            )}
+          </View>
+
+          <Text
+            style={[styles.statusText, { color: getStatusColor(item.status) }]}
+          >
+            {getStatusText(item.status)}
+          </Text>
+        </View>
+      </TouchableOpacity>
+    </View>
   );
 
   // Show message for users without company/branch
@@ -651,16 +658,6 @@ export default function HomeScreen() {
           ) : null
         }
       />
-
-      {/* Floating Add Button */}
-      <TouchableOpacity
-        style={[styles.floatingButton, { backgroundColor: colors.primary }]}
-        onPress={() =>
-          router.push("/(mini-apps)/stock-counter/products/add-product")
-        }
-      >
-        <Ionicons name="add" size={28} color="#fff" />
-      </TouchableOpacity>
     </View>
   );
 }
@@ -925,25 +922,7 @@ const styles = StyleSheet.create({
     fontSize: 13,
     lineHeight: 20,
   },
-  floatingButton: {
-    position: "absolute",
-    bottom: 100,
-    right: 20,
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    justifyContent: "center",
-    alignItems: "center",
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.25,
-    shadowRadius: 4,
-    elevation: 5,
-  },
-  skipButton: {
-    padding: 8,
-    marginRight: 4,
-  },
+
   loadMoreContainer: {
     flexDirection: "row",
     justifyContent: "center",

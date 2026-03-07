@@ -1,3 +1,4 @@
+import { canUploadPhoto } from "@/services/counting-period.service";
 import {
   createCountingSession,
   updateAssignmentStatus,
@@ -39,7 +40,10 @@ export default function ResultScreen() {
     barcodeMatchStatus?: string;
     userReportedCount?: string;
     disputeRemark?: string;
+    isSupplemental?: string; // "รูปเพิ่มเติม" ไม่นับรวมกับจำนวนหลัก
   }>();
+
+  const isSupplemental = params.isSupplemental === "true";
 
   // Block save when barcode mismatch
   const isBarcodeMatch = params.barcodeMatchStatus !== "mismatch";
@@ -69,13 +73,19 @@ export default function ResultScreen() {
       return;
     }
 
-    if (!params.productId || !params.assignmentId) {
+    if (!params.productId || (!params.assignmentId && !isSupplemental)) {
       Alert.alert("เกิดข้อผิดพลาด", "ไม่พบข้อมูลสินค้าหรือ assignment");
       return;
     }
 
     try {
       setIsSaving(true);
+
+      // Check if this is a late submission (in grace period)
+      const uploadCheck = user.companyId
+        ? await canUploadPhoto(user.companyId)
+        : null;
+      const isLate = uploadCheck?.isLateSubmission ?? false;
 
       // ถ้ามี sessionId แสดงว่ามี session อยู่แล้ว (จาก preview) ให้อัพเดทแทนการสร้างใหม่
       if (params.sessionId) {
@@ -93,19 +103,25 @@ export default function ResultScreen() {
           updatedAt: new Date(),
           ...(disputeRemark && { errorRemark: disputeRemark }),
           ...(userReportedCount !== null && { userReportedCount }),
+          ...(isLate && { isLate: true }),
+          ...(isSupplemental && { isSupplemental: true }),
         });
 
-        // อัพเดท assignment status เป็น completed
-        await updateAssignmentStatus(
-          params.assignmentId,
-          "completed",
-          Timestamp.now(),
-          params.productId,
-        );
+        // อัพเดท assignment status เป็น completed (ข้ามถ้าเป็น supplemental)
+        if (!isSupplemental && params.assignmentId) {
+          await updateAssignmentStatus(
+            params.assignmentId,
+            "completed",
+            Timestamp.now(),
+            params.productId,
+          );
+        }
 
         Alert.alert(
-          "ยืนยันสำเร็จ",
-          `ยืนยันผลการนับ ${barcodeCount} รายการเรียบร้อยแล้ว`,
+          isSupplemental ? "แนบรูปเพิ่มเติมสำเร็จ" : "ยืนยันสำเร็จ",
+          isSupplemental
+            ? `แนบรูปเพิ่มเติม ${barcodeCount} รายการเรียบร้อยแล้ว`
+            : `ยืนยันผลการนับ ${barcodeCount} รายการเรียบร้อยแล้ว`,
           [
             {
               text: "ตกลง",
@@ -131,7 +147,7 @@ export default function ResultScreen() {
 
       // 3. Create counting session in Firestore
       await createCountingSession({
-        assignmentId: params.assignmentId,
+        assignmentId: params.assignmentId || "",
         userId: user.uid,
         productId: params.productId,
         companyId: user.companyId || "",
@@ -157,6 +173,8 @@ export default function ResultScreen() {
         standardCount: beforeQty,
         discrepancy: Math.abs(variance),
         status: "completed",
+        ...(isLate && { isLate: true }),
+        ...(isSupplemental && { isSupplemental: true }),
         ...(disputeRemark && { errorRemark: disputeRemark }),
         ...(userReportedCount !== null && { userReportedCount }),
         ...(watermarkData && {
@@ -217,7 +235,7 @@ export default function ResultScreen() {
           <Ionicons name="arrow-back" size={24} color={colors.text} />
         </TouchableOpacity>
         <Text style={[styles.headerTitle, { color: colors.text }]}>
-          ผลการนับ
+          {isSupplemental ? "แนบรูปเพิ่มเติม" : "ผลการนับ"}
         </Text>
         <View style={styles.headerButton} />
       </View>
