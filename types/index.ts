@@ -158,7 +158,11 @@ export interface UserAssignment {
   updatedAt?: Timestamp;
 }
 
-export type AssignmentStatus = "pending" | "in_progress" | "completed";
+export type AssignmentStatus =
+  | "pending"
+  | "in_progress"
+  | "completed"
+  | "not_available"; // ไม่มีสินค้านี้ในสาขา
 
 // ==================== Counting Session ====================
 
@@ -226,6 +230,8 @@ export interface CountingSession {
   // Optional fields
   remarks?: string;
   hasBarcodeScan?: boolean;
+  isLate?: boolean; // ส่งในช่วง grace period (ลับ)
+  isSupplemental?: boolean; // รูปเพิ่มเติม ไม่นับรวมกับจำนวนหลัก
 
   // Metadata
   deviceInfo?: string;
@@ -499,6 +505,7 @@ export interface CountingPeriod {
   endDate: Timestamp; // วันสุดท้ายของรอบ (เช่น 15 มี.ค.)
   lockDates: Timestamp[]; // วันที่ห้าม upload ทั้งวัน (1, 16)
   graceEndDate: Timestamp; // endDate + 5 วัน (ลับ)
+  supervisorGraceEndDate?: Timestamp; // Supervisor ขยายเวลา grace (ลับ)
   status: CountingPeriodStatus;
   createdAt: Timestamp;
   updatedAt?: Timestamp;

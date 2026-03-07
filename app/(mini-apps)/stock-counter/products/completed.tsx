@@ -32,6 +32,8 @@ export default function CompletedProductScreen() {
   const productSKU = params.productSKU as string;
   const productImage = params.productImage as string;
   const beforeQty = params.beforeQty as string;
+  const assignmentId = params.assignmentId as string;
+  const productBarcode = params.productBarcode as string;
 
   useEffect(() => {
     loadCountingSessions();
@@ -52,13 +54,31 @@ export default function CompletedProductScreen() {
 
   const getLatestSession = () => {
     if (sessions.length === 0) return null;
-    // Prefer completed sessions, then most recently updated
-    const completed = sessions.filter((s) => s.status === "completed");
-    if (completed.length > 0) return completed[0]; // already sorted by updatedAt desc
+    // Prefer approved/completed non-supplemental (approved = admin ยืนยันแล้ว)
+    const mainDone = sessions.filter(
+      (s) =>
+        !s.isSupplemental &&
+        (s.status === "completed" || s.status === "approved"),
+    );
+    if (mainDone.length > 0) return mainDone[0];
+    // fallback: any non-supplemental
+    const mainAny = sessions.filter((s) => !s.isSupplemental);
+    if (mainAny.length > 0) return mainAny[0];
     return sessions[0];
   };
 
+  // ── Split sessions ────────────────────────
+  const mainSessions = sessions.filter((s) => !s.isSupplemental);
+  const supplementalSessions = sessions.filter((s) => s.isSupplemental);
+  const supplementalTotal = supplementalSessions.reduce(
+    (sum, s) => sum + (s.currentCountQty ?? 0),
+    0,
+  );
+
   const latestSession = getLatestSession();
+
+  // รวมทั้งหมด = ครั้งแรก + เพิ่มเติมทุกครั้ง
+  const grandTotal = (latestSession?.currentCountQty ?? 0) + supplementalTotal;
 
   return (
     <SafeAreaView
@@ -424,21 +444,23 @@ export default function CompletedProductScreen() {
             </View>
           )}
 
-          {/* History Section */}
-          {sessions.length > 1 && (
+          {/* History Section — main sessions only */}
+          {mainSessions.length > 1 && (
             <View
               style={[styles.historyCard, { backgroundColor: colors.card }]}
             >
               <Text style={[styles.sectionTitle, { color: colors.text }]}>
-                ประวัติการนับ ({sessions.length} ครั้ง)
+                ประวัติการนับหลัก ({mainSessions.length} ครั้ง)
               </Text>
-              {sessions.slice(1).map((session, index) => (
+              {mainSessions.slice(1).map((session, index) => (
                 <View
                   key={session.id || index}
                   style={[
                     styles.historyItem,
                     { borderBottomColor: colors.border },
-                    index === sessions.length - 2 && { borderBottomWidth: 0 },
+                    index === mainSessions.length - 2 && {
+                      borderBottomWidth: 0,
+                    },
                   ]}
                 >
                   <View style={styles.historyInfo}>
@@ -499,6 +521,107 @@ export default function CompletedProductScreen() {
             </View>
           )}
 
+          {/* Supplemental Sessions Section */}
+          {supplementalSessions.length > 0 && (
+            <View
+              style={[
+                styles.supplementalCard,
+                { backgroundColor: colors.card },
+              ]}
+            >
+              {/* Header */}
+              <View style={styles.supplementalHeader}>
+                <View style={styles.supplementalTitleRow}>
+                  <Ionicons name="attach" size={18} color="#6366f1" />
+                  <Text
+                    style={[
+                      styles.sectionTitle,
+                      { color: colors.text, marginBottom: 0 },
+                    ]}
+                  >
+                    รูปเพิ่มเติม ({supplementalSessions.length} ครั้ง)
+                  </Text>
+                </View>
+                {/* Total Summary Badge */}
+                <View style={styles.supplementalTotalBadge}>
+                  <Text style={styles.supplementalTotalLabel}>รวม</Text>
+                  <Text style={styles.supplementalTotalValue}>
+                    {grandTotal}
+                  </Text>
+                  <Text style={styles.supplementalTotalLabel}>รายการ</Text>
+                </View>
+              </View>
+
+              {/* Each supplemental entry */}
+              {supplementalSessions.map((session, index) => (
+                <View
+                  key={session.id || `sup-${index}`}
+                  style={[
+                    styles.supplementalItem,
+                    { borderBottomColor: colors.border },
+                    index === supplementalSessions.length - 1 && {
+                      borderBottomWidth: 0,
+                    },
+                  ]}
+                >
+                  {/* Thumbnail */}
+                  {session.imageUrl ? (
+                    <Image
+                      source={{ uri: session.imageUrl }}
+                      style={styles.supplementalThumb}
+                      contentFit="cover"
+                    />
+                  ) : (
+                    <View
+                      style={[
+                        styles.supplementalThumb,
+                        {
+                          backgroundColor: colors.border,
+                          justifyContent: "center",
+                          alignItems: "center",
+                        },
+                      ]}
+                    >
+                      <Ionicons
+                        name="image-outline"
+                        size={20}
+                        color={colors.textSecondary}
+                      />
+                    </View>
+                  )}
+
+                  {/* Info */}
+                  <View style={styles.supplementalInfo}>
+                    <Text style={[styles.historyCount, { color: colors.text }]}>
+                      นับได้ {session.currentCountQty} ชิ้น
+                    </Text>
+                    <Text
+                      style={[
+                        styles.historyDate,
+                        { color: colors.textSecondary },
+                      ]}
+                    >
+                      {session.createdAt
+                        ? formatTimestamp(
+                            session.createdAt instanceof Date
+                              ? session.createdAt
+                              : session.createdAt.toDate(),
+                          )
+                        : ""}
+                    </Text>
+                  </View>
+
+                  {/* Count badge */}
+                  <View style={styles.supplementalCountBadge}>
+                    <Text style={styles.supplementalCountText}>
+                      +{session.currentCountQty}
+                    </Text>
+                  </View>
+                </View>
+              ))}
+            </View>
+          )}
+
           {sessions.length === 0 && (
             <View style={[styles.emptyCard, { backgroundColor: colors.card }]}>
               <Ionicons
@@ -513,6 +636,36 @@ export default function CompletedProductScreen() {
           )}
         </ScrollView>
       )}
+
+      {/* Bottom Action Bar */}
+      {!isLoading && (
+        <View
+          style={[
+            styles.bottomBar,
+            { backgroundColor: colors.card, borderTopColor: colors.border },
+          ]}
+        >
+          <TouchableOpacity
+            style={[styles.addPhotoButton, { backgroundColor: colors.primary }]}
+            onPress={() => {
+              router.push({
+                pathname: "/(mini-apps)/stock-counter/camera",
+                params: {
+                  productId,
+                  productName,
+                  productBarcode,
+                  assignmentId,
+                  beforeQty,
+                  isSupplemental: "true",
+                },
+              });
+            }}
+          >
+            <Ionicons name="camera" size={20} color="#fff" />
+            <Text style={styles.addPhotoButtonText}>ถ่ายสินค้าเพิ่มเติม</Text>
+          </TouchableOpacity>
+        </View>
+      )}
     </SafeAreaView>
   );
 }
@@ -520,6 +673,23 @@ export default function CompletedProductScreen() {
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
+  },
+  bottomBar: {
+    padding: 16,
+    borderTopWidth: StyleSheet.hairlineWidth,
+  },
+  addPhotoButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    paddingVertical: 14,
+    borderRadius: 12,
+  },
+  addPhotoButtonText: {
+    fontSize: 16,
+    fontWeight: "600",
+    color: "#fff",
   },
   header: {
     flexDirection: "row",
@@ -778,6 +948,74 @@ const styles = StyleSheet.create({
   varianceText: {
     fontSize: 14,
     fontWeight: "600",
+  },
+  // ── Supplemental styles ────────────────────────────────
+  supplementalCard: {
+    borderRadius: 16,
+    padding: 16,
+    marginBottom: 16,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+    borderLeftWidth: 3,
+    borderLeftColor: "#6366f1",
+  },
+  supplementalHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: 12,
+  },
+  supplementalTitleRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+  },
+  supplementalTotalBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    backgroundColor: "#6366f115",
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 20,
+  },
+  supplementalTotalLabel: {
+    fontSize: 12,
+    color: "#6366f1",
+  },
+  supplementalTotalValue: {
+    fontSize: 16,
+    fontWeight: "700",
+    color: "#6366f1",
+  },
+  supplementalItem: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingVertical: 10,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    gap: 10,
+  },
+  supplementalThumb: {
+    width: 48,
+    height: 48,
+    borderRadius: 8,
+  },
+  supplementalInfo: {
+    flex: 1,
+  },
+  supplementalCountBadge: {
+    backgroundColor: "#6366f115",
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 10,
+  },
+  supplementalCountText: {
+    fontSize: 14,
+    fontWeight: "700",
+    color: "#6366f1",
   },
   emptyCard: {
     padding: 32,

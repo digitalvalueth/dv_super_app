@@ -153,6 +153,42 @@ export default function CheckInIndex() {
           </Text>
         </View>
 
+        {/* Employee & Branch Info */}
+        <View
+          style={[
+            styles.employeeCard,
+            { backgroundColor: colors.card, borderColor: colors.border },
+          ]}
+        >
+          <View style={styles.employeeRow}>
+            <View
+              style={[
+                styles.avatarCircle,
+                { backgroundColor: colors.primary + "20" },
+              ]}
+            >
+              <Ionicons name="person" size={22} color={colors.primary} />
+            </View>
+            <View style={styles.employeeInfo}>
+              <Text style={[styles.employeeName, { color: colors.text }]}>
+                {user?.name || "-"}
+              </Text>
+              <View style={styles.branchRow}>
+                <Ionicons
+                  name="storefront-outline"
+                  size={13}
+                  color={colors.textSecondary}
+                />
+                <Text
+                  style={[styles.branchName, { color: colors.textSecondary }]}
+                >
+                  {user?.branchName || "ไม่ระบุสาขา"}
+                </Text>
+              </View>
+            </View>
+          </View>
+        </View>
+
         {/* Status Card */}
         <View
           style={[
@@ -399,10 +435,44 @@ const styles = StyleSheet.create({
   },
   dateContainer: {
     alignItems: "center",
-    marginBottom: 16,
+    marginBottom: 12,
   },
   dateText: {
     fontSize: 16,
+  },
+  employeeCard: {
+    borderRadius: 12,
+    borderWidth: 1,
+    padding: 14,
+    marginBottom: 16,
+  },
+  employeeRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+  },
+  avatarCircle: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  employeeInfo: {
+    flex: 1,
+  },
+  employeeName: {
+    fontSize: 16,
+    fontWeight: "600",
+    marginBottom: 2,
+  },
+  branchRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+  },
+  branchName: {
+    fontSize: 13,
   },
   statusCard: {
     borderRadius: 16,

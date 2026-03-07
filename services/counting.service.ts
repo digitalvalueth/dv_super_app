@@ -232,6 +232,44 @@ const addToCountingHistory = async (
 };
 
 /**
+ * Mark a product as not available at this branch
+ * Adds productId to notAvailableProductIds in the assignment document
+ */
+export const markProductNotAvailable = async (
+  assignmentId: string,
+  productId: string,
+): Promise<void> => {
+  try {
+    const assignmentRef = doc(db, "assignments", assignmentId);
+    const assignmentDoc = await getDoc(assignmentRef);
+
+    if (!assignmentDoc.exists()) return;
+
+    const currentData = assignmentDoc.data();
+    const notAvailableProductIds = currentData.notAvailableProductIds || [];
+    const inProgressProductIds = currentData.inProgressProductIds || [];
+
+    if (!notAvailableProductIds.includes(productId)) {
+      notAvailableProductIds.push(productId);
+    }
+
+    // Remove from in-progress if it was there
+    const updatedInProgress = inProgressProductIds.filter(
+      (id: string) => id !== productId,
+    );
+
+    await updateDoc(assignmentRef, {
+      notAvailableProductIds,
+      inProgressProductIds: updatedInProgress,
+      updatedAt: Timestamp.now(),
+    });
+  } catch (error) {
+    console.error("Error marking product not available:", error);
+    throw error;
+  }
+};
+
+/**
  * Get all sessions for a product
  */
 export const getProductCountingSessions = async (
