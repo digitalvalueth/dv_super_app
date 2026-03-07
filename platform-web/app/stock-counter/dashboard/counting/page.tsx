@@ -13,7 +13,7 @@ import {
   updateDoc,
   where,
 } from "firebase/firestore";
-import { Check, Eye, Search, X } from "lucide-react";
+import { Check, Eye, MapPin, Phone, Search, X } from "lucide-react";
 import Image from "next/image";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
@@ -29,6 +29,15 @@ export default function CountingPage() {
     useState<CountingSession | null>(null);
   const [filterStatus, setFilterStatus] = useState<string>("all");
   const [searchTerm, setSearchTerm] = useState("");
+  const [filterMonth, setFilterMonth] = useState<number>(
+    new Date().getMonth() + 1,
+  );
+  const [filterYear, setFilterYear] = useState<number>(
+    new Date().getFullYear(),
+  );
+  const [filterHalf, setFilterHalf] = useState<"all" | "1" | "2">(
+    new Date().getDate() <= 15 ? "1" : "2",
+  );
 
   useEffect(() => {
     if (!userData) return;
@@ -39,7 +48,7 @@ export default function CountingPage() {
   useEffect(() => {
     applyFilters();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sessions, filterStatus, searchTerm]);
+  }, [sessions, filterStatus, searchTerm, filterMonth, filterYear, filterHalf]);
 
   const fetchSessions = async () => {
     if (!userData) return;
@@ -104,6 +113,18 @@ export default function CountingPage() {
 
   const applyFilters = () => {
     let filtered = [...sessions];
+
+    // Filter by month/year
+    filtered = filtered.filter((s) => {
+      if (!s.createdAt) return false;
+      const d = s.createdAt;
+      const matchesMonth =
+        d.getMonth() + 1 === filterMonth && d.getFullYear() === filterYear;
+      const matchesHalf =
+        filterHalf === "all" ||
+        (filterHalf === "1" ? d.getDate() <= 15 : d.getDate() >= 16);
+      return matchesMonth && matchesHalf;
+    });
 
     // Filter by status
     if (filterStatus !== "all") {
@@ -193,6 +214,61 @@ export default function CountingPage() {
 
       {/* Filters */}
       <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-6">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+          {/* Month filter */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+              เดือน
+            </label>
+            <select
+              value={filterMonth}
+              onChange={(e) => setFilterMonth(Number(e.target.value))}
+              className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+            >
+              {Array.from({ length: 12 }, (_, i) => i + 1).map((m) => (
+                <option key={m} value={m}>
+                  {new Date(2000, m - 1, 1).toLocaleDateString("th-TH", {
+                    month: "long",
+                  })}
+                </option>
+              ))}
+            </select>
+          </div>
+          {/* Year filter */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+              ปี
+            </label>
+            <select
+              value={filterYear}
+              onChange={(e) => setFilterYear(Number(e.target.value))}
+              className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+            >
+              {[filterYear - 1, filterYear, filterYear + 1].map((y) => (
+                <option key={y} value={y}>
+                  {y + 543}
+                </option>
+              ))}
+            </select>
+          </div>
+          {/* Half filter */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+              รอบ
+            </label>
+            <select
+              value={filterHalf}
+              onChange={(e) =>
+                setFilterHalf(e.target.value as "all" | "1" | "2")
+              }
+              className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+            >
+              <option value="all">ทั้งเดือน</option>
+              <option value="1">รอบ 1 (วันที่ 1-15)</option>
+              <option value="2">รอบ 2 (วันที่ 16-สิ้นเดือน)</option>
+            </select>
+          </div>
+        </div>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
             <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
@@ -366,7 +442,19 @@ export default function CountingPage() {
                     </span>
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap">
-                    <StatusBadge status={session.status} />
+                    <div className="flex flex-col gap-1">
+                      <StatusBadge status={session.status} />
+                      {session.isLate && (
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-100 text-amber-700 text-xs font-medium">
+                          ⏰ ส่งล่าช้า
+                        </span>
+                      )}
+                      {session.isSupplemental && (
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-blue-100 text-blue-700 text-xs font-medium">
+                          📎 รูปเพิ่มเติม
+                        </span>
+                      )}
+                    </div>
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm">
                     <button
@@ -446,10 +534,10 @@ function SessionDetailModal({
   };
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white dark:bg-gray-800 rounded-xl max-w-4xl w-full max-h-[90vh] overflow-y-auto">
-        <div className="p-6 border-b border-gray-200 dark:border-gray-700">
-          <h2 className="text-2xl font-bold text-gray-900 dark:text-white">
+    <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-xl max-w-4xl w-full max-h-[90vh] overflow-y-auto shadow-2xl">
+        <div className="p-6 border-b border-gray-200">
+          <h2 className="text-2xl font-bold text-gray-900">
             รายละเอียดการนับสินค้า
           </h2>
         </div>
@@ -562,6 +650,16 @@ function SessionDetailModal({
                 <div>
                   <span className="text-gray-600">สถานะ:</span>{" "}
                   <StatusBadge status={session.status} />
+                  {session.isLate && (
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-100 text-amber-700 text-xs font-medium ml-2">
+                      ⏰ ส่งล่าช้า
+                    </span>
+                  )}
+                  {session.isSupplemental && (
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-blue-100 text-blue-700 text-xs font-medium ml-2">
+                      📎 รูปเพิ่มเติม
+                    </span>
+                  )}
                 </div>
               </div>
             </div>
@@ -572,7 +670,7 @@ function SessionDetailModal({
               <h3 className="font-semibold text-gray-900 dark:text-white mb-4">
                 ภาพถ่าย
               </h3>
-              <div className="relative w-full h-96 bg-gray-100 dark:bg-gray-700 rounded-lg overflow-hidden">
+              <div className="relative w-full h-96 bg-white rounded-lg overflow-hidden">
                 <Image
                   src={session.imageUrl}
                   alt="Counting image"
@@ -581,33 +679,32 @@ function SessionDetailModal({
                 />
                 {/* Watermark Overlay for Admin */}
                 {watermarkData && (
-                  <div className="absolute bottom-0 left-0 right-0 bg-black/65 text-yellow-400 p-3 font-semibold text-sm">
-                    <div className="flex flex-col gap-0.5">
+                  <div className="absolute bottom-0 left-0 right-0 bg-linear-to-t from-black/80 to-transparent p-4">
+                    <div className="text-white text-sm space-y-1">
+                      {watermarkData.employeeName && (
+                        <p className="font-semibold">
+                          {watermarkData.employeeName}
+                          {watermarkData.branchName
+                            ? ` · ${watermarkData.branchName}`
+                            : ""}
+                        </p>
+                      )}
                       {watermarkData.timestamp && (
-                        <span>
-                          📅 {formatWatermarkTimestamp(watermarkData.timestamp)}
-                        </span>
+                        <p className="text-xs opacity-80">
+                          {formatWatermarkTimestamp(watermarkData.timestamp)}
+                        </p>
                       )}
                       {watermarkData.location && (
-                        <span>📍 {watermarkData.location}</span>
-                      )}
-                      {watermarkData.coordinates?.lat != null &&
-                        watermarkData.coordinates?.lng != null && (
-                          <span className="text-xs text-yellow-300">
-                            🌐 {watermarkData.coordinates.lat.toFixed(6)},{" "}
-                            {watermarkData.coordinates.lng.toFixed(6)}
-                          </span>
-                        )}
-                      {watermarkData.employeeName && (
-                        <span>
-                          👤 {watermarkData.employeeName}
-                          {watermarkData.branchName || watermarkData.employeeId
-                            ? ` (${watermarkData.branchName || watermarkData.employeeId})`
-                            : ""}
-                        </span>
+                        <p className="text-xs opacity-80 flex items-center gap-1">
+                          <MapPin className="w-3 h-3" />
+                          {watermarkData.location}
+                        </p>
                       )}
                       {watermarkData.deviceModel && (
-                        <span>📱 {watermarkData.deviceModel}</span>
+                        <p className="text-xs opacity-80 flex items-center gap-1">
+                          <Phone className="w-3 h-3" />
+                          {watermarkData.deviceModel}
+                        </p>
                       )}
                     </div>
                   </div>

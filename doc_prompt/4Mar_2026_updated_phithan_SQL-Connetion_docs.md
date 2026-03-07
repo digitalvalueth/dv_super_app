@@ -130,3 +130,39 @@ The main manual tasks for the Shop associate would be
     https://lh3.googleusercontent.com/notebooklm/ANHLwAz5tKn1X4XrFioR56T9OoOMoeB_U6ytDqsPvC3Jl3KXO8dwfWhT_6vt6sql86HJ_tUaQtR9xf82FHqihwm74VBpV8gDK42wymHyHxrHmQe7wCKwoEy8Dq3O9iLwDvATYCclYa5s=w557-h841-v0
     https://lh3.googleusercontent.com/notebooklm/ANHLwAw_3-pTMt_J3dfMmKOye2i7CyTIHtcF9rQhE0LIIFLy1wFj6HnMTWWY1ZoZLndbBDE744FdICEN0dmgC-mpBDA-65yNdY7gssW-JHvMMgQppf0WyYX015CoYcNxo5RC3bVw_NJNyQ=w562-h850-v0
     https://lh3.googleusercontent.com/notebooklm/ANHLwAzLX9oD7izrgCNjiuATwmHUmBgtJrFaktJFaGmSOVitdq7S5rbzaNKUa8tEPhM4fWD443zNQZ2XEfYPVWW0dWUh2J4h76FhrzK8Ru4Js1EUwAuEW3fj5FtW4LYhXHksnu2unYZyZA=w761-h697-v0
+
+รับสินค้า
+จัดการการรับสินค้าและติดตามพัสดุ
+
+สร้าง Mock Shipment
+0
+
+พัสดุทั้งหมด
+
+0
+
+รอรับ
+
+0
+
+รับวันนี้
+
+0
+
+รับทั้งหมด
+
+รายการรับสินค้า
+พัสดุทั้งหมด
+วันที่
+
+04/03/2026
+ค้นหา
+ค้นหา Tracking, สาขา...
+Tracking สาขา ผู้รับ จำนวน เวลา ดำเนินการ
+ไม่พบข้อมูลการรับสินค้า
+
+หน้านี้อาจจะมีส่วนเกี่ยวข้องครับในการรับของเข้าคลังที่พนักงานสาขานั้นได้รับมอบหมาย และจะมีอีกส่วนนึงคือข้อมูลตอนนี้ไม่รู้ว่ามีไหมครับที่ เราจะเอาไปเทียบสินค้า มีแอปไหนที่คุณสามารถทำให้ลองเชื่อมต่อ เพื่อดูให้คุณก่อนไหมครับว่ามีข้อมูลที่จะเอามาใช้อะไรกับแอปเราได้บ้างและต้องทำตามตามที่เขาแนะนำไหมครับ
+
+ที่เป็น เปรียบเทียบสต็อก
+เทียบกับระบบ ERP ภายนอก
+http://localhost:3000/stock-counter/dashboard/reports/stock-comparison ทีี่จะเชื่อมไป ลองช่วยทีครับว่าเราจะต้องทำอะไรบ้างแล้วถ้ามันเยอะ ไปสร้างไฟล์เป็น part ไปก็ได้ครับ

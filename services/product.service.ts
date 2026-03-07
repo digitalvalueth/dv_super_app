@@ -216,8 +216,18 @@ export const subscribeToProductsWithAssignments = (
 ): Unsubscribe => {
   console.log("🔔 Setting up realtime products listener for user:", userId);
 
+  // Filter by current month + year to match the active counting period
+  const now = new Date();
+  const currentMonth = now.getMonth() + 1;
+  const currentYear = now.getFullYear();
+
   const assignmentsRef = collection(db, "assignments");
-  const q = query(assignmentsRef, where("userId", "==", userId));
+  const q = query(
+    assignmentsRef,
+    where("userId", "==", userId),
+    where("month", "==", currentMonth),
+    where("year", "==", currentYear),
+  );
 
   const unsubscribe = onSnapshot(
     q,
@@ -240,6 +250,7 @@ export const subscribeToProductsWithAssignments = (
           userId: string;
           isCompleted: boolean;
           isInProgress: boolean;
+          isNotAvailable: boolean;
         }
       >();
 
@@ -249,6 +260,7 @@ export const subscribeToProductsWithAssignments = (
         const productIds = assignment.productIds || [];
         const completedProductIds = assignment.completedProductIds || [];
         const inProgressProductIds = assignment.inProgressProductIds || [];
+        const notAvailableProductIds = assignment.notAvailableProductIds || [];
 
         for (const productId of productIds) {
           productAssignmentMap.set(productId, {
@@ -256,6 +268,7 @@ export const subscribeToProductsWithAssignments = (
             userId: assignment.userId,
             isCompleted: completedProductIds.includes(productId),
             isInProgress: inProgressProductIds.includes(productId),
+            isNotAvailable: notAvailableProductIds.includes(productId),
           });
         }
       }
@@ -301,9 +314,15 @@ export const subscribeToProductsWithAssignments = (
             if (!assignmentInfo) continue;
 
             // Determine status
-            let status: "pending" | "in_progress" | "completed" = "pending";
+            let status:
+              | "pending"
+              | "in_progress"
+              | "completed"
+              | "not_available" = "pending";
             if (assignmentInfo.isCompleted) {
               status = "completed";
+            } else if (assignmentInfo.isNotAvailable) {
+              status = "not_available";
             } else if (assignmentInfo.isInProgress) {
               status = "in_progress";
             }

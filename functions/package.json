@@ -1,0 +1,24 @@
+{
+  "name": "fittbsa-functions",
+  "description": "Firebase Cloud Functions for FITT BSA Super App",
+  "scripts": {
+    "build": "tsc",
+    "build:watch": "tsc --watch",
+    "deploy": "firebase deploy --only functions",
+    "deploy:prod": "firebase use prod && firebase deploy --only functions && firebase use dev",
+    "lint": "eslint --ext .ts ."
+  },
+  "engines": {
+    "node": "20"
+  },
+  "main": "lib/index.js",
+  "dependencies": {
+    "firebase-admin": "^13.6.1",
+    "firebase-functions": "^6.3.2"
+  },
+  "devDependencies": {
+    "typescript": "^5.4.5",
+    "@types/node": "^20.14.0"
+  },
+  "private": true
+}

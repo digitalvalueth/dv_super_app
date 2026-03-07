@@ -69,28 +69,57 @@ export function getCurrentHalf(date: Date = new Date()): CountingPeriodHalf {
 
 /**
  * Get the current active counting period for a company
+ * Also checks if we're within the grace period of the previous period
  */
 export async function getCurrentPeriod(
   companyId: string,
+  date: Date = new Date(),
 ): Promise<CountingPeriod | null> {
-  const now = new Date();
+  const now = date;
   const year = now.getFullYear();
-  const month = now.getMonth() + 1; // 1-12
-  const half = getCurrentHalf(now);
+
+  // Fetch this month AND previous month periods so we can detect cross-month grace
+  const prevYear = now.getMonth() === 0 ? year - 1 : year;
+
+  const yearsToQuery = year === prevYear ? [year] : [year, prevYear];
 
   const q = query(
     collection(db, COLLECTION_NAME),
     where("companyId", "==", companyId),
-    where("year", "==", year),
-    where("month", "==", month),
-    where("half", "==", half),
+    where("year", "in", yearsToQuery),
   );
 
   const snapshot = await getDocs(q);
-  if (snapshot.empty) return null;
+  const periods = snapshot.docs.map(
+    (d) => ({ id: d.id, ...d.data() }) as CountingPeriod,
+  );
 
-  const docSnap = snapshot.docs[0];
-  return { id: docSnap.id, ...docSnap.data() } as CountingPeriod;
+  const nowMs = now.getTime();
+  let activePeriod: CountingPeriod | null = null;
+  let gracePeriod: CountingPeriod | null = null;
+
+  for (const period of periods) {
+    const startMs = period.startDate.toDate().getTime();
+    const endMs = period.endDate.toDate().getTime();
+    // Supervisor can extend grace period via supervisorGraceEndDate field
+    const graceEndMs = period.supervisorGraceEndDate
+      ? (
+          period.supervisorGraceEndDate as import("firebase/firestore").Timestamp
+        )
+          .toDate()
+          .getTime()
+      : period.graceEndDate.toDate().getTime();
+
+    if (nowMs >= startMs && nowMs <= endMs) {
+      activePeriod = period;
+      break; // active period takes priority
+    }
+    if (nowMs > endMs && nowMs <= graceEndMs) {
+      gracePeriod = period; // keep most recent grace period found
+    }
+  }
+
+  return activePeriod ?? gracePeriod ?? null;
 }
 
 /**
@@ -120,7 +149,14 @@ export function getUploadStatusForDate(
   const dateMs = date.getTime();
   const startMs = period.startDate.toDate().getTime();
   const endMs = period.endDate.toDate().getTime();
-  const graceEndMs = period.graceEndDate.toDate().getTime();
+  // Supervisor can extend grace period beyond default 5 days
+  const graceEndMs = (period.supervisorGraceEndDate as
+    | import("firebase/firestore").Timestamp
+    | undefined)
+    ? (period.supervisorGraceEndDate as import("firebase/firestore").Timestamp)
+        .toDate()
+        .getTime()
+    : period.graceEndDate.toDate().getTime();
 
   // Rule 2: Within active period → OPEN
   if (dateMs >= startMs && dateMs <= endMs) {
@@ -154,7 +190,7 @@ export async function canUploadPhoto(
   message: string;
   isLateSubmission: boolean;
 }> {
-  const period = await getCurrentPeriod(companyId);
+  const period = await getCurrentPeriod(companyId, date);
   const status = getUploadStatusForDate(date, period);
 
   switch (status) {

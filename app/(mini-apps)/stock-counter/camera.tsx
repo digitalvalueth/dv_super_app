@@ -33,6 +33,9 @@ export default function CameraScreen() {
     assignmentId?: string;
     beforeQty?: string;
     existingSessionId?: string;
+    isSupplementMode?: string; // "true" when opening from history ถ่ายเพิ่ม
+    originalSessionId?: string; // original countingSession id for supplement
+    isSupplemental?: string; // "true" เมื่อถ่ายรูปเพิ่มเติม (ต่างจากจำนวนหลัก)
   }>();
 
   const [permission, requestPermission] = useCameraPermissions();
@@ -122,6 +125,9 @@ export default function CameraScreen() {
           beforeQty: params.beforeQty,
           existingSessionId: params.existingSessionId || "",
           nativeScannedBarcode: scannedBarcode || "", // barcode read by native scanner (100% accurate)
+          isSupplementMode: params.isSupplementMode || "",
+          originalSessionId: params.originalSessionId || "",
+          isSupplemental: params.isSupplemental || "",
         },
       });
     } catch (error) {
@@ -218,6 +224,9 @@ export default function CameraScreen() {
           beforeQty: params.beforeQty,
           existingSessionId: params.existingSessionId || "",
           nativeScannedBarcode: scannedBarcode || "",
+          isSupplementMode: params.isSupplementMode || "",
+          originalSessionId: params.originalSessionId || "",
+          isSupplemental: params.isSupplemental || "",
         },
       });
     } catch (error) {
