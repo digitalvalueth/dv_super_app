@@ -1,3 +1,4 @@
+import { useTranslation } from "@/constants/i18n";
 import { processGoogleAuth } from "@/services/auth.service";
 import { useAuthStore } from "@/stores/auth.store";
 import { useTheme } from "@/stores/theme.store";
@@ -27,6 +28,7 @@ export default function LoginScreen() {
   const setUser = useAuthStore((state) => state.setUser);
   const setError = useAuthStore((state) => state.setError);
   const { colors, isDark } = useTheme();
+  const t = useTranslation();
   const [isLoading, setIsLoading] = useState(false);
 
   // Configure Google Sign In
@@ -153,7 +155,7 @@ export default function LoginScreen() {
         {/* App Name */}
         <Text style={[styles.title, { color: colors.text }]}>FITT BSA</Text>
         <Text style={[styles.subtitle, { color: colors.textSecondary }]}>
-          ระบบนับสินค้าด้วย AI
+          {t.login.subtitle}
         </Text>
 
         {/* Features */}
@@ -168,7 +170,7 @@ export default function LoginScreen() {
               <Ionicons name="camera" size={24} color={colors.primary} />
             </View>
             <Text style={[styles.featureText, { color: colors.textSecondary }]}>
-              นับสินค้าอัตโนมัติ
+              {t.login.featureCount}
             </Text>
           </View>
 
@@ -182,7 +184,7 @@ export default function LoginScreen() {
               <Ionicons name="bar-chart" size={24} color={colors.primary} />
             </View>
             <Text style={[styles.featureText, { color: colors.textSecondary }]}>
-              รายงานแบบเรียลไทม์
+              {t.login.featureReport}
             </Text>
           </View>
 
@@ -200,7 +202,7 @@ export default function LoginScreen() {
               />
             </View>
             <Text style={[styles.featureText, { color: colors.textSecondary }]}>
-              ปลอดภัยสูง
+              {t.login.featureSecurity}
             </Text>
           </View>
         </View>
@@ -226,13 +228,13 @@ export default function LoginScreen() {
                 color="#fff"
                 style={styles.googleIcon}
               />
-              <Text style={styles.buttonText}>เข้าสู่ระบบด้วย Google</Text>
+              <Text style={styles.buttonText}>{t.login.signInWithGoogle}</Text>
             </>
           )}
         </TouchableOpacity>
 
         <Text style={[styles.note, { color: colors.textSecondary }]}>
-          ใช้บัญชี Google ของบริษัทในการเข้าสู่ระบบ
+          {t.login.note}
         </Text>
       </View>
     </SafeAreaView>
