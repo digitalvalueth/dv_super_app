@@ -201,11 +201,21 @@ export function usePriceListData() {
         };
       });
 
+      // Deduplicate periods: same priceExtVat + same startDate + same endDate = same tier
+      // Prevents duplicate rows from the source Excel from showing as multiple tiers
+      const seenPeriodKeys = new Set<string>();
+      const dedupedPeriods = periods.filter((p) => {
+        const key = `${p.priceExtVat}|${toDateOnly(p.startDate)}|${p.endDate ? toDateOnly(p.endDate) : -1}`;
+        if (seenPeriodKeys.has(key)) return false;
+        seenPeriodKeys.add(key);
+        return true;
+      });
+
       result.push({
         itemCode,
         prodCode: items[0].prodCode,
         prodName: items[0].prodName,
-        periods,
+        periods: dedupedPeriods,
       });
     });
 
