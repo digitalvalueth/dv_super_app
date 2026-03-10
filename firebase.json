@@ -20,5 +20,15 @@
       "indexes": "firestore.indexes.json",
       "database": "fittsuperapp-prod"
     }
+  ],
+  "storage": [
+    {
+      "bucket": "fittbsa-app-sandbox",
+      "rules": "storage.rules"
+    },
+    {
+      "bucket": "fittbsa-app-prod",
+      "rules": "storage.rules"
+    }
   ]
 }
