@@ -513,6 +513,8 @@ export default function WatsonExcelValidatorPage() {
 
       // Find which rows are acceptable based on Confidence >= threshold
       const acceptable = new Set<number>();
+      // Passed but confidence < threshold → still pass, but shown in Low filter for review
+      const lowConfidencePassedSet = new Set<number>();
       const thresholdPercent = confidenceThreshold * 100;
 
       // Issue tracking maps: itemCode -> { rowIndices, itemName, category, ... }
@@ -560,6 +562,10 @@ export default function WatsonExcelValidatorPage() {
           // Pass when Diff shows ✓ (i.e. calcAmt >= rawAmt) or item was bulk-accepted
           if (diffValue.includes("✓") || isBulkAccepted) {
             acceptable.add(idx);
+            // If passed but confidence < threshold, flag for Low filter review
+            if (!isBulkAccepted && confidencePercent < thresholdPercent) {
+              lowConfidencePassedSet.add(idx);
+            }
             // Track passed items
             const existing = passedMap.get(itemCode);
             if (existing) {
@@ -809,8 +815,8 @@ export default function WatsonExcelValidatorPage() {
             const diff = calcAmt - rawAmt;
             const confidence =
               rawAmt > 0 ? Math.max(0, (1 - Math.abs(diff) / rawAmt) * 100) : 0;
-            // Pass when calcAmt >= rawAmt
-            const isOk = calcAmt >= rawAmt;
+            // Pass when calcAmt >= rawAmt OR shortfall <= 0.50 baht (rounding difference)
+            const isOk = calcAmt >= rawAmt || rawAmt - calcAmt <= 0.5;
 
             updated["Calc Amt"] = fmt2(calcAmt);
             updated["Diff"] = isOk ? `✓ ${fmt2(diff)}` : `⚠ ${fmt2(diff)}`;
@@ -890,8 +896,8 @@ export default function WatsonExcelValidatorPage() {
           const diff = calcAmt - rawAmt;
           const confidence =
             rawAmt > 0 ? Math.max(0, (1 - Math.abs(diff) / rawAmt) * 100) : 0;
-          // Pass when calcAmt >= rawAmt
-          const isOk = calcAmt >= rawAmt;
+          // Pass when calcAmt >= rawAmt OR shortfall <= 0.50 baht (rounding difference)
+          const isOk = calcAmt >= rawAmt || rawAmt - calcAmt <= 0.5;
           updated["Calc Amt"] = fmt2(calcAmt);
           updated["Diff"] = isOk ? `✓ ${fmt2(diff)}` : `⚠ ${fmt2(diff)}`;
           updated["Confidence"] = `${confidence.toFixed(0)}%`;
@@ -938,7 +944,8 @@ export default function WatsonExcelValidatorPage() {
           if (priceFilterCategory === "passed") {
             return acceptable.has(idx);
           }
-          const isLow = !acceptable.has(idx);
+          // isLow = not acceptable, OR passed-but-low-confidence (for review)
+          const isLow = !acceptable.has(idx) || lowConfidencePassedSet.has(idx);
           if (showOnlyLowConfidence && categoryRowSet) {
             return isLow && categoryRowSet.has(idx);
           }
@@ -953,7 +960,8 @@ export default function WatsonExcelValidatorPage() {
       const lowConfidenceTotal =
         breakdown.notFoundRows +
         breakdown.noPeriodRows +
-        breakdown.lowMatchRows;
+        breakdown.lowMatchRows +
+        lowConfidencePassedSet.size; // passed but confidence < threshold
 
       return {
         displayData: filteredData,
