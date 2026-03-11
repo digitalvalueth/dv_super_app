@@ -87,15 +87,19 @@ export function findBestPriceCombination(
   let bestSum = 0;
   let bestAllocation: number[] = [];
 
+  // Floating point tolerance: 0.5 satang (0.005 baht)
+  // Prevents cases like 434.58+0.58=435.15999... being treated as <435.16
+  const EPSILON = 0.005;
+
   /**
    * Direction-aware comparison:
-   * 1. A passing solution (sum >= rawAmt) always beats a failing one
+   * 1. A passing solution (sum >= rawAmt - EPSILON) always beats a failing one
    * 2. Among passing solutions, prefer smallest surplus
    * 3. Among failing solutions, prefer smallest shortfall (fallback only)
    */
   function isBetter(candidateSum: number): boolean {
-    const candidatePasses = candidateSum >= rawAmt;
-    const bestPasses = bestSum >= rawAmt;
+    const candidatePasses = candidateSum + EPSILON >= rawAmt;
+    const bestPasses = bestSum + EPSILON >= rawAmt;
     if (candidatePasses && !bestPasses) return true; // First passing solution
     if (!candidatePasses && bestPasses) return false; // Don't downgrade
     if (candidatePasses) return candidateSum - rawAmt < bestDiff; // Smaller surplus
@@ -157,8 +161,8 @@ export function findBestPriceCombination(
       x[idx] = i;
       dfs(idx + 1, remainQty - i, currentSum + limitedPrices[idx].price * i);
 
-      // Early exit: found a passing solution with near-zero surplus
-      if (bestSum >= rawAmt && bestDiff < 0.01) {
+      // Early exit: found a near-exact passing solution
+      if (bestSum + EPSILON >= rawAmt && bestDiff < EPSILON) {
         return;
       }
     }
@@ -189,8 +193,8 @@ export function findBestPriceCombination(
 
   // Calculate confidence
   const diffPercent = rawAmt > 0 ? (bestDiff / rawAmt) * 100 : 100;
-  // Pass when calcAmt >= rawAmt (surplus is OK, shortfall is not)
-  const isAcceptable = bestSum >= rawAmt;
+  // Pass when calcAmt >= rawAmt (with epsilon for floating point rounding)
+  const isAcceptable = bestSum + EPSILON >= rawAmt;
 
   // Confidence: 100% if diff = 0, decreases as diff increases
   const confidence = Math.max(0, Math.min(100, 100 - diffPercent));
