@@ -1,3 +1,4 @@
+import { useTranslation } from "@/constants/i18n";
 import { useTheme } from "@/stores/theme.store";
 import { Ionicons } from "@expo/vector-icons";
 import AsyncStorage from "@react-native-async-storage/async-storage";
@@ -25,14 +26,15 @@ type Step = {
 
 export default function OnboardingScreen() {
   const { colors, isDark } = useTheme();
+  const t = useTranslation();
   const [currentStep, setCurrentStep] = useState(0);
   const [isLoading, setIsLoading] = useState(false);
   const [, requestCameraPermission] = useCameraPermissions();
 
   const steps: Step[] = [
     {
-      title: "กล้องถ่ายรูป",
-      description: "ใช้กล้องเพื่อถ่ายรูปสินค้าสำหรับนับจำนวนอัตโนมัติด้วย AI",
+      title: t.onboarding.camera.title,
+      description: t.onboarding.camera.description,
       icon: "camera",
       action: async () => {
         const result = await requestCameraPermission();
@@ -40,8 +42,8 @@ export default function OnboardingScreen() {
       },
     },
     {
-      title: "ตำแหน่งที่อยู่",
-      description: "บันทึกตำแหน่งที่นับสินค้าเพื่อความถูกต้องและตรวจสอบได้",
+      title: t.onboarding.location.title,
+      description: t.onboarding.location.description,
       icon: "location",
       action: async () => {
         const result = await Location.requestForegroundPermissionsAsync();
@@ -66,8 +68,8 @@ export default function OnboardingScreen() {
       } else {
         // User denied permission, show alert
         Alert.alert(
-          "ต้องการสิทธิ์นี้",
-          `แอปต้องการสิทธิ์${steps[currentStep].title}เพื่อใช้งานอย่างเต็มรูปแบบ`,
+          t.onboarding.permissionRequired,
+          t.onboarding.permissionMessage(steps[currentStep].title),
         );
       }
     } finally {
@@ -156,8 +158,8 @@ export default function OnboardingScreen() {
             />
             <Text style={[styles.featureText, { color: colors.text }]}>
               {currentStep === 0
-                ? "นับสินค้าอัตโนมัติด้วย AI"
-                : "บันทึกตำแหน่งที่แม่นยำ"}
+                ? t.onboarding.camera.feature1
+                : t.onboarding.location.feature1}
             </Text>
           </View>
           <View style={styles.featureItem}>
@@ -168,8 +170,8 @@ export default function OnboardingScreen() {
             />
             <Text style={[styles.featureText, { color: colors.text }]}>
               {currentStep === 0
-                ? "ถ่ายรูปง่ายๆ ได้ผลทันที"
-                : "ตรวจสอบย้อนหลังได้"}
+                ? t.onboarding.camera.feature2
+                : t.onboarding.location.feature2}
             </Text>
           </View>
           <View style={styles.featureItem}>
@@ -180,8 +182,8 @@ export default function OnboardingScreen() {
             />
             <Text style={[styles.featureText, { color: colors.text }]}>
               {currentStep === 0
-                ? "รองรับหลายรูปแบบสินค้า"
-                : "ปลอดภัย ไว้วางใจได้"}
+                ? t.onboarding.camera.feature3
+                : t.onboarding.location.feature3}
             </Text>
           </View>
         </View>
@@ -201,26 +203,14 @@ export default function OnboardingScreen() {
         >
           <Text style={styles.primaryButtonText}>
             {isLoading
-              ? "กำลังตรวจสอบ..."
+              ? t.onboarding.checking
               : currentStep === steps.length - 1
-                ? "เริ่มใช้งาน"
-                : "อนุญาต"}
+                ? t.onboarding.start
+                : t.onboarding.next}
           </Text>
           {!isLoading && (
             <Ionicons name="arrow-forward" size={20} color="#fff" />
           )}
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={[styles.skipButton]}
-          onPress={handleSkip}
-          disabled={isLoading}
-        >
-          <Text
-            style={[styles.skipButtonText, { color: colors.textSecondary }]}
-          >
-            ข้ามไปก่อน
-          </Text>
         </TouchableOpacity>
       </View>
     </SafeAreaView>

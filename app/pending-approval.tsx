@@ -1,3 +1,4 @@
+import { useTranslation } from "@/constants/i18n";
 import { signOut } from "@/services/auth.service";
 import { useAuthStore } from "@/stores/auth.store";
 import { useTheme } from "@/stores/theme.store";
@@ -17,24 +18,29 @@ import { SafeAreaView } from "react-native-safe-area-context";
 export default function PendingApprovalScreen() {
   const { colors, isDark } = useTheme();
   const { user, logout } = useAuthStore();
+  const t = useTranslation();
 
   const handleLogout = async () => {
-    Alert.alert("ออกจากระบบ", "คุณต้องการออกจากระบบหรือไม่?", [
-      { text: "ยกเลิก", style: "cancel" },
-      {
-        text: "ออกจากระบบ",
-        style: "destructive",
-        onPress: async () => {
-          try {
-            await signOut();
-            logout();
-            router.replace("/(login)");
-          } catch {
-            Alert.alert("เกิดข้อผิดพลาด", "ไม่สามารถออกจากระบบได้");
-          }
+    Alert.alert(
+      t.pendingApproval.logoutTitle,
+      t.pendingApproval.logoutConfirm,
+      [
+        { text: t.cancel, style: "cancel" },
+        {
+          text: t.pendingApproval.logoutTitle,
+          style: "destructive",
+          onPress: async () => {
+            try {
+              await signOut();
+              logout();
+              router.replace("/(login)");
+            } catch {
+              Alert.alert(t.error, t.pendingApproval.logoutError);
+            }
+          },
         },
-      },
-    ]);
+      ],
+    );
   };
 
   return (
@@ -67,12 +73,12 @@ export default function PendingApprovalScreen() {
 
           {/* Title */}
           <Text style={[styles.title, { color: colors.text }]}>
-            รอการอนุมัติ
+            {t.pendingApproval.title}
           </Text>
 
           {/* Description */}
           <Text style={[styles.description, { color: colors.textSecondary }]}>
-            บัญชีของคุณกำลังรอการอนุมัติจากผู้ดูแลระบบ
+            {t.pendingApproval.description}
           </Text>
 
           {/* Email */}
@@ -91,7 +97,7 @@ export default function PendingApprovalScreen() {
           {/* Instructions */}
           <View style={styles.instructionsContainer}>
             <Text style={[styles.instructionsTitle, { color: colors.text }]}>
-              ขั้นตอนถัดไป:
+              {t.pendingApproval.nextSteps}
             </Text>
 
             <View style={styles.stepItem}>
@@ -106,7 +112,7 @@ export default function PendingApprovalScreen() {
                 </Text>
               </View>
               <Text style={[styles.stepText, { color: colors.textSecondary }]}>
-                ติดต่อผู้ดูแลระบบเพื่อขออนุมัติการเข้าถึง
+                {t.pendingApproval.step1}
               </Text>
             </View>
 
@@ -122,7 +128,7 @@ export default function PendingApprovalScreen() {
                 </Text>
               </View>
               <Text style={[styles.stepText, { color: colors.textSecondary }]}>
-                รอผู้ดูแลกำหนดบริษัทและสาขาให้กับคุณ
+                {t.pendingApproval.step2}
               </Text>
             </View>
 
@@ -138,7 +144,7 @@ export default function PendingApprovalScreen() {
                 </Text>
               </View>
               <Text style={[styles.stepText, { color: colors.textSecondary }]}>
-                เข้าสู่ระบบอีกครั้งหลังได้รับการอนุมัติ
+                {t.pendingApproval.step3}
               </Text>
             </View>
           </View>
@@ -154,7 +160,7 @@ export default function PendingApprovalScreen() {
             >
               <Ionicons name="log-out" size={20} color={colors.text} />
               <Text style={[styles.logoutText, { color: colors.text }]}>
-                ออกจากระบบ
+                {t.pendingApproval.logoutTitle}
               </Text>
             </TouchableOpacity>
           </View>

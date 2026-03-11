@@ -6,11 +6,20 @@ import {
 } from "@/lib/export-with-images";
 import { db } from "@/lib/firebase";
 import { useAuthStore } from "@/stores/auth.store";
-import { CountingSession } from "@/types";
+import { CountingSession, User } from "@/types";
 import { format } from "date-fns";
 import { th } from "date-fns/locale";
-import { collection, getDocs, query, where } from "firebase/firestore";
 import {
+  collection,
+  doc,
+  getDocs,
+  query,
+  Timestamp,
+  updateDoc,
+  where,
+} from "firebase/firestore";
+import {
+  Check,
   ChevronDown,
   Download,
   Eye,
@@ -19,7 +28,9 @@ import {
   Hash,
   MapPin,
   Package,
+  Phone,
   Search,
+  Shield,
   Users,
   X,
 } from "lucide-react";
@@ -52,6 +63,15 @@ export default function CountingSummaryPage() {
   const [searchTerm, setSearchTerm] = useState("");
   const [filterBranch, setFilterBranch] = useState("all");
   const [filterEmployee, setFilterEmployee] = useState("all");
+  const [filterMonth, setFilterMonth] = useState<number>(
+    new Date().getMonth() + 1,
+  );
+  const [filterYear, setFilterYear] = useState<number>(
+    new Date().getFullYear(),
+  );
+  const [filterHalf, setFilterHalf] = useState<"all" | "1" | "2">(
+    new Date().getDate() <= 15 ? "1" : "2",
+  );
   const [viewMode, setViewMode] = useState<"summary" | "detail">("summary");
   const [selectedSession, setSelectedSession] =
     useState<CountingSession | null>(null);
@@ -59,6 +79,81 @@ export default function CountingSummaryPage() {
   const [showExcelImageMenu, setShowExcelImageMenu] = useState(false);
   const [showPdfImageMenu, setShowPdfImageMenu] = useState(false);
   const [exporting, setExporting] = useState(false);
+
+  // Grace period extension
+  const [showGraceModal, setShowGraceModal] = useState(false);
+  const [gracePeriodId, setGracePeriodId] = useState<string | null>(null);
+  const [currentGraceEnd, setCurrentGraceEnd] = useState<string>("");
+  const [extendToDate, setExtendToDate] = useState<string>("");
+  const [extendingGrace, setExtendingGrace] = useState(false);
+
+  const fetchCurrentGracePeriod = async () => {
+    if (!userData?.companyId) return;
+    try {
+      const now = new Date();
+      const year = now.getFullYear();
+      const prevYear = now.getMonth() === 0 ? year - 1 : year;
+      const q = query(
+        collection(db, "countingPeriods"),
+        where("companyId", "==", userData.companyId),
+        where("year", "in", year === prevYear ? [year] : [year, prevYear]),
+      );
+      const snap = await getDocs(q);
+      const periods = snap.docs.map((d) => ({ id: d.id, ...d.data() })) as {
+        id: string;
+        graceEndDate: Timestamp;
+        supervisorGraceEndDate?: Timestamp;
+        endDate: Timestamp;
+      }[];
+      // Find the period in grace window
+      const nowMs = now.getTime();
+      const gracePeriod =
+        periods.find((p) => {
+          const graceEnd = (p.supervisorGraceEndDate ?? p.graceEndDate)
+            .toDate()
+            .getTime();
+          const end = p.endDate.toDate().getTime();
+          return nowMs > end && nowMs <= graceEnd;
+        }) ??
+        periods.sort(
+          (a, b) => b.endDate.toDate().getTime() - a.endDate.toDate().getTime(),
+        )[0];
+      if (gracePeriod) {
+        setGracePeriodId(gracePeriod.id);
+        const graceEnd = (
+          gracePeriod.supervisorGraceEndDate ?? gracePeriod.graceEndDate
+        )
+          .toDate()
+          .toISOString()
+          .slice(0, 10);
+        setCurrentGraceEnd(graceEnd);
+        setExtendToDate(graceEnd);
+      }
+      setShowGraceModal(true);
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const handleExtendGrace = async () => {
+    if (!gracePeriodId || !extendToDate) return;
+    try {
+      setExtendingGrace(true);
+      await updateDoc(doc(db, "countingPeriods", gracePeriodId), {
+        supervisorGraceEndDate: Timestamp.fromDate(
+          new Date(extendToDate + "T23:59:59"),
+        ),
+        updatedAt: Timestamp.now(),
+      });
+      toast.success(`ขยาย Grace Period ถึง ${extendToDate} เรียบร้อยแล้ว`);
+      setShowGraceModal(false);
+    } catch (e) {
+      console.error(e);
+      toast.error("เกิดข้อผิดพลาด ไม่สามารถอัพเดทได้");
+    } finally {
+      setExtendingGrace(false);
+    }
+  };
 
   useEffect(() => {
     if (!userData) return;
@@ -218,7 +313,9 @@ export default function CountingSummaryPage() {
 
   // Build export data for image exports (shared by Excel & PDF with images)
   const buildImageExportData = () => {
-    let filtered = sessions.filter((s) => s.status === "completed");
+    let filtered = sessions.filter(
+      (s) => s.status === "completed" && inSelectedMonth(s),
+    );
     if (filterBranch !== "all")
       filtered = filtered.filter(
         (s) => s.branchName === filterBranch || s.branchId === filterBranch,
@@ -388,27 +485,43 @@ export default function CountingSummaryPage() {
     }
   };
 
-  // Unique branches and employees for filter dropdowns
+  // Helper: check if session matches selected month/year/half
+  const inSelectedMonth = (s: CountingSession) => {
+    if (!s.createdAt) return false;
+    const d = s.createdAt;
+    const matchesMonth =
+      d.getMonth() + 1 === filterMonth && d.getFullYear() === filterYear;
+    const matchesHalf =
+      filterHalf === "all" ||
+      (filterHalf === "1" ? d.getDate() <= 15 : d.getDate() >= 16);
+    return matchesMonth && matchesHalf;
+  };
+
+  // Unique branches and employees for filter dropdowns (scoped to selected month)
   const branches = useMemo(() => {
     const map = new Map<string, string>();
-    sessions.forEach((s) => {
+    sessions.filter(inSelectedMonth).forEach((s) => {
       if (s.branchId && s.branchName) map.set(s.branchId, s.branchName);
     });
     return Array.from(map.entries()).map(([id, name]) => ({ id, name }));
-  }, [sessions]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sessions, filterMonth, filterYear, filterHalf]);
 
   const employees = useMemo(() => {
     const map = new Map<string, string>();
-    sessions.forEach((s) => {
+    sessions.filter(inSelectedMonth).forEach((s) => {
       if (s.userId && s.userName) map.set(s.userId, s.userName);
     });
     return Array.from(map.entries()).map(([id, name]) => ({ id, name }));
-  }, [sessions]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sessions, filterMonth, filterYear, filterHalf]);
 
   // Summary: group by employee + branch + product
   const summaryRows = useMemo((): SummaryRow[] => {
-    // Only show sessions with status "completed"
-    const completedSessions = sessions.filter((s) => s.status === "completed");
+    // Only show sessions with status "completed" in selected month
+    const completedSessions = sessions.filter(
+      (s) => s.status === "completed" && inSelectedMonth(s),
+    );
     const map = new Map<string, SummaryRow>();
 
     completedSessions.forEach((s) => {
@@ -449,11 +562,21 @@ export default function CountingSummaryPage() {
     return Array.from(map.values()).sort(
       (a, b) => (b.latestDate?.getTime() || 0) - (a.latestDate?.getTime() || 0),
     );
-  }, [sessions, filterBranch, filterEmployee, searchTerm]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    sessions,
+    filterBranch,
+    filterEmployee,
+    searchTerm,
+    filterMonth,
+    filterYear,
+    filterHalf,
+  ]);
 
   // Detail list (flat)
   const detailRows = useMemo(() => {
     return sessions.filter((s) => {
+      if (!inSelectedMonth(s)) return false;
       if (filterBranch !== "all" && s.branchId !== filterBranch) return false;
       if (filterEmployee !== "all" && s.userId !== filterEmployee) return false;
       if (searchTerm) {
@@ -467,9 +590,16 @@ export default function CountingSummaryPage() {
       }
       return true;
     });
-  }, [sessions, filterBranch, filterEmployee, searchTerm]);
-
-  // Stats cards
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    sessions,
+    filterBranch,
+    filterEmployee,
+    searchTerm,
+    filterMonth,
+    filterYear,
+    filterHalf,
+  ]);
   const totalEmployees = useMemo(
     () => new Set(sessions.map((s) => s.userId)).size,
     [sessions],
@@ -504,12 +634,27 @@ export default function CountingSummaryPage() {
     <div className="space-y-6">
       {/* Header */}
       <div>
-        <h1 className="text-3xl font-bold text-gray-900 dark:text-white">
-          สรุปการนับสินค้า
-        </h1>
-        <p className="text-gray-600 dark:text-gray-400 mt-1">
-          แสดงเฉพาะรายการที่เสร็จสิ้น — พนักงานแต่ละคน / สาขา / สินค้า
-        </p>
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-3xl font-bold text-gray-900 dark:text-white">
+              สรุปการนับสินค้า
+            </h1>
+            <p className="text-gray-600 dark:text-gray-400 mt-1">
+              แสดงเฉพาะรายการที่เสร็จสิ้น — พนักงานแต่ละคน / สาขา / สินค้า
+            </p>
+          </div>
+          {/* Supervisor: extend grace period */}
+          {(userData?.role === "supervisor" ||
+            userData?.role === "manager" ||
+            userData?.role === "admin") && (
+            <button
+              onClick={fetchCurrentGracePeriod}
+              className="flex items-center gap-2 px-3 py-2 text-sm font-medium text-amber-700 bg-amber-50 border border-amber-200 rounded-lg hover:bg-amber-100 transition-colors"
+            >
+              ⏰ ขยาย Grace Period
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Stats Cards */}
@@ -568,7 +713,59 @@ export default function CountingSummaryPage() {
       {/* Filters */}
       <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4">
         <div className="flex flex-wrap gap-3 items-end">
-          {/* Search */}
+          {/* Month filter */}
+          <div className="min-w-36">
+            <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">
+              เดือน
+            </label>
+            <select
+              value={filterMonth}
+              onChange={(e) => setFilterMonth(Number(e.target.value))}
+              className="w-full px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+            >
+              {Array.from({ length: 12 }, (_, i) => i + 1).map((m) => (
+                <option key={m} value={m}>
+                  {new Date(2000, m - 1, 1).toLocaleDateString("th-TH", {
+                    month: "long",
+                  })}
+                </option>
+              ))}
+            </select>
+          </div>
+          {/* Year filter */}
+          <div className="min-w-28">
+            <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">
+              ปี
+            </label>
+            <select
+              value={filterYear}
+              onChange={(e) => setFilterYear(Number(e.target.value))}
+              className="w-full px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+            >
+              {[filterYear - 1, filterYear, filterYear + 1].map((y) => (
+                <option key={y} value={y}>
+                  {y + 543}
+                </option>
+              ))}
+            </select>
+          </div>
+          {/* Half filter */}
+          <div className="min-w-36">
+            <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">
+              รอบ
+            </label>
+            <select
+              value={filterHalf}
+              onChange={(e) =>
+                setFilterHalf(e.target.value as "all" | "1" | "2")
+              }
+              className="w-full px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+            >
+              <option value="all">ทั้งเดือน</option>
+              <option value="1">รอบ 1 (1–15)</option>
+              <option value="2">รอบ 2 (16–สิ้นเดือน)</option>
+            </select>
+          </div>
           <div className="flex-1 min-w-50">
             <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">
               ค้นหา
@@ -997,7 +1194,77 @@ export default function CountingSummaryPage() {
         <SessionDetailModal
           session={selectedSession}
           onClose={() => setSelectedSession(null)}
+          userData={userData}
+          onOverrideSuccess={(sessionId, finalCount, source) => {
+            // Update local state
+            setSessions((prev) =>
+              prev.map((s) =>
+                s.id === sessionId
+                  ? {
+                      ...s,
+                      finalCount,
+                      finalCountSource: source,
+                      approvalStatus: "approved",
+                      status: "approved",
+                    }
+                  : s,
+              ),
+            );
+            setSelectedSession(null);
+          }}
         />
+      )}
+
+      {/* Grace Period Extension Modal */}
+      {showGraceModal && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl max-w-md w-full p-6 shadow-2xl">
+            <h2 className="text-lg font-bold text-gray-900 mb-1">
+              ⏰ ขยาย Grace Period
+            </h2>
+            <p className="text-sm text-gray-500 mb-4">
+              พนักงานเห็น &ldquo;หมดเวลา&rdquo; แต่ระบบยังรับได้ &mdash; session
+              จะถูก tag &ldquo;ส่งล่าช้า&rdquo;
+            </p>
+            <div className="space-y-3">
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">
+                  Grace Period ปัจจุบันถึง
+                </label>
+                <div className="text-sm font-semibold text-amber-700 bg-amber-50 px-3 py-2 rounded-lg">
+                  {currentGraceEnd || "—"}
+                </div>
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">
+                  ขยายถึงวันที่ (Supervisor Override)
+                </label>
+                <input
+                  type="date"
+                  value={extendToDate}
+                  min={currentGraceEnd}
+                  onChange={(e) => setExtendToDate(e.target.value)}
+                  className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500"
+                />
+              </div>
+            </div>
+            <div className="flex gap-3 mt-5">
+              <button
+                onClick={() => setShowGraceModal(false)}
+                className="flex-1 px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors"
+              >
+                ยกเลิก
+              </button>
+              <button
+                onClick={handleExtendGrace}
+                disabled={extendingGrace || !extendToDate}
+                className="flex-1 px-4 py-2 text-sm font-medium text-white bg-amber-600 rounded-lg hover:bg-amber-700 disabled:opacity-50 transition-colors"
+              >
+                {extendingGrace ? "กำลังบันทึก..." : "ยืนยันขยาย"}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
@@ -1006,10 +1273,86 @@ export default function CountingSummaryPage() {
 function SessionDetailModal({
   session,
   onClose,
+  userData,
+  onOverrideSuccess,
 }: {
   session: CountingSession;
   onClose: () => void;
+  userData: User | null;
+  onOverrideSuccess?: (
+    sessionId: string,
+    finalCount: number,
+    source: "ai" | "employee" | "custom",
+  ) => void;
 }) {
+  const [showOverride, setShowOverride] = useState(false);
+  const [overrideSource, setOverrideSource] = useState<
+    "ai" | "employee" | "custom"
+  >("ai");
+  const [customCount, setCustomCount] = useState("");
+  const [overrideReason, setOverrideReason] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+
+  const canOverride =
+    userData &&
+    ["super_admin", "admin", "supervisor", "manager"].includes(userData.role);
+  const isAlreadyOverridden = !!session.supervisorOverride;
+
+  const getOverrideCount = () => {
+    switch (overrideSource) {
+      case "ai":
+        return session.aiCount ?? 0;
+      case "employee":
+        return session.userReportedCount ?? session.aiCount ?? 0;
+      case "custom":
+        return parseInt(customCount) || 0;
+    }
+  };
+
+  const handleOverride = async () => {
+    if (!session.id || !userData) return;
+    const finalCount = getOverrideCount();
+    if (
+      overrideSource === "custom" &&
+      (!customCount || isNaN(parseInt(customCount)))
+    ) {
+      toast.error("กรุณากรอกจำนวนที่ถูกต้อง");
+      return;
+    }
+    setSubmitting(true);
+    try {
+      await updateDoc(doc(db, "countingSessions", session.id), {
+        finalCount,
+        finalCountSource: overrideSource,
+        approvalStatus: "approved",
+        status: "approved",
+        supervisorOverride: {
+          overriddenBy: userData.uid || userData.id,
+          overriddenByName: userData.name || userData.email,
+          overriddenAt: Timestamp.now(),
+          aiCount: session.aiCount ?? 0,
+          employeeCount: session.userReportedCount ?? 0,
+          selectedCount: finalCount,
+          source: overrideSource,
+          ...(overrideSource === "custom" && {
+            customCount: parseInt(customCount),
+          }),
+          ...(overrideReason && { reason: overrideReason }),
+        },
+        reviewedBy: userData.uid || userData.id,
+        reviewedAt: Timestamp.now(),
+        updatedAt: new Date(),
+      });
+      toast.success(`ยืนยันยอดนับ ${finalCount} ชิ้น เรียบร้อย`);
+      onOverrideSuccess?.(session.id, finalCount, overrideSource);
+    } catch (error) {
+      console.error("Error overriding:", error);
+      toast.error("ไม่สามารถบันทึกได้ กรุณาลองใหม่");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
   // Parse watermark data from remarks
   const watermarkData = (() => {
     try {
@@ -1044,14 +1387,14 @@ function SessionDetailModal({
 
   return (
     <div
-      className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4"
+      className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4"
       onClick={(e) => {
         if (e.target === e.currentTarget) onClose();
       }}
     >
-      <div className="bg-white dark:bg-gray-800 rounded-xl max-w-4xl w-full max-h-[90vh] overflow-y-auto">
-        <div className="p-6 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between">
-          <h2 className="text-2xl font-bold text-gray-900 dark:text-white">
+      <div className="bg-white rounded-xl max-w-4xl w-full max-h-[90vh] overflow-y-auto shadow-2xl">
+        <div className="p-6 border-b border-gray-200 flex items-center justify-between">
+          <h2 className="text-2xl font-bold text-gray-900">
             รายละเอียดการนับสินค้า
           </h2>
           <button
@@ -1176,6 +1519,16 @@ function SessionDetailModal({
                     สถานะ:
                   </span>{" "}
                   <StatusBadge status={session.status} />
+                  {session.isLate && (
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-100 text-amber-700 text-xs font-medium ml-2">
+                      ⏰ ส่งล่าช้า
+                    </span>
+                  )}
+                  {session.isSupplemental && (
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-blue-100 text-blue-700 text-xs font-medium ml-2">
+                      📎 รูปเพิ่มเติม
+                    </span>
+                  )}
                 </div>
               </div>
             </div>
@@ -1186,7 +1539,7 @@ function SessionDetailModal({
               <h3 className="font-semibold text-gray-900 dark:text-white mb-4">
                 ภาพถ่าย
               </h3>
-              <div className="relative w-full h-96 bg-gray-100 dark:bg-gray-700 rounded-lg overflow-hidden">
+              <div className="relative w-full h-96 bg-white rounded-lg overflow-hidden">
                 <Image
                   src={session.imageUrl}
                   alt="Counting image"
@@ -1194,33 +1547,32 @@ function SessionDetailModal({
                   className="object-contain"
                 />
                 {watermarkData && (
-                  <div className="absolute bottom-0 left-0 right-0 bg-black/65 text-yellow-400 p-3 font-semibold text-sm">
-                    <div className="flex flex-col gap-0.5">
+                  <div className="absolute bottom-0 left-0 right-0 bg-linear-to-t from-black/80 to-transparent p-4">
+                    <div className="text-white text-sm space-y-1">
+                      {watermarkData.employeeName && (
+                        <p className="font-semibold">
+                          {watermarkData.employeeName}
+                          {watermarkData.branchName
+                            ? ` · ${watermarkData.branchName}`
+                            : ""}
+                        </p>
+                      )}
                       {watermarkData.timestamp && (
-                        <span>
-                          📅 {formatWatermarkTimestamp(watermarkData.timestamp)}
-                        </span>
+                        <p className="text-xs opacity-80">
+                          {formatWatermarkTimestamp(watermarkData.timestamp)}
+                        </p>
                       )}
                       {watermarkData.location && (
-                        <span>📍 {watermarkData.location}</span>
-                      )}
-                      {watermarkData.coordinates?.lat != null &&
-                        watermarkData.coordinates?.lng != null && (
-                          <span className="text-xs text-yellow-300">
-                            🌐 {watermarkData.coordinates.lat.toFixed(6)},{" "}
-                            {watermarkData.coordinates.lng.toFixed(6)}
-                          </span>
-                        )}
-                      {watermarkData.employeeName && (
-                        <span>
-                          👤 {watermarkData.employeeName}
-                          {watermarkData.branchName || watermarkData.employeeId
-                            ? ` (${watermarkData.branchName || watermarkData.employeeId})`
-                            : ""}
-                        </span>
+                        <p className="text-xs opacity-80 flex items-center gap-1">
+                          <MapPin className="w-3 h-3" />
+                          {watermarkData.location}
+                        </p>
                       )}
                       {watermarkData.deviceModel && (
-                        <span>📱 {watermarkData.deviceModel}</span>
+                        <p className="text-xs opacity-80 flex items-center gap-1">
+                          <Phone className="w-3 h-3" />
+                          {watermarkData.deviceModel}
+                        </p>
                       )}
                     </div>
                   </div>
@@ -1277,6 +1629,170 @@ function SessionDetailModal({
                 <p className="text-sm text-orange-800 dark:text-orange-300 bg-orange-50 dark:bg-orange-900/30 border border-orange-200 dark:border-orange-700 p-4 rounded-lg">
                   {session.errorRemark}
                 </p>
+              )}
+            </div>
+          )}
+
+          {/* Existing Override Info */}
+          {isAlreadyOverridden && session.supervisorOverride && (
+            <div className="p-4 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-700 rounded-lg">
+              <h3 className="font-semibold text-green-700 dark:text-green-400 mb-2 flex items-center gap-2">
+                <Shield className="w-4 h-4" /> Supervisor Override
+              </h3>
+              <div className="grid grid-cols-3 gap-3 text-sm">
+                <div>
+                  <span className="text-gray-500">ยอดที่ยืนยัน:</span>
+                  <span className="ml-1 font-bold text-green-700 dark:text-green-300">
+                    {session.supervisorOverride.selectedCount}
+                  </span>
+                </div>
+                <div>
+                  <span className="text-gray-500">แหล่งที่มา:</span>
+                  <span className="ml-1 font-semibold">
+                    {session.supervisorOverride.source === "ai"
+                      ? "🤖 AI"
+                      : session.supervisorOverride.source === "employee"
+                        ? "👤 พนักงาน"
+                        : "✏️ กรอกเอง"}
+                  </span>
+                </div>
+                <div>
+                  <span className="text-gray-500">โดย:</span>
+                  <span className="ml-1 font-semibold">
+                    {session.supervisorOverride.overriddenByName}
+                  </span>
+                </div>
+              </div>
+              {session.supervisorOverride.reason && (
+                <p className="mt-2 text-sm text-gray-600 dark:text-gray-400">
+                  หมายเหตุ: {session.supervisorOverride.reason}
+                </p>
+              )}
+            </div>
+          )}
+
+          {/* Supervisor Override Section */}
+          {canOverride && !isAlreadyOverridden && (
+            <div className="border border-blue-200 dark:border-blue-700 rounded-lg overflow-hidden">
+              <button
+                onClick={() => setShowOverride(!showOverride)}
+                className="w-full flex items-center justify-between p-4 bg-blue-50 dark:bg-blue-900/20 hover:bg-blue-100 dark:hover:bg-blue-900/30 transition-colors"
+              >
+                <span className="flex items-center gap-2 font-semibold text-blue-700 dark:text-blue-400">
+                  <Shield className="w-4 h-4" /> Override ยอดนับ (Supervisor)
+                </span>
+                <ChevronDown
+                  className={`w-4 h-4 text-blue-500 transition-transform ${showOverride ? "rotate-180" : ""}`}
+                />
+              </button>
+
+              {showOverride && (
+                <div className="p-4 space-y-4">
+                  {/* Source selection */}
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    <button
+                      onClick={() => setOverrideSource("ai")}
+                      className={`p-3 rounded-lg border-2 text-left transition-all ${
+                        overrideSource === "ai"
+                          ? "border-blue-500 bg-blue-50 dark:bg-blue-900/20"
+                          : "border-gray-200 dark:border-gray-600 hover:border-blue-300"
+                      }`}
+                    >
+                      <div className="text-sm text-gray-500">🤖 AI นับได้</div>
+                      <div className="text-xl font-bold text-blue-600">
+                        {session.aiCount ?? 0}
+                      </div>
+                      {overrideSource === "ai" && (
+                        <Check className="w-4 h-4 text-blue-500 mt-1" />
+                      )}
+                    </button>
+
+                    {session.userReportedCount != null && (
+                      <button
+                        onClick={() => setOverrideSource("employee")}
+                        className={`p-3 rounded-lg border-2 text-left transition-all ${
+                          overrideSource === "employee"
+                            ? "border-orange-500 bg-orange-50 dark:bg-orange-900/20"
+                            : "border-gray-200 dark:border-gray-600 hover:border-orange-300"
+                        }`}
+                      >
+                        <div className="text-sm text-gray-500">
+                          👤 พนักงานรายงาน
+                        </div>
+                        <div className="text-xl font-bold text-orange-600">
+                          {session.userReportedCount}
+                        </div>
+                        {overrideSource === "employee" && (
+                          <Check className="w-4 h-4 text-orange-500 mt-1" />
+                        )}
+                      </button>
+                    )}
+
+                    <button
+                      onClick={() => setOverrideSource("custom")}
+                      className={`p-3 rounded-lg border-2 text-left transition-all ${
+                        overrideSource === "custom"
+                          ? "border-green-500 bg-green-50 dark:bg-green-900/20"
+                          : "border-gray-200 dark:border-gray-600 hover:border-green-300"
+                      }`}
+                    >
+                      <div className="text-sm text-gray-500">✏️ กรอกเอง</div>
+                      {overrideSource === "custom" ? (
+                        <input
+                          type="number"
+                          value={customCount}
+                          onChange={(e) => setCustomCount(e.target.value)}
+                          className="mt-1 w-full px-2 py-1 border border-green-300 dark:border-green-600 rounded text-lg font-bold bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                          placeholder="จำนวน"
+                          autoFocus
+                        />
+                      ) : (
+                        <div className="text-xl font-bold text-gray-400">—</div>
+                      )}
+                      {overrideSource === "custom" && (
+                        <Check className="w-4 h-4 text-green-500 mt-1" />
+                      )}
+                    </button>
+                  </div>
+
+                  {/* Reason */}
+                  <div>
+                    <label className="block text-sm text-gray-600 dark:text-gray-400 mb-1">
+                      หมายเหตุ (ไม่บังคับ)
+                    </label>
+                    <textarea
+                      value={overrideReason}
+                      onChange={(e) => setOverrideReason(e.target.value)}
+                      rows={2}
+                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                      placeholder="เหตุผลในการ override..."
+                    />
+                  </div>
+
+                  {/* Preview & confirm */}
+                  <div className="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-700 rounded-lg">
+                    <div>
+                      <span className="text-sm text-gray-500">
+                        ยอดที่จะยืนยัน:
+                      </span>
+                      <span className="ml-2 text-2xl font-bold text-green-600">
+                        {getOverrideCount()} ชิ้น
+                      </span>
+                    </div>
+                    <button
+                      onClick={handleOverride}
+                      disabled={submitting}
+                      className="flex items-center gap-2 px-6 py-2.5 bg-green-600 hover:bg-green-700 disabled:bg-gray-400 text-white font-semibold rounded-lg transition-colors"
+                    >
+                      {submitting ? (
+                        <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                      ) : (
+                        <Check className="w-4 h-4" />
+                      )}
+                      ยืนยัน Override
+                    </button>
+                  </div>
+                </div>
               )}
             </div>
           )}

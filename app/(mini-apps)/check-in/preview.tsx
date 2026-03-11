@@ -188,6 +188,24 @@ export default function CheckInPreviewScreen() {
               </Text>
             </View>
 
+            {watermarkData.branchName && (
+              <View style={styles.infoRow}>
+                <Ionicons
+                  name="storefront-outline"
+                  size={18}
+                  color={colors.primary}
+                />
+                <Text
+                  style={[styles.infoLabel, { color: colors.textSecondary }]}
+                >
+                  สาขา:
+                </Text>
+                <Text style={[styles.infoValue, { color: colors.text }]}>
+                  {watermarkData.branchName}
+                </Text>
+              </View>
+            )}
+
             <View style={styles.infoRow}>
               <Ionicons name="time-outline" size={18} color={colors.primary} />
               <Text style={[styles.infoLabel, { color: colors.textSecondary }]}>

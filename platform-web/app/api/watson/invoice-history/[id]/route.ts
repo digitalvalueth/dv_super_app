@@ -132,7 +132,15 @@ export async function PATCH(
 
     // Update Status if provided
     if (status) {
-      await docRef.update({ status });
+      const statusUpdate: Record<string, unknown> = { status };
+      // Also persist lastExportId if provided alongside status
+      if (body.lastExportId !== undefined) {
+        statusUpdate.lastExportId = body.lastExportId;
+      }
+      await docRef.update(statusUpdate);
+    } else if (body.lastExportId !== undefined) {
+      // lastExportId provided without status change
+      await docRef.update({ lastExportId: body.lastExportId });
     }
 
     // Update bulkAcceptedItemCodes if provided

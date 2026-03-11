@@ -3,8 +3,11 @@
 import { useAuthStore } from "@/stores/auth.store";
 import { useSidebarStore } from "@/stores/sidebar.store";
 import {
+  AlertTriangle,
   BarChart3,
   Building2,
+  CalendarClock,
+  ChevronDown,
   ChevronLeft,
   ChevronRight,
   ClipboardCheck,
@@ -17,7 +20,9 @@ import {
   Mail,
   Menu,
   Package,
+  Settings,
   Shield,
+  Sparkles,
   Truck,
   Users,
   X,
@@ -26,7 +31,28 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState } from "react";
 
-const navigation = [
+// ---- Types ----
+interface NavItem {
+  name: string;
+  href: string;
+  icon: React.ElementType;
+  superAdminOnly?: boolean;
+  adminOnly?: boolean;
+  supervisorOnly?: boolean;
+  hideForSupervisor?: boolean;
+  hideForManager?: boolean;
+}
+
+interface NavGroup {
+  label: string;
+  icon: React.ElementType;
+  items: NavItem[];
+  /** If true, the group header itself has no href — just a toggle */
+  collapsible?: boolean;
+}
+
+// ---- Nav structure ----
+const standaloneItems: NavItem[] = [
   { name: "แดชบอร์ด", href: "/stock-counter/dashboard", icon: LayoutDashboard },
   {
     name: "Supervisor Dashboard",
@@ -34,64 +60,131 @@ const navigation = [
     icon: Shield,
     supervisorOnly: true,
   },
+];
+
+const navGroups: NavGroup[] = [
   {
-    name: "ผู้ใช้งาน",
-    href: "/stock-counter/dashboard/users",
+    label: "การจัดการ",
+    icon: Settings,
+    collapsible: true,
+    items: [
+      {
+        name: "บริษัท",
+        href: "/stock-counter/dashboard/companies",
+        icon: Factory,
+        superAdminOnly: true,
+      },
+      {
+        name: "สาขา",
+        href: "/stock-counter/dashboard/branches",
+        icon: Building2,
+        hideForSupervisor: true,
+      },
+      {
+        name: "Manager",
+        href: "/stock-counter/dashboard/managers",
+        icon: Shield,
+        adminOnly: true,
+      },
+      {
+        name: "ผู้ใช้งาน",
+        href: "/stock-counter/dashboard/users",
+        icon: Users,
+        hideForSupervisor: true,
+        hideForManager: true,
+      },
+      {
+        name: "เชิญผู้ใช้",
+        href: "/stock-counter/dashboard/invitations",
+        icon: Mail,
+        hideForSupervisor: true,
+        hideForManager: true,
+      },
+    ],
+  },
+  {
+    label: "นับสต็อก",
+    icon: Package,
+    collapsible: true,
+    items: [
+      {
+        name: "สินค้า",
+        href: "/stock-counter/dashboard/products",
+        icon: Package,
+      },
+      {
+        name: "รอบการนับ",
+        href: "/stock-counter/dashboard/counting-periods",
+        icon: CalendarClock,
+      },
+      {
+        name: "ข้อมูลการนับ",
+        href: "/stock-counter/dashboard/counting",
+        icon: ClipboardList,
+      },
+      {
+        name: "สรุปการนับ",
+        href: "/stock-counter/dashboard/counting-summary",
+        icon: ClipboardCheck,
+      },
+    ],
+  },
+  {
+    label: "พนักงาน",
     icon: Users,
-    hideForSupervisor: true,
-    hideForManager: true,
+    collapsible: true,
+    items: [
+      {
+        name: "เช็คชื่อพนักงาน",
+        href: "/stock-counter/dashboard/attendance",
+        icon: Clock,
+      },
+      {
+        name: "แจ้งเตือนขาดงาน",
+        href: "/stock-counter/dashboard/alerts",
+        icon: AlertTriangle,
+      },
+      {
+        name: "ค่าคอมมิชชั่น",
+        href: "/stock-counter/dashboard/commission",
+        icon: DollarSign,
+        hideForSupervisor: true,
+      },
+    ],
   },
   {
-    name: "บริษัท",
-    href: "/stock-counter/dashboard/companies",
-    icon: Factory,
-    superAdminOnly: true,
+    label: "โลจิสติกส์",
+    icon: Truck,
+    collapsible: true,
+    items: [
+      {
+        name: "รับสินค้า",
+        href: "/stock-counter/dashboard/delivery",
+        icon: Truck,
+      },
+    ],
   },
   {
-    name: "สาขา",
-    href: "/stock-counter/dashboard/branches",
-    icon: Building2,
-    hideForSupervisor: true,
-  },
-  {
-    name: "Manager",
-    href: "/stock-counter/dashboard/managers",
-    icon: Shield,
-    adminOnly: true,
-  },
-  { name: "สินค้า", href: "/stock-counter/dashboard/products", icon: Package },
-  {
-    name: "ข้อมูลการนับ",
-    href: "/stock-counter/dashboard/counting",
-    icon: ClipboardList,
-  },
-  {
-    name: "สรุปการนับ",
-    href: "/stock-counter/dashboard/counting-summary",
-    icon: ClipboardCheck,
-  },
-  {
-    name: "เช็คชื่อพนักงาน",
-    href: "/stock-counter/dashboard/attendance",
-    icon: Clock,
-  },
-  { name: "รับสินค้า", href: "/stock-counter/dashboard/delivery", icon: Truck },
-  {
-    name: "ค่าคอมมิชชั่น",
-    href: "/stock-counter/dashboard/commission",
-    icon: DollarSign,
-    hideForSupervisor: true,
-  },
-  { name: "รายงาน", href: "/stock-counter/dashboard/reports", icon: BarChart3 },
-  {
-    name: "เชิญผู้ใช้",
-    href: "/stock-counter/dashboard/invitations",
-    icon: Mail,
-    hideForSupervisor: true,
-    hideForManager: true,
+    label: "รายงาน & ระบบ",
+    icon: BarChart3,
+    collapsible: true,
+    items: [
+      {
+        name: "รายงาน",
+        href: "/stock-counter/dashboard/reports",
+        icon: BarChart3,
+      },
+      {
+        name: "AI Prompts",
+        href: "/stock-counter/dashboard/prompts",
+        icon: Sparkles,
+        adminOnly: true,
+      },
+    ],
   },
 ];
 
+// ---- Component ----
 export function StockCounterSidebar() {
   const pathname = usePathname();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
@@ -104,14 +197,44 @@ export function StockCounterSidebar() {
   const isSupervisor = userData?.role === "supervisor";
   const isManager = userData?.role === "manager";
 
-  const filteredNavigation = navigation.filter((item) => {
+  function canSeeItem(item: NavItem): boolean {
     if (item.superAdminOnly) return isSuperAdmin;
     if (item.adminOnly) return isAdminOrAbove;
     if (item.supervisorOnly) return isSupervisor;
     if (item.hideForSupervisor && isSupervisor) return false;
     if (item.hideForManager && isManager) return false;
     return true;
+  }
+
+  // Determine which groups are "active" (contain the current page)
+  // and set initial open state accordingly
+  const initialOpen: Record<string, boolean> = {};
+  navGroups.forEach((group) => {
+    const hasActive = group.items
+      .filter(canSeeItem)
+      .some(
+        (item) =>
+          pathname === item.href ||
+          (item.href !== "/stock-counter/dashboard" &&
+            pathname.startsWith(item.href)),
+      );
+    initialOpen[group.label] = hasActive;
   });
+
+  const [openGroups, setOpenGroups] = useState<Record<string, boolean>>(
+    () => initialOpen,
+  );
+
+  function toggleGroup(label: string) {
+    setOpenGroups((prev) => ({ ...prev, [label]: !prev[label] }));
+  }
+
+  function isItemActive(href: string) {
+    return (
+      pathname === href ||
+      (href !== "/stock-counter/dashboard" && pathname.startsWith(href + "/"))
+    );
+  }
 
   return (
     <>
@@ -139,14 +262,10 @@ export function StockCounterSidebar() {
       <aside
         className={`
           fixed lg:static inset-y-0 left-0 z-40
-          ${collapsed ? "w-18" : "w-64"} 
-          bg-white dark:bg-gray-800 border-r border-gray-200 dark:border-gray-700 
+          ${collapsed ? "w-18" : "w-64"}
+          bg-white dark:bg-gray-800 border-r border-gray-200 dark:border-gray-700
           transition-all duration-300 ease-in-out
-          ${
-            isMobileMenuOpen
-              ? "translate-x-0"
-              : "-translate-x-full lg:translate-x-0"
-          }
+          ${isMobileMenuOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0"}
         `}
       >
         <div className="h-full flex flex-col">
@@ -173,43 +292,127 @@ export function StockCounterSidebar() {
           </div>
 
           <nav
-            className={`flex-1 ${collapsed ? "p-2" : "p-4"} space-y-1 overflow-y-auto`}
+            className={`flex-1 ${collapsed ? "p-2" : "p-4"} space-y-0.5 overflow-y-auto`}
           >
             {/* Back to Platform */}
             <Link
               href="/"
-              className={`flex items-center gap-3 ${collapsed ? "justify-center px-2" : "px-4"} py-3 rounded-lg text-sm font-medium text-gray-500 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700 mb-2 border border-dashed border-gray-300 dark:border-gray-600`}
+              className={`flex items-center gap-3 ${collapsed ? "justify-center px-2" : "px-4"} py-2.5 rounded-lg text-sm font-medium text-gray-500 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700 mb-3 border border-dashed border-gray-300 dark:border-gray-600`}
               title={collapsed ? "กลับหน้าเลือก Module" : undefined}
             >
               <Home className="w-5 h-5 shrink-0" />
               {!collapsed && "กลับหน้าเลือก Module"}
             </Link>
 
-            {filteredNavigation.map((item) => {
-              const isActive =
-                pathname === item.href ||
-                (item.href !== "/stock-counter/dashboard" &&
-                  pathname.startsWith(item.href));
+            {/* Standalone items (แดชบอร์ด, Supervisor) */}
+            {standaloneItems.filter(canSeeItem).map((item) => {
               const Icon = item.icon;
-
+              const active = isItemActive(item.href);
               return (
                 <Link
                   key={item.name}
                   href={item.href}
                   onClick={() => setIsMobileMenuOpen(false)}
                   title={collapsed ? item.name : undefined}
-                  className={`
-                    flex items-center gap-3 ${collapsed ? "justify-center px-2" : "px-4"} py-3 rounded-lg text-sm font-medium transition-colors
-                    ${
-                      isActive
-                        ? "bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400"
-                        : "text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700"
-                    }
-                  `}
+                  className={`flex items-center gap-3 ${collapsed ? "justify-center px-2" : "px-4"} py-2.5 rounded-lg text-sm font-medium transition-colors ${
+                    active
+                      ? "bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400"
+                      : "text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700"
+                  }`}
                 >
                   <Icon className="w-5 h-5 shrink-0" />
                   {!collapsed && item.name}
                 </Link>
+              );
+            })}
+
+            {/* Divider before groups */}
+            {!collapsed && (
+              <div className="my-2 border-t border-gray-100 dark:border-gray-700" />
+            )}
+
+            {/* Grouped items */}
+            {navGroups.map((group) => {
+              const visibleItems = group.items.filter(canSeeItem);
+              if (visibleItems.length === 0) return null;
+
+              const GroupIcon = group.icon;
+              const isOpen = openGroups[group.label] ?? false;
+              const groupHasActive = visibleItems.some((item) =>
+                isItemActive(item.href),
+              );
+
+              // Collapsed mode: just show icons of each item directly
+              if (collapsed) {
+                return (
+                  <div key={group.label} className="space-y-0.5">
+                    {visibleItems.map((item) => {
+                      const Icon = item.icon;
+                      const active = isItemActive(item.href);
+                      return (
+                        <Link
+                          key={item.name}
+                          href={item.href}
+                          onClick={() => setIsMobileMenuOpen(false)}
+                          title={item.name}
+                          className={`flex items-center justify-center px-2 py-2.5 rounded-lg text-sm font-medium transition-colors ${
+                            active
+                              ? "bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400"
+                              : "text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700"
+                          }`}
+                        >
+                          <Icon className="w-5 h-5 shrink-0" />
+                        </Link>
+                      );
+                    })}
+                  </div>
+                );
+              }
+
+              // Expanded mode: accordion group
+              return (
+                <div key={group.label} className="space-y-0.5">
+                  {/* Group header / toggle */}
+                  <button
+                    onClick={() => toggleGroup(group.label)}
+                    className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-lg text-sm font-semibold transition-colors ${
+                      groupHasActive
+                        ? "text-blue-700 dark:text-blue-400"
+                        : "text-gray-500 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700"
+                    }`}
+                  >
+                    <GroupIcon className="w-4 h-4 shrink-0" />
+                    <span className="flex-1 text-left">{group.label}</span>
+                    <ChevronDown
+                      className={`w-4 h-4 shrink-0 transition-transform duration-200 ${isOpen ? "rotate-180" : ""}`}
+                    />
+                  </button>
+
+                  {/* Group items */}
+                  {isOpen && (
+                    <div className="ml-3 pl-3 border-l border-gray-200 dark:border-gray-700 space-y-0.5">
+                      {visibleItems.map((item) => {
+                        const Icon = item.icon;
+                        const active = isItemActive(item.href);
+                        return (
+                          <Link
+                            key={item.name}
+                            href={item.href}
+                            onClick={() => setIsMobileMenuOpen(false)}
+                            className={`flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
+                              active
+                                ? "bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400"
+                                : "text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700 hover:text-gray-900 dark:hover:text-gray-200"
+                            }`}
+                          >
+                            <Icon className="w-4 h-4 shrink-0" />
+                            {item.name}
+                          </Link>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
               );
             })}
           </nav>

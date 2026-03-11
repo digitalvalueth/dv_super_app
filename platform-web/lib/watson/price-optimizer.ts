@@ -10,6 +10,7 @@ export interface PriceOption {
   startDate?: Date; // วันที่เริ่มใช้ราคา
   priceIncVat?: number; // Comm Price IncV (ราคาคอม รวม VAT)
   stdPrice?: number; // Standard Price IncV (ราคาเต็ม)
+  invoice62IncV?: number; // Invoice 62% IncV (ราคาใบแจ้งหนี้ รวม VAT)
 }
 
 export interface PriceAllocation {
@@ -19,6 +20,7 @@ export interface PriceAllocation {
   remark?: string; // Promotion remark จาก Price List
   priceIncVat?: number; // Comm Price IncV (ราคาคอม รวม VAT)
   stdPrice?: number; // Standard Price IncV (ราคาเต็ม)
+  invoice62IncV?: number; // Invoice 62% IncV (ราคาใบแจ้งหนี้ รวม VAT)
 }
 
 export interface CalculationResult {
@@ -36,7 +38,7 @@ export interface OptimizationOptions {
   confidenceThreshold?: number;
   /** ห้ามให้ยอดรวมเกิน rawAmt (default: false) */
   notExceedRawAmt?: boolean;
-  /** จำนวน qty สูงสุดที่จะคำนวณ (default: 50) */
+  /** จำนวน qty สูงสุดที่จะคำนวณ (default: 500) */
   maxQty?: number;
   /** จำนวนราคาสูงสุดที่จะคำนวณ (default: 10) */
   maxPrices?: number;
@@ -56,10 +58,10 @@ export function findBestPriceCombination(
   options: OptimizationOptions = {},
 ): CalculationResult {
   const {
-    confidenceThreshold = 0.9,
+    confidenceThreshold: _confidenceThreshold = 0.9,
     notExceedRawAmt = false,
-    maxQty = 50,
-    maxPrices = 10,
+    maxQty = 500,
+    maxPrices = 100,
   } = options;
 
   // Handle edge cases
@@ -81,9 +83,30 @@ export function findBestPriceCombination(
   const n = limitedPrices.length;
 
   // Best result tracker
-  let bestDiff = Infinity;
+  let bestDiff = Infinity; // surplus (sum-rawAmt) if passing; shortfall (rawAmt-sum) if failing
   let bestSum = 0;
   let bestAllocation: number[] = [];
+
+  /**
+   * Direction-aware comparison:
+   * 1. A passing solution (sum >= rawAmt) always beats a failing one
+   * 2. Among passing solutions, prefer smallest surplus
+   * 3. Among failing solutions, prefer smallest shortfall (fallback only)
+   */
+  function isBetter(candidateSum: number): boolean {
+    const candidatePasses = candidateSum >= rawAmt;
+    const bestPasses = bestSum >= rawAmt;
+    if (candidatePasses && !bestPasses) return true; // First passing solution
+    if (!candidatePasses && bestPasses) return false; // Don't downgrade
+    if (candidatePasses) return candidateSum - rawAmt < bestDiff; // Smaller surplus
+    return rawAmt - candidateSum < bestDiff; // Smaller shortfall
+  }
+
+  function setBest(sum: number, alloc: number[]): void {
+    bestDiff = sum >= rawAmt ? sum - rawAmt : rawAmt - sum;
+    bestSum = sum;
+    bestAllocation = alloc;
+  }
 
   // Current allocation
   const x: number[] = new Array(n).fill(0);
@@ -97,14 +120,8 @@ export function findBestPriceCombination(
       return;
     }
 
-    // Early pruning: ถ้า diff ปัจจุบันดีกว่า best แล้ว และเหลือ qty = 0
     if (remainQty === 0) {
-      const diff = Math.abs(currentSum - rawAmt);
-      if (diff < bestDiff) {
-        bestDiff = diff;
-        bestSum = currentSum;
-        bestAllocation = [...x];
-      }
+      if (isBetter(currentSum)) setBest(currentSum, [...x]);
       return;
     }
 
@@ -115,12 +132,10 @@ export function findBestPriceCombination(
         const lastPrice = limitedPrices[n - 1].price;
         const sum = currentSum + lastPrice * remainQty;
         if (!notExceedRawAmt || sum <= rawAmt) {
-          const diff = Math.abs(sum - rawAmt);
-          if (diff < bestDiff) {
-            bestDiff = diff;
-            bestSum = sum;
-            bestAllocation = [...x];
-            bestAllocation[n - 1] += remainQty;
+          if (isBetter(sum)) {
+            const alloc = [...x];
+            alloc[n - 1] += remainQty;
+            setBest(sum, alloc);
           }
         }
       }
@@ -142,8 +157,8 @@ export function findBestPriceCombination(
       x[idx] = i;
       dfs(idx + 1, remainQty - i, currentSum + limitedPrices[idx].price * i);
 
-      // Early exit if found perfect match
-      if (bestDiff < 0.01) {
+      // Early exit: found a passing solution with near-zero surplus
+      if (bestSum >= rawAmt && bestDiff < 0.01) {
         return;
       }
     }
@@ -166,6 +181,7 @@ export function findBestPriceCombination(
         remark: limitedPrices[i].remark,
         priceIncVat: limitedPrices[i].priceIncVat,
         stdPrice: limitedPrices[i].stdPrice,
+        invoice62IncV: limitedPrices[i].invoice62IncV,
       });
       actualTotalQty += bestAllocation[i];
     }
@@ -173,8 +189,8 @@ export function findBestPriceCombination(
 
   // Calculate confidence
   const diffPercent = rawAmt > 0 ? (bestDiff / rawAmt) * 100 : 100;
-  const tolerance = rawAmt * (1 - confidenceThreshold);
-  const isAcceptable = bestDiff <= tolerance;
+  // Pass when calcAmt >= rawAmt (surplus is OK, shortfall is not)
+  const isAcceptable = bestSum >= rawAmt;
 
   // Confidence: 100% if diff = 0, decreases as diff increases
   const confidence = Math.max(0, Math.min(100, 100 - diffPercent));

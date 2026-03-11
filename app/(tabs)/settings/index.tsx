@@ -1,6 +1,8 @@
 import { db } from "@/config/firebase";
-import { signOut } from "@/services/auth.service";
+import { useTranslation } from "@/constants/i18n";
+import { deleteAccount, signOut } from "@/services/auth.service";
 import { useAuthStore } from "@/stores/auth.store";
+import { Language, useLanguageStore } from "@/stores/language.store";
 import { ThemeMode, useTheme, useThemeStore } from "@/stores/theme.store";
 import { Ionicons } from "@expo/vector-icons";
 import { Image } from "expo-image";
@@ -46,6 +48,8 @@ export default function ProfileScreen() {
   const logout = useAuthStore((state) => state.logout);
   const { colors, isDark, mode } = useTheme();
   const setMode = useThemeStore((state) => state.setMode);
+  const { language, setLanguage } = useLanguageStore();
+  const t = useTranslation();
   const [unreadCount, setUnreadCount] = useState(0);
   const [companyName, setCompanyName] = useState<string>("");
   const [branchName, setBranchName] = useState<string>("");
@@ -114,10 +118,10 @@ export default function ProfileScreen() {
   );
 
   const handleLogout = () => {
-    Alert.alert("ออกจากระบบ", "คุณต้องการออกจากระบบหรือไม่?", [
-      { text: "ยกเลิก", style: "cancel" },
+    Alert.alert(t.settings.logoutTitle, t.settings.logoutMessage, [
+      { text: t.cancel, style: "cancel" },
       {
-        text: "ออกจากระบบ",
+        text: t.settings.logout,
         style: "destructive",
         onPress: async () => {
           try {
@@ -125,7 +129,40 @@ export default function ProfileScreen() {
             logout();
             router.replace("/(login)");
           } catch {
-            Alert.alert("เกิดข้อผิดพลาด", "ไม่สามารถออกจากระบบได้");
+            Alert.alert(t.error, t.settings.logoutError);
+          }
+        },
+      },
+    ]);
+  };
+
+  const handleDeleteAccount = () => {
+    Alert.alert(t.settings.deleteTitle, t.settings.deleteMessage, [
+      { text: t.cancel, style: "cancel" },
+      {
+        text: t.settings.deleteAccount,
+        style: "destructive",
+        onPress: async () => {
+          try {
+            await deleteAccount();
+            logout();
+            router.replace("/(login)");
+          } catch (err: any) {
+            if (err?.code === "auth/requires-recent-login") {
+              Alert.alert(t.settings.reloginTitle, t.settings.reloginMessage, [
+                { text: t.cancel, style: "cancel" },
+                {
+                  text: t.settings.logout,
+                  onPress: async () => {
+                    await signOut();
+                    logout();
+                    router.replace("/(login)");
+                  },
+                },
+              ]);
+            } else {
+              Alert.alert(t.error, t.settings.deleteError);
+            }
           }
         },
       },
@@ -141,18 +178,23 @@ export default function ProfileScreen() {
     icon: keyof typeof Ionicons.glyphMap;
     label: string;
   }[] = [
-    { mode: "light", icon: "sunny", label: "สว่าง" },
-    { mode: "dark", icon: "moon", label: "มืด" },
-    { mode: "system", icon: "phone-portrait", label: "ตามระบบ" },
+    { mode: "light", icon: "sunny", label: t.settings.light },
+    { mode: "dark", icon: "moon", label: t.settings.dark },
+    { mode: "system", icon: "phone-portrait", label: t.settings.system },
+  ];
+
+  const languageOptions: { lang: Language; label: string }[] = [
+    { lang: "th", label: t.settings.thai },
+    { lang: "en", label: t.settings.english },
   ];
 
   const settingsSections: { title: string; items: SettingItem[] }[] = [
     {
-      title: "ธีม",
+      title: t.settings.theme,
       items: [
         {
           icon: "color-palette",
-          label: "โหมดสี",
+          label: t.settings.colorMode,
           component: (
             <View style={styles.themeSelector}>
               {themeOptions.map((option) => (
@@ -198,17 +240,57 @@ export default function ProfileScreen() {
             </View>
           ),
         },
+        {
+          icon: "language",
+          label: t.settings.languageLabel,
+          component: (
+            <View style={styles.themeSelector}>
+              {languageOptions.map((option) => (
+                <TouchableOpacity
+                  key={option.lang}
+                  style={[
+                    styles.themeOption,
+                    {
+                      backgroundColor: colors.card,
+                      borderColor: colors.border,
+                    },
+                    language === option.lang && {
+                      borderColor: colors.primary,
+                      backgroundColor: colors.primary + "20",
+                    },
+                  ]}
+                  onPress={() => setLanguage(option.lang)}
+                >
+                  <Text
+                    style={[
+                      styles.themeOptionText,
+                      {
+                        color:
+                          language === option.lang
+                            ? colors.primary
+                            : colors.textSecondary,
+                        fontWeight: language === option.lang ? "700" : "400",
+                      },
+                    ]}
+                  >
+                    {option.label}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          ),
+        },
       ],
     },
     // Show admin section only for admin users
     ...(user?.role === "admin" || user?.role === "super_admin"
       ? [
           {
-            title: "การจัดการ",
+            title: t.settings.management,
             items: [
               {
                 icon: "people",
-                label: "คำขอเข้าใช้งาน",
+                label: t.settings.accessRequests,
                 onPress: () => router.push("/settings/access-requests" as any),
               },
             ] as SettingItem[],
@@ -216,37 +298,42 @@ export default function ProfileScreen() {
         ]
       : []),
     {
-      title: "บัญชี",
+      title: t.settings.account,
       items: [
         {
           icon: "mail",
-          label: "กล่องข้อความ",
+          label: t.settings.inbox,
           badge: unreadCount,
           onPress: () => router.push("/(tabs)/settings/inbox"),
         },
         {
           icon: "person",
-          label: "แก้ไขโปรไฟล์",
-          onPress: () => Alert.alert("Coming Soon", "ฟีเจอร์นี้กำลังพัฒนา"),
+          label: t.settings.editProfile,
+          onPress: () => Alert.alert(t.comingSoon, t.comingSoon),
         },
         {
           icon: "time",
-          label: "ประวัติการเข้าใช้งาน",
+          label: t.settings.loginHistory,
           onPress: () => router.push("/(tabs)/settings/login-history"),
+        },
+        {
+          icon: "trash",
+          label: t.settings.deleteAccount,
+          onPress: handleDeleteAccount,
         },
       ],
     },
     {
-      title: "ทั่วไป",
+      title: t.settings.general,
       items: [
         {
           icon: "help-circle",
-          label: "ช่วยเหลือ",
-          onPress: () => Alert.alert("Coming Soon", "ฟีเจอร์นี้กำลังพัฒนา"),
+          label: t.settings.help,
+          onPress: () => Alert.alert(t.comingSoon, t.comingSoon),
         },
         {
           icon: "information-circle",
-          label: "เกี่ยวกับ",
+          label: t.settings.about,
           onPress: () =>
             Alert.alert("FITT BSA", "Version 1.0.0\n\n© 2026 FITT BSA"),
         },
@@ -272,7 +359,7 @@ export default function ProfileScreen() {
         ]}
       >
         <Text style={[styles.headerTitle, { color: colors.text }]}>
-          โปรไฟล์
+          {t.settings.title}
         </Text>
       </View>
       <ScrollView
@@ -320,15 +407,15 @@ export default function ProfileScreen() {
             />
             <Text style={[styles.roleText, { color: colors.primary }]}>
               {user?.role === "employee"
-                ? "พนักงาน"
+                ? t.settings.roles.employee
                 : user?.role === "admin"
-                  ? "เจ้าของบริษัท"
+                  ? t.settings.roles.admin
                   : user?.role === "super_admin"
-                    ? "ผู้ดูแลระบบ"
+                    ? t.settings.roles.super_admin
                     : user?.role === "supervisor"
-                      ? "หัวหน้างาน"
+                      ? t.settings.roles.supervisor
                       : user?.role === "manager"
-                        ? "ผู้จัดการสาขา"
+                        ? t.settings.roles.manager
                         : user?.role}
             </Text>
           </View>

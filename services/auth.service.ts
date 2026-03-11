@@ -1,17 +1,30 @@
 import { auth, db } from "@/config/firebase";
 import { User } from "@/types";
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import { GoogleSignin } from "@react-native-google-signin/google-signin";
 import * as Device from "expo-device";
 import * as Location from "expo-location";
 import * as WebBrowser from "expo-web-browser";
 import {
+  deleteUser,
   signOut as firebaseSignOut,
   User as FirebaseUser,
   GoogleAuthProvider,
   onAuthStateChanged,
   signInWithCredential,
 } from "firebase/auth";
-import { doc, getDoc, setDoc, Timestamp } from "firebase/firestore";
+import {
+  collection,
+  deleteDoc,
+  doc,
+  getDoc,
+  getDocs,
+  query,
+  setDoc,
+  Timestamp,
+  where,
+  writeBatch,
+} from "firebase/firestore";
 
 // Configure WebBrowser for better UX
 WebBrowser.maybeCompleteAuthSession();
@@ -212,6 +225,110 @@ const logLoginActivity = async (userId: string): Promise<void> => {
     console.error("⚠️ Error logging login activity:", error);
     // Don't throw error, just log it - login should succeed even if logging fails
   }
+};
+
+/**
+ * Delete the current user's account permanently.
+ * Removes ALL personal data: Firestore docs/subcollections, local AsyncStorage,
+ * and finally the Firebase Auth account.
+ * Throws auth/requires-recent-login if the session is too old —
+ * caller should sign the user out, have them sign back in, then retry.
+ */
+export const deleteAccount = async (): Promise<void> => {
+  const firebaseUser = auth.currentUser;
+  if (!firebaseUser) throw new Error("No authenticated user");
+
+  const uid = firebaseUser.uid;
+
+  // Helper: delete all docs returned by a query using batched writes
+  const deleteQueryResults = async (q: ReturnType<typeof query>) => {
+    const snap = await getDocs(q);
+    if (snap.empty) return;
+    const batch = writeBatch(db);
+    snap.docs.forEach((d) => batch.delete(d.ref));
+    await batch.commit();
+  };
+
+  // Helper: delete all docs in a Firestore subcollection
+  const deleteSubcollection = async (path: string) => {
+    const snap = await getDocs(collection(db, path));
+    if (snap.empty) return;
+    const batch = writeBatch(db);
+    snap.docs.forEach((d) => batch.delete(d.ref));
+    await batch.commit();
+  };
+
+  // 1. Delete Firestore subcollections under users/{uid}
+  try {
+    await deleteSubcollection(`users/${uid}/countingHistory`);
+  } catch (err) {
+    console.warn("⚠️ countingHistory:", err);
+  }
+  try {
+    await deleteSubcollection(`users/${uid}/login_logs`);
+  } catch (err) {
+    console.warn("⚠️ login_logs:", err);
+  }
+
+  // 2. Delete users/{uid} document
+  try {
+    await deleteDoc(doc(db, "users", uid));
+  } catch (err) {
+    console.warn("⚠️ users doc:", err);
+  }
+
+  // 3. Delete access_requests/{uid}
+  try {
+    await deleteDoc(doc(db, "access_requests", uid));
+  } catch (err) {
+    console.warn("⚠️ access_requests doc:", err);
+  }
+
+  // 4. Delete notifications where userId == uid
+  try {
+    await deleteQueryResults(
+      query(collection(db, "notifications"), where("userId", "==", uid)),
+    );
+  } catch (err) {
+    console.warn("⚠️ notifications:", err);
+  }
+
+  // 5. Delete checkIns where userId == uid
+  try {
+    await deleteQueryResults(
+      query(collection(db, "checkIns"), where("userId", "==", uid)),
+    );
+  } catch (err) {
+    console.warn("⚠️ checkIns:", err);
+  }
+
+  // 6. Clear all local AsyncStorage data for this user
+  try {
+    const allKeys = await AsyncStorage.getAllKeys();
+    const userKeys = allKeys.filter(
+      (k) =>
+        k.includes(uid) ||
+        k.startsWith("cache_") ||
+        k === "onboarding_completed" ||
+        k === "device_id",
+    );
+    if (userKeys.length > 0) {
+      await AsyncStorage.multiRemove(userKeys);
+    }
+  } catch (err) {
+    console.warn("⚠️ AsyncStorage clear:", err);
+  }
+
+  // 7. Revoke Google OAuth access so the account picker won't auto-reconnect
+  try {
+    await GoogleSignin.revokeAccess();
+    await GoogleSignin.signOut();
+  } catch (err) {
+    console.warn("⚠️ Google revoke:", err);
+  }
+
+  // 8. Delete Firebase Auth account — may throw auth/requires-recent-login
+  await deleteUser(firebaseUser);
 };
 
 /**

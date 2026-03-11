@@ -1,4 +1,9 @@
 import { trackAppUsage } from "@/services/app-usage.service";
+import {
+  canUploadPhoto,
+  getCurrentPeriod,
+  getPeriodLabel,
+} from "@/services/counting-period.service";
 import { useAuthStore } from "@/stores/auth.store";
 import { useTheme } from "@/stores/theme.store";
 import { Ionicons } from "@expo/vector-icons";
@@ -32,13 +37,17 @@ const TABS = [
   { key: "inbox" as TabKey, label: "Inbox", icon: "mail-outline", badge: 0 },
 ];
 
-// Context สำหรับแชร์ viewMode
+// Context สำหรับแชร์ viewMode + upload status
 const ViewModeContext = createContext<{
   viewMode: ViewMode;
   setViewMode: (mode: ViewMode) => void;
+  uploadStatus: "open" | "locked" | "grace" | "closed" | null;
+  periodMessage: string;
 }>({
   viewMode: "grid",
   setViewMode: () => {},
+  uploadStatus: null,
+  periodMessage: "",
 });
 
 export const useViewMode = () => useContext(ViewModeContext);
@@ -50,6 +59,12 @@ export default function StockCounterIndex() {
   const [activeTab, setActiveTab] = useState<TabKey>("products");
   const [viewMode, setViewMode] = useState<ViewMode>("grid");
   const [showMenu, setShowMenu] = useState(false);
+  // Period banner state
+  const [periodLabel, setPeriodLabel] = useState<string | null>(null);
+  const [uploadStatus, setUploadStatus] = useState<
+    "open" | "locked" | "grace" | "closed" | null
+  >(null);
+  const [periodMessage, setPeriodMessage] = useState<string>("");
   const scrollViewRef = useRef<ScrollView>(null);
   const scrollX = useRef(new Animated.Value(0)).current;
   const hasInitializedTab = useRef(false);
@@ -60,6 +75,26 @@ export default function StockCounterIndex() {
   useEffect(() => {
     trackAppUsage("stock-counter", user?.uid);
   }, [user?.uid]);
+
+  // Fetch current counting period status
+  useEffect(() => {
+    async function checkPeriod() {
+      if (!user?.companyId) return;
+      try {
+        const result = await canUploadPhoto(user.companyId);
+        setUploadStatus(result.status);
+        setPeriodMessage(result.message);
+
+        const period = await getCurrentPeriod(user.companyId);
+        if (period) {
+          setPeriodLabel(getPeriodLabel(period));
+        }
+      } catch {
+        // ไม่มี period ก็ผ่านไปได้
+      }
+    }
+    checkPeriod();
+  }, [user?.companyId]);
 
   const handleTabPress = (tab: TabKey, index: number) => {
     setActiveTab(tab);
@@ -178,7 +213,9 @@ export default function StockCounterIndex() {
   }, [tab]);
 
   return (
-    <ViewModeContext.Provider value={{ viewMode, setViewMode }}>
+    <ViewModeContext.Provider
+      value={{ viewMode, setViewMode, uploadStatus, periodMessage }}
+    >
       <SafeAreaView
         style={[styles.container, { backgroundColor: colors.card }]}
         edges={["top"]}
@@ -314,6 +351,78 @@ export default function StockCounterIndex() {
               )}
             </TouchableOpacity>
           </Animated.View>
+        )}
+
+        {/* Period Status Banner */}
+        {uploadStatus !== null && (
+          <View
+            style={[
+              styles.periodBanner,
+              uploadStatus === "locked"
+                ? { backgroundColor: "#FEF2F2", borderColor: "#FECACA" }
+                : uploadStatus === "closed"
+                  ? { backgroundColor: "#F3F4F6", borderColor: "#E5E7EB" }
+                  : uploadStatus === "grace"
+                    ? { backgroundColor: "#FFFBEB", borderColor: "#FDE68A" }
+                    : { backgroundColor: "#F0FDF4", borderColor: "#BBF7D0" },
+            ]}
+          >
+            <View style={styles.periodBannerLeft}>
+              <Text style={styles.periodBannerIcon}>
+                {uploadStatus === "locked"
+                  ? "🔒"
+                  : uploadStatus === "closed"
+                    ? "❌"
+                    : uploadStatus === "grace"
+                      ? "⏰"
+                      : "📅"}
+              </Text>
+              <View>
+                {periodLabel && (
+                  <Text
+                    style={[
+                      styles.periodBannerLabel,
+                      {
+                        color:
+                          uploadStatus === "locked"
+                            ? "#991B1B"
+                            : uploadStatus === "closed"
+                              ? "#374151"
+                              : uploadStatus === "grace"
+                                ? "#92400E"
+                                : "#14532D",
+                      },
+                    ]}
+                  >
+                    รอบปัจจุบัน: {periodLabel}
+                  </Text>
+                )}
+                {periodMessage ? (
+                  <Text
+                    style={[
+                      styles.periodBannerSub,
+                      {
+                        color:
+                          uploadStatus === "locked"
+                            ? "#B91C1C"
+                            : uploadStatus === "closed"
+                              ? "#6B7280"
+                              : uploadStatus === "grace"
+                                ? "#B45309"
+                                : "#166534",
+                      },
+                    ]}
+                  >
+                    {periodMessage}
+                  </Text>
+                ) : (
+                  <Text style={[styles.periodBannerSub, { color: "#166534" }]}>
+                    เปิดรับรูปภาพ
+                  </Text>
+                )}
+              </View>
+            </View>
+          </View>
         )}
 
         {/* Segment Control */}
@@ -480,5 +589,30 @@ const styles = StyleSheet.create({
   },
   dropdownDivider: {
     height: 1,
+  },
+  periodBanner: {
+    marginHorizontal: 12,
+    marginTop: 8,
+    marginBottom: 2,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 10,
+    borderWidth: 1,
+  },
+  periodBannerLeft: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+  },
+  periodBannerIcon: {
+    fontSize: 20,
+  },
+  periodBannerLabel: {
+    fontSize: 12,
+    fontWeight: "600",
+  },
+  periodBannerSub: {
+    fontSize: 11,
+    marginTop: 1,
   },
 });

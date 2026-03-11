@@ -14,7 +14,7 @@ import {
   Users,
 } from "lucide-react";
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   Bar,
   BarChart,
@@ -27,8 +27,120 @@ import {
 
 export default function ReportsPage() {
   const { userData } = useAuthStore();
-  const [report, setReport] = useState<DiscrepancyReport | null>(null);
+  const [allSessions, setAllSessions] = useState<CountingSession[]>([]);
   const [loading, setLoading] = useState(true);
+  const [filterMonth, setFilterMonth] = useState<number>(
+    new Date().getMonth() + 1,
+  );
+  const [filterYear, setFilterYear] = useState<number>(
+    new Date().getFullYear(),
+  );
+  const [filterHalf, setFilterHalf] = useState<"all" | "1" | "2">(
+    new Date().getDate() <= 15 ? "1" : "2",
+  );
+
+  const report = useMemo((): DiscrepancyReport | null => {
+    const sessions = allSessions.filter((s) => {
+      if (!s.createdAt) return false;
+      const d = s.createdAt;
+      const matchesMonth =
+        d.getMonth() + 1 === filterMonth && d.getFullYear() === filterYear;
+      const matchesHalf =
+        filterHalf === "all" ||
+        (filterHalf === "1" ? d.getDate() <= 15 : d.getDate() >= 16);
+      return matchesMonth && matchesHalf;
+    });
+    if (sessions.length === 0) return null;
+
+    const totalSessions = sessions.length;
+    const totalDiscrepancy = sessions.reduce(
+      (sum, s) => sum + (s.discrepancy ?? 0),
+      0,
+    );
+    const averageDiscrepancy =
+      totalSessions > 0 ? totalDiscrepancy / totalSessions : 0;
+
+    const userMap = new Map<
+      string,
+      { userName: string; totalDiscrepancy: number; sessionCount: number }
+    >();
+    sessions.forEach((session) => {
+      const existing = userMap.get(session.userId);
+      if (existing) {
+        existing.totalDiscrepancy += session.discrepancy ?? 0;
+        existing.sessionCount += 1;
+      } else {
+        userMap.set(session.userId, {
+          userName: session.userName ?? "ไม่ระบุ",
+          totalDiscrepancy: session.discrepancy ?? 0,
+          sessionCount: 1,
+        });
+      }
+    });
+    const topDiscrepancyUsers = Array.from(userMap.entries())
+      .map(([userId, data]) => ({ userId, ...data }))
+      .sort((a, b) => b.totalDiscrepancy - a.totalDiscrepancy)
+      .slice(0, 10);
+
+    const branchMap = new Map<
+      string,
+      { branchName: string; totalDiscrepancy: number; sessionCount: number }
+    >();
+    sessions.forEach((session) => {
+      const existing = branchMap.get(session.branchId);
+      if (existing) {
+        existing.totalDiscrepancy += session.discrepancy ?? 0;
+        existing.sessionCount += 1;
+      } else {
+        branchMap.set(session.branchId, {
+          branchName: session.branchName ?? "ไม่ระบุ",
+          totalDiscrepancy: session.discrepancy ?? 0,
+          sessionCount: 1,
+        });
+      }
+    });
+    const topDiscrepancyBranches = Array.from(branchMap.entries())
+      .map(([branchId, data]) => ({ branchId, ...data }))
+      .sort((a, b) => b.totalDiscrepancy - a.totalDiscrepancy)
+      .slice(0, 10);
+
+    const productMap = new Map<
+      string,
+      {
+        productName: string;
+        productSKU: string;
+        totalDiscrepancy: number;
+        sessionCount: number;
+      }
+    >();
+    sessions.forEach((session) => {
+      const existing = productMap.get(session.productId);
+      if (existing) {
+        existing.totalDiscrepancy += session.discrepancy ?? 0;
+        existing.sessionCount += 1;
+      } else {
+        productMap.set(session.productId, {
+          productName: session.productName ?? "ไม่ระบุ",
+          productSKU: session.productSKU ?? "-",
+          totalDiscrepancy: session.discrepancy ?? 0,
+          sessionCount: 1,
+        });
+      }
+    });
+    const topDiscrepancyProducts = Array.from(productMap.entries())
+      .map(([productId, data]) => ({ productId, ...data }))
+      .sort((a, b) => b.totalDiscrepancy - a.totalDiscrepancy)
+      .slice(0, 10);
+
+    return {
+      totalSessions,
+      totalDiscrepancy,
+      averageDiscrepancy,
+      topDiscrepancyUsers,
+      topDiscrepancyBranches,
+      topDiscrepancyProducts,
+    };
+  }, [allSessions, filterMonth, filterYear, filterHalf]);
 
   useEffect(() => {
     if (!userData) return;
@@ -81,101 +193,7 @@ export default function ReportsPage() {
           });
         });
 
-        // Calculate statistics
-        const totalSessions = sessions.length;
-        const totalDiscrepancy = sessions.reduce(
-          (sum, s) => sum + (s.discrepancy ?? 0),
-          0,
-        );
-        const averageDiscrepancy =
-          totalSessions > 0 ? totalDiscrepancy / totalSessions : 0;
-
-        // Group by user
-        const userMap = new Map<
-          string,
-          { userName: string; totalDiscrepancy: number; sessionCount: number }
-        >();
-        sessions.forEach((session) => {
-          const existing = userMap.get(session.userId);
-          if (existing) {
-            existing.totalDiscrepancy += session.discrepancy ?? 0;
-            existing.sessionCount += 1;
-          } else {
-            userMap.set(session.userId, {
-              userName: session.userName ?? "ไม่ระบุ",
-              totalDiscrepancy: session.discrepancy ?? 0,
-              sessionCount: 1,
-            });
-          }
-        });
-
-        const topDiscrepancyUsers = Array.from(userMap.entries())
-          .map(([userId, data]) => ({ userId, ...data }))
-          .sort((a, b) => b.totalDiscrepancy - a.totalDiscrepancy)
-          .slice(0, 10);
-
-        // Group by branch
-        const branchMap = new Map<
-          string,
-          { branchName: string; totalDiscrepancy: number; sessionCount: number }
-        >();
-        sessions.forEach((session) => {
-          const existing = branchMap.get(session.branchId);
-          if (existing) {
-            existing.totalDiscrepancy += session.discrepancy ?? 0;
-            existing.sessionCount += 1;
-          } else {
-            branchMap.set(session.branchId, {
-              branchName: session.branchName ?? "ไม่ระบุ",
-              totalDiscrepancy: session.discrepancy ?? 0,
-              sessionCount: 1,
-            });
-          }
-        });
-
-        const topDiscrepancyBranches = Array.from(branchMap.entries())
-          .map(([branchId, data]) => ({ branchId, ...data }))
-          .sort((a, b) => b.totalDiscrepancy - a.totalDiscrepancy)
-          .slice(0, 10);
-
-        // Group by product
-        const productMap = new Map<
-          string,
-          {
-            productName: string;
-            productSKU: string;
-            totalDiscrepancy: number;
-            sessionCount: number;
-          }
-        >();
-        sessions.forEach((session) => {
-          const existing = productMap.get(session.productId);
-          if (existing) {
-            existing.totalDiscrepancy += session.discrepancy ?? 0;
-            existing.sessionCount += 1;
-          } else {
-            productMap.set(session.productId, {
-              productName: session.productName ?? "ไม่ระบุ",
-              productSKU: session.productSKU ?? "-",
-              totalDiscrepancy: session.discrepancy ?? 0,
-              sessionCount: 1,
-            });
-          }
-        });
-
-        const topDiscrepancyProducts = Array.from(productMap.entries())
-          .map(([productId, data]) => ({ productId, ...data }))
-          .sort((a, b) => b.totalDiscrepancy - a.totalDiscrepancy)
-          .slice(0, 10);
-
-        setReport({
-          totalSessions,
-          totalDiscrepancy,
-          averageDiscrepancy,
-          topDiscrepancyUsers,
-          topDiscrepancyBranches,
-          topDiscrepancyProducts,
-        });
+        setAllSessions(sessions);
       } catch (error) {
         console.error("Error fetching report data:", error);
       } finally {
@@ -263,8 +281,51 @@ export default function ReportsPage() {
 
       {/* Discrepancy Report Header */}
       <div className="border-t pt-6">
-        <h2 className="text-2xl font-bold text-gray-900">รายงานของหาย</h2>
-        <p className="text-gray-600 mt-1">วิเคราะห์ความคลาดเคลื่อนของสินค้า</p>
+        <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-3">
+          <div>
+            <h2 className="text-2xl font-bold text-gray-900">รายงานของหาย</h2>
+            <p className="text-gray-600 mt-1">
+              วิเคราะห์ความคลาดเคลื่อนของสินค้า
+            </p>
+          </div>
+          <div className="flex gap-2">
+            <select
+              value={filterMonth}
+              onChange={(e) => setFilterMonth(Number(e.target.value))}
+              className="px-3 py-1.5 text-sm border border-gray-300 rounded-lg bg-white text-gray-900 focus:ring-2 focus:ring-blue-500"
+            >
+              {Array.from({ length: 12 }, (_, i) => i + 1).map((m) => (
+                <option key={m} value={m}>
+                  {new Date(2000, m - 1, 1).toLocaleDateString("th-TH", {
+                    month: "long",
+                  })}
+                </option>
+              ))}
+            </select>
+            <select
+              value={filterYear}
+              onChange={(e) => setFilterYear(Number(e.target.value))}
+              className="px-3 py-1.5 text-sm border border-gray-300 rounded-lg bg-white text-gray-900 focus:ring-2 focus:ring-blue-500"
+            >
+              {[filterYear - 1, filterYear, filterYear + 1].map((y) => (
+                <option key={y} value={y}>
+                  {y + 543}
+                </option>
+              ))}
+            </select>
+            <select
+              value={filterHalf}
+              onChange={(e) =>
+                setFilterHalf(e.target.value as "all" | "1" | "2")
+              }
+              className="px-3 py-1.5 text-sm border border-gray-300 rounded-lg bg-white text-gray-900 focus:ring-2 focus:ring-blue-500"
+            >
+              <option value="all">ทั้งเดือน</option>
+              <option value="1">รอบ 1 (1–15)</option>
+              <option value="2">รอบ 2 (16–สิ้นเดือน)</option>
+            </select>
+          </div>
+        </div>
       </div>
 
       {/* Summary Stats */}

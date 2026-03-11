@@ -176,6 +176,8 @@ export interface CountingSession {
   adminRemarks?: string;
   errorRemark?: string;
   userReportedCount?: number;
+  isLate?: boolean; // ส่งในช่วง grace period (ลับ)
+  isSupplemental?: boolean; // รูปเพิ่มเติม ไม่นับรวมกับจำนวนหลัก
 
   // Metadata
   deviceInfo?: string;
@@ -185,6 +187,21 @@ export interface CountingSession {
     address?: string;
     latitude?: number;
     longitude?: number;
+  };
+
+  // Supervisor override
+  finalCountSource?: "ai" | "employee" | "custom";
+  approvalStatus?: "pending" | "approved" | "rejected";
+  supervisorOverride?: {
+    overriddenBy: string;
+    overriddenByName?: string;
+    overriddenAt: Date;
+    aiCount: number;
+    employeeCount: number;
+    selectedCount: number;
+    source: "ai" | "employee" | "custom";
+    customCount?: number;
+    reason?: string;
   };
 
   createdAt?: Date;
@@ -293,6 +310,7 @@ export interface CheckIn {
 
   // ข้อมูลเวลา
   isLate?: boolean;
+  isSupplemental?: boolean; // รูปเพิ่มเติม ไม่นับรวมกับจำนวนหลัก
   lateMinutes?: number;
   remarks?: string;
 

@@ -1,7 +1,10 @@
 "use client";
 
 import { UndoRedoControls } from "@/components/watson/editor/UndoRedoControls";
-import { ExportSuccessModal } from "@/components/watson/export/ExportSuccessModal";
+import {
+  ExportStatusFull,
+  ExportSuccessModal,
+} from "@/components/watson/export/ExportSuccessModal";
 import { ActivityLogsSidebar } from "@/components/watson/logs/ActivityLogsSidebar";
 import { OfflinePage } from "@/components/watson/OfflinePage";
 import {
@@ -98,6 +101,12 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 // Helper function to get status badge display
 function getStatusBadge(status?: WorkflowStatus) {
   switch (status) {
+    case "cancelled":
+      return (
+        <Badge className="bg-red-500 text-white text-[10px] px-1.5 py-0 h-4">
+          ยกเลิกแล้ว
+        </Badge>
+      );
     case "confirmed":
       return (
         <Badge className="bg-green-500 text-white text-[10px] px-1.5 py-0 h-4">
@@ -201,6 +210,7 @@ export default function WatsonExcelValidatorPage() {
     updateRecord: updateInvoiceUpload,
     updateStatus: updateInvoiceStatus,
     removeRecord: removeInvoiceUpload,
+    refetchHistory: refetchInvoiceHistory,
   } = useInvoiceUploadHistory();
 
   // Track current loaded record ID for auto-save
@@ -242,6 +252,7 @@ export default function WatsonExcelValidatorPage() {
       confirmedAt: string | null;
       confirmedBy: string | null;
       exportedAt: string;
+      status?: "confirmed" | "cancelled";
     }[]
   >([]);
   const [confirmedExportsTotal, setConfirmedExportsTotal] = useState(0);
@@ -255,7 +266,7 @@ export default function WatsonExcelValidatorPage() {
       setIsLoadingConfirmedExports(true);
       const offset = page * CONFIRMED_PAGE_SIZE;
       const params = new URLSearchParams({
-        status: "confirmed",
+        status: "confirmed,cancelled",
         limit: String(CONFIRMED_PAGE_SIZE),
         offset: String(offset),
       });
@@ -279,7 +290,7 @@ export default function WatsonExcelValidatorPage() {
     fetchConfirmedExports(0);
   }, [data.length, fetchConfirmedExports]);
 
-  // User overrides for Std Qty / Promo Qty / QtyBuy1 / QtyPro (rowIndex -> overrides)
+  // User overrides for Std Qty / Promo Qty / QtyBuy1 / QtyPro / Price columns (rowIndex -> overrides)
   const [qtyOverrides, setQtyOverrides] = useState<
     Map<
       number,
@@ -288,6 +299,10 @@ export default function WatsonExcelValidatorPage() {
         promoQty?: string;
         qtyBuy1?: string;
         qtyPro?: string;
+        priceBuy1Invoice?: string;
+        priceBuy1Com?: string;
+        priceProInvoice?: string;
+        priceProCom?: string;
       }
     >
   >(new Map());
@@ -412,6 +427,7 @@ export default function WatsonExcelValidatorPage() {
 
   // Confirm-save modal
   const [confirmSaveOpen, setConfirmSaveOpen] = useState(false);
+  const [confirmLowAcknowledged, setConfirmLowAcknowledged] = useState(false);
 
   // --- Session Persistence (lightweight, keyed by recordId) ---
   // Stores ONLY: validationResult, showPriceColumns, confirmedExportId, qtyOverrides
@@ -426,7 +442,6 @@ export default function WatsonExcelValidatorPage() {
           JSON.stringify({
             validationResult,
             showPriceColumns,
-            confirmedExportId,
             qtyOverrides: Array.from(qtyOverrides.entries()),
           }),
         );
@@ -434,7 +449,7 @@ export default function WatsonExcelValidatorPage() {
         // Quota exceeded or unavailable — ignore
       }
     },
-    [validationResult, showPriceColumns, confirmedExportId, qtyOverrides],
+    [validationResult, showPriceColumns, qtyOverrides],
   );
 
   useEffect(() => {
@@ -451,8 +466,6 @@ export default function WatsonExcelValidatorPage() {
         if (parsed.validationResult)
           setValidationResult(parsed.validationResult);
         if (parsed.showPriceColumns) setShowPriceColumns(true);
-        if (parsed.confirmedExportId)
-          setConfirmedExportId(parsed.confirmedExportId);
         if (parsed.qtyOverrides) setQtyOverrides(new Map(parsed.qtyOverrides));
         return true;
       } catch {
@@ -471,6 +484,7 @@ export default function WatsonExcelValidatorPage() {
   // priceRecalcTrigger forces recalculation when user clicks "Recalculate"
   const {
     displayData,
+    allEnrichedData,
     displayHeaders,
     lowConfidenceCount,
     passedCount,
@@ -543,7 +557,8 @@ export default function WatsonExcelValidatorPage() {
         const isBulkAccepted = bulkAcceptedItemCodes.has(itemCode);
 
         if (confidenceValue !== "-" && diffValue !== "-") {
-          if (confidencePercent >= thresholdPercent || isBulkAccepted) {
+          // Pass when Diff shows ✓ (i.e. calcAmt >= rawAmt) or item was bulk-accepted
+          if (diffValue.includes("✓") || isBulkAccepted) {
             acceptable.add(idx);
             // Track passed items
             const existing = passedMap.get(itemCode);
@@ -554,7 +569,7 @@ export default function WatsonExcelValidatorPage() {
                 rowIndices: [idx],
                 itemName: itemDesc,
                 confidence:
-                  isBulkAccepted && confidencePercent < thresholdPercent
+                  isBulkAccepted && !diffValue.includes("✓")
                     ? `${confidenceValue} ✓` // Mark as bulk-accepted
                     : confidenceValue,
               });
@@ -586,8 +601,11 @@ export default function WatsonExcelValidatorPage() {
               confidence: "คืน",
             });
           }
-        } else if (priceMatch.includes("Qty=1")) {
-          // Single item purchases are acceptable (skip validation)
+        } else if (
+          priceMatch.includes("Qty=1") &&
+          !priceMatch.includes("No period")
+        ) {
+          // Single item purchases WITH a matching period are acceptable
           acceptable.add(idx);
           const existing = passedMap.get(itemCode);
           if (existing) {
@@ -743,31 +761,38 @@ export default function WatsonExcelValidatorPage() {
 
           updated["QtyBuy1"] = newQtyBuy1 > 0 ? newQtyBuy1 : "";
           updated["QtyPro"] = newQtyPro > 0 ? newQtyPro : "";
-          // Display fields: Invoice Formula = per-unit Invoice 62% IncV; Com Calculate = per-unit Comm Price IncV
+
+          // Display fields show PER-UNIT prices (same as initial enrichment):
+          //   Invoice Formula = invoice 62% IncV per unit, fallback to ExtVat per unit
+          //   Com Calculate   = Comm price IncV per unit
+          // NOTE: newPriceBuy1Invoice / newPriceProInvoice are TOTALS — only used for
+          //       Calc Amt; never shown directly in the Formula/Calculate columns.
+          // Fallback chain for std: 62%IncV → ExtVat → proPriceExtVat
+          // (when knapsack originally allocated all qty to promo, _stdPrice* = 0,
+          //  so we fall back to the pro per-unit price for user-edited QtyBuy1)
+          const effStdInvoice62 = stdInvoice62IncV || proInvoice62IncV;
+          const effStdExtVat = stdPriceExtVat || proPriceExtVat;
+          const effStdIncVat = stdPriceIncVat || proPriceIncVat;
           updated["PriceBuy1_Invoice_Formula"] =
-            stdInvoice62IncV > 0
-              ? fmt2(stdInvoice62IncV)
-              : newPriceBuy1Invoice > 0
-                ? fmt2(newPriceBuy1Invoice)
-                : "";
+            newQtyBuy1 > 0
+              ? effStdInvoice62 > 0
+                ? fmt2(effStdInvoice62)
+                : effStdExtVat > 0
+                  ? fmt2(effStdExtVat)
+                  : ""
+              : "";
           updated["PriceBuy1_Com_Calculate"] =
-            stdPriceIncVat > 0
-              ? fmt2(stdPriceIncVat)
-              : newPriceBuy1Com > 0
-                ? fmt2(newPriceBuy1Com)
-                : "";
+            newQtyBuy1 > 0 && effStdIncVat > 0 ? fmt2(effStdIncVat) : "";
           updated["PricePro_Invoice_Formula"] =
-            proInvoice62IncV > 0 && newQtyPro > 0
-              ? fmt2(proInvoice62IncV)
-              : newPriceProInvoice > 0
-                ? fmt2(newPriceProInvoice)
-                : "";
+            newQtyPro > 0
+              ? proInvoice62IncV > 0
+                ? fmt2(proInvoice62IncV)
+                : proPriceExtVat > 0
+                  ? fmt2(proPriceExtVat)
+                  : ""
+              : "";
           updated["PricePro_Com_Calculate"] =
-            proPriceIncVat > 0 && newQtyPro > 0
-              ? fmt2(proPriceIncVat)
-              : newPriceProCom > 0
-                ? fmt2(newPriceProCom)
-                : "";
+            newQtyPro > 0 && proPriceIncVat > 0 ? fmt2(proPriceIncVat) : "";
 
           // Recalculate Calc Amt, Diff, Confidence
           const calcAmt = newPriceBuy1Invoice + newPriceProInvoice;
@@ -784,8 +809,8 @@ export default function WatsonExcelValidatorPage() {
             const diff = calcAmt - rawAmt;
             const confidence =
               rawAmt > 0 ? Math.max(0, (1 - Math.abs(diff) / rawAmt) * 100) : 0;
-            const thresholdPercent = confidenceThreshold * 100;
-            const isOk = confidence >= thresholdPercent;
+            // Pass when calcAmt >= rawAmt
+            const isOk = calcAmt >= rawAmt;
 
             updated["Calc Amt"] = fmt2(calcAmt);
             updated["Diff"] = isOk ? `✓ ${fmt2(diff)}` : `⚠ ${fmt2(diff)}`;
@@ -811,8 +836,91 @@ export default function WatsonExcelValidatorPage() {
         return updated;
       });
 
+      // Apply direct price column overrides (user manually edited formula/calculate cells)
+      const dataWithPriceOverrides = dataWithOverrides.map((row) => {
+        const originalIdx = row._originalIdx as number;
+        const override = qtyOverrides.get(originalIdx);
+        if (
+          !override ||
+          (override.priceBuy1Invoice === undefined &&
+            override.priceBuy1Com === undefined &&
+            override.priceProInvoice === undefined &&
+            override.priceProCom === undefined)
+        ) {
+          return row;
+        }
+
+        const updated: typeof row & Record<string, unknown> = { ...row };
+        if (override.priceBuy1Invoice !== undefined) {
+          updated["PriceBuy1_Invoice_Formula"] = override.priceBuy1Invoice;
+        }
+        if (override.priceBuy1Com !== undefined) {
+          updated["PriceBuy1_Com_Calculate"] = override.priceBuy1Com;
+        }
+        if (override.priceProInvoice !== undefined) {
+          updated["PricePro_Invoice_Formula"] = override.priceProInvoice;
+        }
+        if (override.priceProCom !== undefined) {
+          updated["PricePro_Com_Calculate"] = override.priceProCom;
+        }
+
+        // Recalculate Calc Amt / Diff / Confidence based on overridden per-unit prices
+        const qtyBuy1 = parseInt(String(updated["QtyBuy1"])) || 0;
+        const qtyPro = parseInt(String(updated["QtyPro"])) || 0;
+        const buy1Ext =
+          override.priceBuy1Invoice !== undefined
+            ? parseFloat(override.priceBuy1Invoice) || 0
+            : Number(updated["_stdPriceExtVat"]) || 0;
+        const proExt =
+          override.priceProInvoice !== undefined
+            ? parseFloat(override.priceProInvoice) || 0
+            : Number(updated["_proPriceExtVat"]) || 0;
+
+        const calcAmt = qtyBuy1 * buy1Ext + qtyPro * proExt;
+        const rawAmtHeader = headers.find(
+          (h) =>
+            h.toLowerCase().includes("total cost") &&
+            h.toLowerCase().includes("exclusive"),
+        );
+        const rawAmt = rawAmtHeader
+          ? Math.abs(Number(updated[rawAmtHeader]) || 0)
+          : 0;
+
+        if (calcAmt > 0 && rawAmt > 0) {
+          const diff = calcAmt - rawAmt;
+          const confidence =
+            rawAmt > 0 ? Math.max(0, (1 - Math.abs(diff) / rawAmt) * 100) : 0;
+          // Pass when calcAmt >= rawAmt
+          const isOk = calcAmt >= rawAmt;
+          updated["Calc Amt"] = fmt2(calcAmt);
+          updated["Diff"] = isOk ? `✓ ${fmt2(diff)}` : `⚠ ${fmt2(diff)}`;
+          updated["Confidence"] = `${confidence.toFixed(0)}%`;
+          updated["Price Match"] = isOk
+            ? "✅ OK"
+            : diff > 0
+              ? `⬆️ +${fmt2(diff)}`
+              : `⬇️ ${fmt2(diff)}`;
+        }
+
+        // Recalculate Total Comm if price overrides provided
+        const buy1Com =
+          override.priceBuy1Com !== undefined
+            ? parseFloat(override.priceBuy1Com) || 0
+            : Number(updated["_stdPriceIncVat"]) || 0;
+        const proCom =
+          override.priceProCom !== undefined
+            ? parseFloat(override.priceProCom) || 0
+            : Number(updated["_proPriceIncVat"]) || 0;
+        const totalComm = qtyBuy1 * buy1Com + qtyPro * proCom;
+        if (totalComm > 0) {
+          updated["Total Comm"] = `฿${fmt2(totalComm)}`;
+        }
+
+        return updated;
+      });
+
       // Filter if showOnlyLowConfidence is enabled
-      let filteredData = dataWithOverrides;
+      let filteredData = dataWithPriceOverrides;
       if (showOnlyLowConfidence || priceFilterCategory) {
         const categoryRowSet = priceFilterCategory
           ? priceFilterCategory === "passed"
@@ -824,7 +932,7 @@ export default function WatsonExcelValidatorPage() {
                 : lowMatchRowSet
           : null;
 
-        filteredData = dataWithOverrides.filter((row) => {
+        filteredData = dataWithPriceOverrides.filter((row) => {
           const idx = row._originalIdx as number;
           // When filtering by 'passed', show only acceptable rows
           if (priceFilterCategory === "passed") {
@@ -849,6 +957,7 @@ export default function WatsonExcelValidatorPage() {
 
       return {
         displayData: filteredData,
+        allEnrichedData: dataWithPriceOverrides,
         displayHeaders: enrichedHeaders,
         lowConfidenceCount: lowConfidenceTotal,
         passedCount: acceptable.size,
@@ -856,8 +965,10 @@ export default function WatsonExcelValidatorPage() {
       };
     }
     // Add _originalIdx for non-enriched data as well
+    const allRows = data.map((row, idx) => ({ ...row, _originalIdx: idx }));
     return {
-      displayData: data.map((row, idx) => ({ ...row, _originalIdx: idx })),
+      displayData: allRows,
+      allEnrichedData: allRows,
       displayHeaders: headers,
       lowConfidenceCount: 0,
       passedCount: 0,
@@ -1023,12 +1134,87 @@ export default function WatsonExcelValidatorPage() {
             reportRunDateTime: record.reportDate || null,
             reportParameters: record.supplierCode || null,
           });
-          // Check if file is confirmed - if so, lock it and show export ID
-          // Use fallback "confirmed" when lastExportId is absent so the lock
-          // still applies for any user who opens this record.
-          if (record.status === "confirmed") {
-            setConfirmedExportId(record.lastExportId || "confirmed");
-            setShowPriceColumns(true); // Show the full data view
+          // Check if file is confirmed/cancelled and reconcile with
+          // the actual export status in case it was changed externally.
+          if (record.status === "confirmed" || record.status === "cancelled") {
+            if (record.lastExportId && record.status === "confirmed") {
+              // Verify against the actual export's status
+              try {
+                const expRes = await fetch(
+                  `/api/internal/exports/${record.lastExportId}/status`,
+                );
+                if (expRes.ok) {
+                  const expJson = await expRes.json();
+                  const realStatus = expJson?.data?.status;
+                  if (realStatus === "cancelled" || realStatus === "draft") {
+                    // Export was cancelled/reverted externally — unlock
+                    setConfirmedExportId(null);
+                    // Sync the invoice record
+                    const syncStatus =
+                      realStatus === "cancelled" ? "cancelled" : "exported";
+                    updateInvoiceStatus(recordId, syncStatus as WorkflowStatus);
+                  } else {
+                    setConfirmedExportId(record.lastExportId || "confirmed");
+                    setShowPriceColumns(true);
+                  }
+                } else {
+                  // API failed — trust local status
+                  setConfirmedExportId(record.lastExportId || "confirmed");
+                  setShowPriceColumns(true);
+                }
+              } catch {
+                // Network error — trust local status
+                setConfirmedExportId(record.lastExportId || "confirmed");
+                setShowPriceColumns(true);
+              }
+            } else if (record.status === "confirmed") {
+              // No lastExportId — try to find the linked export by invoiceUploadId
+              try {
+                const searchRes = await fetch(
+                  `/api/exports?invoiceUploadId=${recordId}&limit=1`,
+                );
+                if (searchRes.ok) {
+                  const searchJson = await searchRes.json();
+                  const linkedExport = searchJson?.data?.[0];
+                  if (linkedExport) {
+                    // Found the linked export — reconcile status
+                    const realStatus = linkedExport.status;
+                    if (realStatus === "cancelled" || realStatus === "draft") {
+                      setConfirmedExportId(null);
+                      const syncStatus =
+                        realStatus === "cancelled" ? "cancelled" : "exported";
+                      updateInvoiceStatus(
+                        recordId,
+                        syncStatus as WorkflowStatus,
+                        {
+                          lastExportId: linkedExport.id,
+                        },
+                      );
+                    } else {
+                      // Still confirmed — persist the link
+                      setConfirmedExportId(linkedExport.id);
+                      setShowPriceColumns(true);
+                      updateInvoiceStatus(recordId, "confirmed", {
+                        lastExportId: linkedExport.id,
+                      });
+                    }
+                  } else {
+                    // No linked export found — might have been deleted; unlock
+                    setConfirmedExportId(null);
+                    updateInvoiceStatus(recordId, "exported" as WorkflowStatus);
+                  }
+                } else {
+                  setConfirmedExportId("confirmed");
+                  setShowPriceColumns(true);
+                }
+              } catch {
+                setConfirmedExportId("confirmed");
+                setShowPriceColumns(true);
+              }
+            } else {
+              // status === "cancelled"
+              setConfirmedExportId(null);
+            }
           } else {
             setConfirmedExportId(null);
           }
@@ -1043,7 +1229,14 @@ export default function WatsonExcelValidatorPage() {
         setIsGlobalLoading(false);
       }
     },
-    [loadInvoiceUpload, setData, setFileName, setReportMeta, restoreSession],
+    [
+      loadInvoiceUpload,
+      setData,
+      setFileName,
+      setReportMeta,
+      restoreSession,
+      updateInvoiceStatus,
+    ],
   );
 
   // Helper to update URL
@@ -1125,10 +1318,84 @@ export default function WatsonExcelValidatorPage() {
         reportRunDateTime: record.reportDate || null,
         reportParameters: record.supplierCode || null,
       });
-      // Check if file is confirmed - if so, lock it and show export ID
+      // Check if file is confirmed/cancelled
       if (record.status === "confirmed") {
-        setConfirmedExportId(record.lastExportId || "confirmed");
-        setShowPriceColumns(true);
+        if (record.lastExportId) {
+          // Verify against actual export status
+          try {
+            const expRes = await fetch(
+              `/api/internal/exports/${record.lastExportId}/status`,
+            );
+            if (expRes.ok) {
+              const expJson = await expRes.json();
+              const realStatus = expJson?.data?.status;
+              if (realStatus === "cancelled" || realStatus === "draft") {
+                setConfirmedExportId(null);
+                const syncStatus =
+                  realStatus === "cancelled" ? "cancelled" : "exported";
+                updateInvoiceStatus(
+                  existingRecordForDuplicate.id,
+                  syncStatus as WorkflowStatus,
+                );
+              } else {
+                setConfirmedExportId(record.lastExportId || "confirmed");
+                setShowPriceColumns(true);
+              }
+            } else {
+              setConfirmedExportId(record.lastExportId || "confirmed");
+              setShowPriceColumns(true);
+            }
+          } catch {
+            setConfirmedExportId(record.lastExportId || "confirmed");
+            setShowPriceColumns(true);
+          }
+        } else {
+          // No lastExportId — try to find the linked export
+          try {
+            const searchRes = await fetch(
+              `/api/exports?invoiceUploadId=${existingRecordForDuplicate.id}&limit=1`,
+            );
+            if (searchRes.ok) {
+              const searchJson = await searchRes.json();
+              const linkedExport = searchJson?.data?.[0];
+              if (linkedExport) {
+                const realStatus = linkedExport.status;
+                if (realStatus === "cancelled" || realStatus === "draft") {
+                  setConfirmedExportId(null);
+                  const syncStatus =
+                    realStatus === "cancelled" ? "cancelled" : "exported";
+                  updateInvoiceStatus(
+                    existingRecordForDuplicate.id,
+                    syncStatus as WorkflowStatus,
+                    { lastExportId: linkedExport.id },
+                  );
+                } else {
+                  setConfirmedExportId(linkedExport.id);
+                  setShowPriceColumns(true);
+                  updateInvoiceStatus(
+                    existingRecordForDuplicate.id,
+                    "confirmed",
+                    { lastExportId: linkedExport.id },
+                  );
+                }
+              } else {
+                setConfirmedExportId(null);
+                updateInvoiceStatus(
+                  existingRecordForDuplicate.id,
+                  "exported" as WorkflowStatus,
+                );
+              }
+            } else {
+              setConfirmedExportId("confirmed");
+              setShowPriceColumns(true);
+            }
+          } catch {
+            setConfirmedExportId("confirmed");
+            setShowPriceColumns(true);
+          }
+        }
+      } else if (record.status === "cancelled") {
+        setConfirmedExportId(null);
       } else {
         setConfirmedExportId(null);
       }
@@ -1140,6 +1407,7 @@ export default function WatsonExcelValidatorPage() {
     setFileName,
     setReportMeta,
     reset,
+    updateInvoiceStatus,
   ]);
 
   // Handle duplicate file dialog: Overwrite with new data
@@ -1227,7 +1495,16 @@ export default function WatsonExcelValidatorPage() {
     // Convert Map to plain object for Firebase storage
     const qtyOverridesForStorage: Record<
       string,
-      { stdQty?: string; promoQty?: string; qtyBuy1?: string; qtyPro?: string }
+      {
+        stdQty?: string;
+        promoQty?: string;
+        qtyBuy1?: string;
+        qtyPro?: string;
+        priceBuy1Invoice?: string;
+        priceBuy1Com?: string;
+        priceProInvoice?: string;
+        priceProCom?: string;
+      }
     > = {};
     qtyOverrides.forEach((val, key) => {
       qtyOverridesForStorage[String(key)] = val;
@@ -1354,10 +1631,14 @@ export default function WatsonExcelValidatorPage() {
                 String(currentOverride.qtyPro ?? displayRow?.["QtyPro"] ?? "0"),
               ) || 0;
 
-        // Validate: QtyBuy1 + QtyPro must not exceed Qty
+        // Validate: QtyBuy1 + QtyPro must match Qty
         const totalQty = currentQtyBuy1 + currentQtyPro;
-        if (totalQty > originalQty) {
-          // Open modal instead of alert
+        if (
+          totalQty > originalQty ||
+          (totalQty < originalQty && totalQty > 0)
+        ) {
+          // Open modal when total exceeds OR is less than original qty
+          // (but not when going to 0:0 — that's a deliberate full-clear)
           setQtyEditData({
             rowIndex,
             editField: columnName as "QtyBuy1" | "QtyPro",
@@ -1369,17 +1650,29 @@ export default function WatsonExcelValidatorPage() {
           return;
         }
 
-        // Save to qtyOverrides
+        // Save to qtyOverrides — also clear stale price overrides for the
+        // field being zeroed out so residual user edits don't "stick".
         const oldValue =
           currentOverride[columnName === "QtyBuy1" ? "qtyBuy1" : "qtyPro"] ||
           String(displayRow?.[columnName] ?? "-");
 
         setQtyOverrides((prev) => {
           const newMap = new Map(prev);
-          newMap.set(rowIndex, {
+          const patch: Record<string, string | undefined> = {
             ...currentOverride,
             [columnName === "QtyBuy1" ? "qtyBuy1" : "qtyPro"]: String(newQty),
-          });
+          };
+          // When qty goes to 0, remove any direct price override for that tier
+          if (newQty === 0) {
+            if (columnName === "QtyBuy1") {
+              delete patch.priceBuy1Invoice;
+              delete patch.priceBuy1Com;
+            } else {
+              delete patch.priceProInvoice;
+              delete patch.priceProCom;
+            }
+          }
+          newMap.set(rowIndex, patch);
           return newMap;
         });
 
@@ -1424,10 +1717,13 @@ export default function WatsonExcelValidatorPage() {
                 ).replace(/[^0-9]/g, ""),
               ) || 0;
 
-        // Validate: Std Qty + Promo Qty should not exceed original QTY
+        // Validate: Std Qty + Promo Qty should match original QTY
         const totalQty = currentStdQty + currentPromoQty;
-        if (totalQty > originalQty) {
-          // Open modal for Std Qty / Promo Qty as well
+        if (
+          totalQty > originalQty ||
+          (totalQty < originalQty && totalQty > 0)
+        ) {
+          // Open modal when total exceeds OR is less than original qty
           setQtyEditData({
             rowIndex,
             editField: columnName === "Std Qty" ? "QtyBuy1" : "QtyPro",
@@ -1461,6 +1757,36 @@ export default function WatsonExcelValidatorPage() {
         return;
       }
 
+      // Handle Price Formula / Com Calculate direct edits
+      // These columns are computed by enrichment, so we store overrides
+      // the same way as qty overrides — applied after enrichment in useMemo.
+      const PRICE_OVERRIDE_COLS: Record<string, string> = {
+        PriceBuy1_Invoice_Formula: "priceBuy1Invoice",
+        PriceBuy1_Com_Calculate: "priceBuy1Com",
+        PricePro_Invoice_Formula: "priceProInvoice",
+        PricePro_Com_Calculate: "priceProCom",
+      };
+      if (PRICE_OVERRIDE_COLS[columnName]) {
+        const overrideKey = PRICE_OVERRIDE_COLS[columnName];
+        const displayRow = displayData.find(
+          (r) => r._originalIdx === rowIndex,
+        ) as Record<string, unknown> | undefined;
+        const oldValue = String(displayRow?.[columnName] ?? "-");
+
+        setQtyOverrides((prev) => {
+          const newMap = new Map(prev);
+          const existing = newMap.get(rowIndex) || {};
+          newMap.set(rowIndex, {
+            ...existing,
+            [overrideKey]: value,
+          });
+          return newMap;
+        });
+
+        logEditCell(rowIndex, columnName, oldValue, value);
+        return;
+      }
+
       const oldValue = data[rowIndex]?.[columnName] ?? null;
       updateCell(rowIndex, columnName, value);
       logEditCell(rowIndex, columnName, oldValue, value);
@@ -1475,11 +1801,21 @@ export default function WatsonExcelValidatorPage() {
       setQtyOverrides((prev) => {
         const newMap = new Map(prev);
         const existing = newMap.get(rowIndex) || {};
-        newMap.set(rowIndex, {
+        const patch: Record<string, string | undefined> = {
           ...existing,
           qtyBuy1: String(newQtyBuy1),
           qtyPro: String(newQtyPro),
-        });
+        };
+        // Clear stale price overrides for zeroed-out tiers
+        if (newQtyBuy1 === 0) {
+          delete patch.priceBuy1Invoice;
+          delete patch.priceBuy1Com;
+        }
+        if (newQtyPro === 0) {
+          delete patch.priceProInvoice;
+          delete patch.priceProCom;
+        }
+        newMap.set(rowIndex, patch);
         return newMap;
       });
       logEditCell(rowIndex, "QtyBuy1", "-", String(newQtyBuy1));
@@ -1612,28 +1948,68 @@ export default function WatsonExcelValidatorPage() {
   );
 
   const handleExportFixed = useCallback(() => {
-    const exportFileName = `fixed_${fileName || "data.xlsx"}`;
-    const exportHeaders = getExportHeaders(displayHeaders);
-    exportToExcel(displayData, exportHeaders, exportFileName);
-    logExportExcel(exportFileName);
-  }, [displayData, displayHeaders, fileName, logExportExcel]);
+    if (showPriceColumns) {
+      setExportDialogOpen({ open: true, format: "excel" });
+    } else {
+      const exportFileName = `fixed_${fileName || "data.xlsx"}`;
+      const exportHeaders = getExportHeaders(displayHeaders);
+      exportToExcel(displayData, exportHeaders, exportFileName);
+      logExportExcel(exportFileName);
+    }
+  }, [showPriceColumns, displayData, displayHeaders, fileName, logExportExcel]);
 
   const handleExportJson = useCallback(() => {
-    const baseName = (fileName || "data.xlsx").replace(/\.[^.]+$/, "");
-    const exportFileName = `${baseName}.json`;
-    const exportHeaders = getExportHeaders(displayHeaders);
-    exportToJson(displayData, exportHeaders, exportFileName);
-    logExportExcel(exportFileName);
-  }, [displayData, displayHeaders, fileName, logExportExcel]);
+    if (showPriceColumns) {
+      setExportDialogOpen({ open: true, format: "json" });
+    } else {
+      const baseName = (fileName || "data.xlsx").replace(/\.[^.]+$/, "");
+      const exportFileName = `${baseName}.json`;
+      const exportHeaders = getExportHeaders(displayHeaders);
+      exportToJson(displayData, exportHeaders, exportFileName);
+      logExportExcel(exportFileName);
+    }
+  }, [showPriceColumns, displayData, displayHeaders, fileName, logExportExcel]);
+
+  const doExport = useCallback(
+    (scope: "all" | "problems", format: "excel" | "json") => {
+      const exportHeaders = getExportHeaders(displayHeaders);
+      const sourceData =
+        scope === "all"
+          ? allEnrichedData
+          : allEnrichedData.filter((row) => {
+              const diff = String(row["Diff"] || "");
+              const pm = String(row["Price Match"] || "");
+              if (diff !== "-" && diff !== "") return diff.includes("⚠");
+              return pm.includes("❌") || pm.includes("❓");
+            });
+      const label = scope === "all" ? "fixed" : "problems";
+      if (format === "excel") {
+        const exportFileName = `${label}_${fileName || "data.xlsx"}`;
+        exportToExcel(sourceData, exportHeaders, exportFileName);
+        logExportExcel(exportFileName);
+      } else {
+        const baseName = (fileName || "data.xlsx").replace(/\.[^.]+$/, "");
+        const exportFileName = `${label}_${baseName}.json`;
+        exportToJson(sourceData, exportHeaders, exportFileName);
+        logExportExcel(exportFileName);
+      }
+      setExportDialogOpen({ open: false, format: null });
+    },
+    [allEnrichedData, displayHeaders, fileName, logExportExcel],
+  );
 
   const [isSavingToCloud, setIsSavingToCloud] = useState(false);
+  const [exportDialogOpen, setExportDialogOpen] = useState<{
+    open: boolean;
+    format: "excel" | "json" | null;
+  }>({ open: false, format: null });
   const [exportSuccessModal, setExportSuccessModal] = useState<{
     open: boolean;
     exportId: string;
     supplierCode: string;
     rowCount: number;
     reportDate: string;
-    initialStatus: "draft" | "confirmed";
+    initialStatus: ExportStatusFull;
   }>({
     open: false,
     exportId: "",
@@ -1652,22 +2028,32 @@ export default function WatsonExcelValidatorPage() {
     const reportDate =
       reportMeta?.reportRunDateTime || new Date().toISOString();
 
+    // Guard: prevent saving when no data is loaded
+    if (allEnrichedData.length === 0) {
+      toast.error(
+        "ไม่สามารถบันทึกได้",
+        "ไม่มีข้อมูลที่จะบันทึก กรุณาโหลดไฟล์ก่อน",
+      );
+      return;
+    }
+
     setIsGlobalLoading(true);
     setIsSavingToCloud(true);
     toast.info(
       "กำลังบันทึก...",
-      `กำลังอัปโหลดข้อมูล ${displayData.length} แถว`,
+      `กำลังอัปโหลดข้อมูล ${allEnrichedData.length} แถว`,
     );
     try {
       const exportHeaders = getExportHeaders(displayHeaders);
-      // Convert RawRow[] to array[][] format for API
-      const dataArray: (string | number | null)[][] = displayData.map((row) =>
-        exportHeaders.map((h) => {
-          const val = (row as Record<string, unknown>)[h];
-          if (val === undefined || val === null) return null;
-          if (typeof val === "string" || typeof val === "number") return val;
-          return String(val);
-        }),
+      // Convert all enriched rows (full dataset, not filtered view) to array[][] format
+      const dataArray: (string | number | null)[][] = allEnrichedData.map(
+        (row) =>
+          exportHeaders.map((h) => {
+            const val = (row as Record<string, unknown>)[h];
+            if (val === undefined || val === null) return null;
+            if (typeof val === "string" || typeof val === "number") return val;
+            return String(val);
+          }),
       );
 
       const exportId = await saveExportToCloud({
@@ -1688,6 +2074,7 @@ export default function WatsonExcelValidatorPage() {
         lowConfidenceCount,
         companyId: userData?.companyId || null,
         companyName: userData?.companyName || null,
+        invoiceUploadId: currentRecordId || null,
       });
 
       // Auto-confirm the export immediately
@@ -1716,7 +2103,7 @@ export default function WatsonExcelValidatorPage() {
         open: true,
         exportId,
         supplierCode,
-        rowCount: dataArray.length,
+        rowCount: allEnrichedData.length,
         reportDate,
         initialStatus: "confirmed",
       });
@@ -2095,7 +2482,7 @@ export default function WatsonExcelValidatorPage() {
                     <div className="flex items-center justify-between">
                       <CardTitle className="text-sm font-medium text-green-700 flex items-center gap-2">
                         <CheckCircle className="h-4 w-4" />
-                        ยืนยันแล้ว — พร้อมให้ระบบอื่นใช้งาน
+                        Export ทั้งหมด
                         {confirmedExportsTotal > 0 && (
                           <span className="text-xs font-normal text-green-600 bg-green-100 px-2 py-0.5 rounded-full">
                             {confirmedExportsTotal} รายการ
@@ -2133,15 +2520,37 @@ export default function WatsonExcelValidatorPage() {
                           {confirmedExports.map((exp) => (
                             <div
                               key={exp.id}
-                              className="grid grid-cols-[2fr_1.2fr_3rem_1.2fr_1.4fr_1fr] gap-x-4 px-6 py-2.5 hover:bg-green-50 transition-colors"
+                              className={`grid grid-cols-[2fr_1.2fr_3rem_1.2fr_1.4fr_1fr] gap-x-4 px-6 py-2.5 transition-colors cursor-pointer ${
+                                exp.status === "cancelled"
+                                  ? "bg-red-50 hover:bg-red-100 opacity-75"
+                                  : "hover:bg-green-50"
+                              }`}
+                              onClick={() =>
+                                setExportSuccessModal({
+                                  open: true,
+                                  exportId: exp.id,
+                                  supplierCode: exp.supplierCode,
+                                  rowCount: exp.rowCount,
+                                  reportDate: exp.exportedAt,
+                                  initialStatus:
+                                    exp.status === "cancelled"
+                                      ? "cancelled"
+                                      : "confirmed",
+                                })
+                              }
                             >
                               <span
-                                className="text-sm text-gray-800 truncate font-medium"
+                                className="text-sm text-gray-800 truncate font-medium flex items-center gap-1.5"
                                 title={exp.fileName || exp.id}
                               >
                                 {exp.fileName || (
                                   <span className="text-gray-400 italic">
                                     (ไม่ระบุ)
+                                  </span>
+                                )}
+                                {exp.status === "cancelled" && (
+                                  <span className="text-[10px] font-semibold text-red-600 bg-red-100 px-1.5 py-0.5 rounded shrink-0">
+                                    ยกเลิกแล้ว
                                   </span>
                                 )}
                               </span>
@@ -2169,7 +2578,13 @@ export default function WatsonExcelValidatorPage() {
                                     })
                                   : "—"}
                               </span>
-                              <span className="font-mono text-[10px] text-green-700 bg-green-50 border border-green-100 px-1.5 py-0.5 rounded self-center truncate">
+                              <span
+                                className={`font-mono text-[10px] px-1.5 py-0.5 rounded self-center truncate ${
+                                  exp.status === "cancelled"
+                                    ? "text-red-700 bg-red-50 border border-red-200"
+                                    : "text-green-700 bg-green-50 border border-green-100"
+                                }`}
+                              >
                                 {exp.id.substring(0, 8)}
                               </span>
                             </div>
@@ -2421,7 +2836,9 @@ export default function WatsonExcelValidatorPage() {
                           </DropdownMenuItem>
                           <DropdownMenuItem
                             onClick={handleSaveToCloud}
-                            disabled={isSavingToCloud}
+                            disabled={
+                              isSavingToCloud || allEnrichedData.length === 0
+                            }
                           >
                             {isSavingToCloud ? (
                               <Loader2 className="h-4 w-4 mr-2 animate-spin" />
@@ -2968,6 +3385,8 @@ export default function WatsonExcelValidatorPage() {
               }
               return { ...prev, open: false };
             });
+            // Refetch from cloud to reflect latest state
+            fetchConfirmedExports(confirmedExportsPage);
           } else {
             setExportSuccessModal((prev) => ({ ...prev, open: true }));
           }
@@ -2979,24 +3398,44 @@ export default function WatsonExcelValidatorPage() {
         initialStatus={exportSuccessModal.initialStatus}
         onStatusChange={(status) => {
           const isConfirmed = status === "confirmed";
+          const isCancelled = status === "cancelled";
           // Lock/unlock read-only immediately
           if (isConfirmed) {
             setConfirmedExportId(exportSuccessModal.exportId);
           } else {
             setConfirmedExportId(null);
           }
-          // Keep modal initialStatus in sync so onOpenChange knows final status
+          // Keep modal initialStatus in sync
           setExportSuccessModal((prev) => ({
             ...prev,
             initialStatus: status,
           }));
-          // Update invoice workflow status
-          if (currentRecordId) {
+          // Refetch from cloud so table reflects real Firestore state
+          fetchConfirmedExports(confirmedExportsPage);
+          // The confirm API already synced the invoice record server-side.
+          // Update local state: find by currentRecordId OR by lastExportId
+          const targetRecordId =
+            currentRecordId ||
+            invoiceUploadHistory.find(
+              (r) => r.lastExportId === exportSuccessModal.exportId,
+            )?.id;
+          const newInvoiceStatus = isConfirmed
+            ? "confirmed"
+            : isCancelled
+              ? "cancelled"
+              : "exported";
+          if (targetRecordId) {
             updateInvoiceStatus(
-              currentRecordId,
-              isConfirmed ? "confirmed" : "exported",
+              targetRecordId,
+              newInvoiceStatus as WorkflowStatus,
+              isConfirmed
+                ? { lastExportId: exportSuccessModal.exportId }
+                : undefined,
             );
           }
+          // Always refetch invoice history to pick up server-side sync
+          // (handles the case where targetRecordId is null, e.g. home page)
+          refetchInvoiceHistory();
         }}
       />
 
@@ -3010,7 +3449,13 @@ export default function WatsonExcelValidatorPage() {
       />
 
       {/* Confirm Save Modal */}
-      <Dialog open={confirmSaveOpen} onOpenChange={setConfirmSaveOpen}>
+      <Dialog
+        open={confirmSaveOpen}
+        onOpenChange={(open) => {
+          setConfirmSaveOpen(open);
+          if (!open) setConfirmLowAcknowledged(false);
+        }}
+      >
         <DialogContent className="max-w-md">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2 text-emerald-700">
@@ -3034,15 +3479,51 @@ export default function WatsonExcelValidatorPage() {
               </div>
               <div className="flex justify-between">
                 <span className="text-gray-500">จำนวนแถว:</span>
-                <span className="font-mono">{displayData.length} แถว</span>
+                <span className="font-mono">{allEnrichedData.length} แถว</span>
               </div>
               <div className="flex justify-between">
                 <span className="text-gray-500">ผ่านการตรวจ:</span>
                 <span className="font-mono text-green-700">
-                  {passedCount} / {displayData.length}
+                  {passedCount} / {allEnrichedData.length}
                 </span>
               </div>
             </div>
+            {(showOnlyLowConfidence || priceFilterCategory) && (
+              <div className="flex gap-2 items-start bg-amber-50 border border-amber-300 rounded-lg p-3 text-sm text-amber-800">
+                <span className="mt-0.5 shrink-0">⚠️</span>
+                <span>
+                  ขณะนี้มี <strong>Filter</strong> เปิดอยู่ (แสดง{" "}
+                  {displayData.length} แถว) แต่ระบบจะบันทึก{" "}
+                  <strong>ข้อมูลทั้งหมด {allEnrichedData.length} แถว</strong>{" "}
+                  ไม่ใช่เฉพาะแถวที่แสดง
+                </span>
+              </div>
+            )}
+            {lowConfidenceCount > 0 && (
+              <div className="bg-red-50 border border-red-300 rounded-lg p-3 space-y-2 text-sm text-red-800">
+                <div className="flex gap-2 items-start">
+                  <span className="mt-0.5 shrink-0">🔴</span>
+                  <span>
+                    ยังมี <strong>{lowConfidenceCount} แถว</strong>{" "}
+                    ที่ไม่ผ่านการตรวจ (ราคาไม่ตรง / ไม่พบข้อมูล)
+                    และยังไม่ได้แก้ไข
+                  </span>
+                </div>
+                <label className="flex items-center gap-2 cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    checked={confirmLowAcknowledged}
+                    onChange={(e) =>
+                      setConfirmLowAcknowledged(e.target.checked)
+                    }
+                    className="w-4 h-4 accent-red-600 cursor-pointer"
+                  />
+                  <span className="text-red-700 font-medium">
+                    ฉันรับทราบและยืนยันว่าต้องการบันทึกทั้งที่ยังมีข้อมูลที่ไม่ผ่านการตรวจ
+                  </span>
+                </label>
+              </div>
+            )}
             <p className="text-sm text-gray-600">
               ข้อมูลนี้จะถูกบันทึกไปยัง Cloud และสามารถเรียกดูผ่าน API ได้
               เมื่อยืนยันแล้วจะ<strong>ล็อคไฟล์</strong>ไม่สามารถแก้ไขได้อีก
@@ -3057,8 +3538,12 @@ export default function WatsonExcelValidatorPage() {
                 setConfirmSaveOpen(false);
                 handleSaveToCloud();
               }}
-              disabled={isSavingToCloud}
-              className="bg-emerald-600 hover:bg-emerald-700 text-white"
+              disabled={
+                isSavingToCloud ||
+                allEnrichedData.length === 0 ||
+                (lowConfidenceCount > 0 && !confirmLowAcknowledged)
+              }
+              className="bg-emerald-600 hover:bg-emerald-700 text-white disabled:opacity-50"
             >
               {isSavingToCloud ? (
                 <Loader2 className="h-4 w-4 mr-2 animate-spin" />
@@ -3067,6 +3552,103 @@ export default function WatsonExcelValidatorPage() {
               )}
               ยืนยันและบันทึก
             </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Export Mode Dialog */}
+      <Dialog
+        open={exportDialogOpen.open}
+        onOpenChange={(open) =>
+          setExportDialogOpen((prev) => ({ ...prev, open }))
+        }
+      >
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              {exportDialogOpen.format === "excel" ? (
+                <FileSpreadsheet className="h-5 w-5 text-green-600" />
+              ) : (
+                <FileJson className="h-5 w-5 text-blue-600" />
+              )}
+              {exportDialogOpen.format === "excel"
+                ? "Export Excel (.xlsx)"
+                : "Export JSON (.json)"}
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            {/* Filter warning */}
+            {(showOnlyLowConfidence || priceFilterCategory) && (
+              <div className="flex gap-2 items-start bg-amber-50 border border-amber-300 rounded-lg p-3 text-sm text-amber-800">
+                <span className="mt-0.5 shrink-0">⚠️</span>
+                <div className="flex-1">
+                  <p className="font-medium">
+                    Filter เปิดอยู่ (กำลังแสดง {displayData.length} แถว)
+                  </p>
+                  <p className="text-xs mt-0.5">
+                    ต้องการปิด Filter ก่อน Export ไหม?
+                  </p>
+                </div>
+                <button
+                  className="shrink-0 text-xs underline text-amber-700 hover:text-amber-900"
+                  onClick={() => {
+                    setShowOnlyLowConfidence(false);
+                    setPriceFilterCategory(null);
+                  }}
+                >
+                  ปิด Filter
+                </button>
+              </div>
+            )}
+
+            {/* Export scope options */}
+            <div className="grid gap-3">
+              <button
+                onClick={() =>
+                  doExport("all", exportDialogOpen.format ?? "excel")
+                }
+                className="flex items-center gap-4 p-4 rounded-lg border-2 border-gray-200 hover:border-blue-400 hover:bg-blue-50 transition-colors text-left"
+              >
+                <Download className="h-8 w-8 text-blue-500 shrink-0" />
+                <div>
+                  <div className="font-semibold text-gray-900">
+                    Export ทั้งหมด
+                  </div>
+                  <div className="text-sm text-gray-500">
+                    {allEnrichedData.length.toLocaleString()} แถว (ข้อมูลทั้งหมด
+                    ไม่คำนึงถึง Filter)
+                  </div>
+                </div>
+              </button>
+
+              {(() => {
+                const problemCount = allEnrichedData.filter((row) => {
+                  const diff = String(row["Diff"] || "");
+                  const pm = String(row["Price Match"] || "");
+                  if (diff !== "-" && diff !== "") return diff.includes("⚠");
+                  return pm.includes("❌") || pm.includes("❓");
+                }).length;
+                return problemCount > 0 ? (
+                  <button
+                    onClick={() =>
+                      doExport("problems", exportDialogOpen.format ?? "excel")
+                    }
+                    className="flex items-center gap-4 p-4 rounded-lg border-2 border-gray-200 hover:border-orange-400 hover:bg-orange-50 transition-colors text-left"
+                  >
+                    <Download className="h-8 w-8 text-orange-500 shrink-0" />
+                    <div>
+                      <div className="font-semibold text-gray-900">
+                        Export เฉพาะข้อมูลปัญหา
+                      </div>
+                      <div className="text-sm text-gray-500">
+                        {problemCount.toLocaleString()} แถว (ราคาไม่ตรง,
+                        ไม่พบสินค้า, ไม่พบช่วงราคา)
+                      </div>
+                    </div>
+                  </button>
+                ) : null;
+              })()}
+            </div>
           </div>
         </DialogContent>
       </Dialog>

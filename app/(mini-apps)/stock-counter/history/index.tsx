@@ -88,6 +88,20 @@ export default function HistoryScreen() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
+  const handleSupplementPress = (session: CountingSession) => {
+    router.push({
+      pathname: "/(mini-apps)/stock-counter/camera" as any,
+      params: {
+        productId: session.productId,
+        productName: session.productName || "",
+        productBarcode: session.productSKU || "",
+        beforeQty: "0",
+        isSupplementMode: "true",
+        originalSessionId: session.id,
+      },
+    });
+  };
+
   // Pagination for better performance (20 items per page)
   const pagination = usePaginationState<CountingSession>(20);
 
@@ -102,7 +116,7 @@ export default function HistoryScreen() {
       collection(db, "countingSessions"),
       where("userId", "==", user.uid),
       where("branchId", "==", user.branchId), // Use branchId only for better performance
-      where("status", "==", "completed"),
+      where("status", "in", ["completed", "approved"]),
       orderBy("createdAt", "desc"),
     );
 
@@ -175,109 +189,145 @@ export default function HistoryScreen() {
   };
 
   const renderSession = (session: CountingSession) => (
-    <TouchableOpacity
+    <View
       key={session.id}
       style={[styles.sessionCard, { backgroundColor: colors.card }]}
-      onPress={() => handleSessionPress(session)}
-      activeOpacity={0.7}
     >
-      {/* Product Image */}
-      <View style={styles.imageContainer}>
-        {session.imageUrl || session.imageURL ? (
-          <Image
-            source={{
-              uri: fixFirebaseStorageUrl(session.imageUrl || session.imageURL!),
-            }}
-            style={styles.productImage}
-            contentFit="cover"
-            transition={200}
-          />
-        ) : (
-          <View
-            style={[
-              styles.placeholderImage,
-              { backgroundColor: colors.border },
-            ]}
-          >
-            <Ionicons
-              name="cube-outline"
-              size={32}
-              color={colors.textSecondary}
+      <TouchableOpacity
+        style={styles.sessionMainRow}
+        onPress={() => handleSessionPress(session)}
+        activeOpacity={0.7}
+      >
+        {/* Product Image */}
+        <View style={styles.imageContainer}>
+          {session.imageUrl || session.imageURL ? (
+            <Image
+              source={{
+                uri: fixFirebaseStorageUrl(
+                  session.imageUrl || session.imageURL!,
+                ),
+              }}
+              style={styles.productImage}
+              contentFit="cover"
+              transition={200}
             />
-          </View>
-        )}
-      </View>
-
-      {/* Session Info */}
-      <View style={styles.sessionInfo}>
-        <View style={styles.sessionHeader}>
-          <Text style={styles.productSKU} numberOfLines={1}>
-            {session.productSKU}
-          </Text>
-          <Text style={[styles.timeText, { color: colors.textSecondary }]}>
-            {formatTime(session.createdAt)}
-          </Text>
-        </View>
-
-        <Text
-          style={[styles.productName, { color: colors.text }]}
-          numberOfLines={1}
-        >
-          {session.productName}
-        </Text>
-
-        {/* Count Details */}
-        <View style={styles.countRow}>
-          <View style={styles.countItem}>
-            <Text style={[styles.countLabel, { color: colors.textSecondary }]}>
-              ก่อนนับ
-            </Text>
-            <Text style={[styles.countValue, { color: colors.text }]}>
-              {session.beforeCountQty || 0}
-            </Text>
-          </View>
-
-          <Ionicons
-            name="arrow-forward"
-            size={16}
-            color={colors.textSecondary}
-          />
-
-          <View style={styles.countItem}>
-            <Text style={[styles.countLabel, { color: colors.textSecondary }]}>
-              หลังนับ
-            </Text>
-            <Text style={[styles.countValue, { color: colors.text }]}>
-              {session.finalCount ?? session.currentCountQty ?? 0}
-            </Text>
-          </View>
-
-          <View
-            style={[
-              styles.varianceBadge,
-              { backgroundColor: getVarianceColor(session.variance) + "15" },
-            ]}
-          >
-            <Ionicons
-              name={session.variance >= 0 ? "trending-up" : "trending-down"}
-              size={14}
-              color={getVarianceColor(session.variance)}
-            />
-            <Text
+          ) : (
+            <View
               style={[
-                styles.varianceText,
-                { color: getVarianceColor(session.variance) },
+                styles.placeholderImage,
+                { backgroundColor: colors.border },
               ]}
             >
-              {session.variance > 0 ? "+" : session.variance < 0 ? "" : ""}
-              {session.variance}
+              <Ionicons
+                name="cube-outline"
+                size={32}
+                color={colors.textSecondary}
+              />
+            </View>
+          )}
+        </View>
+
+        {/* Session Info */}
+        <View style={styles.sessionInfo}>
+          <View style={styles.sessionHeader}>
+            <Text style={styles.productSKU} numberOfLines={1}>
+              {session.productSKU}
             </Text>
+            <View
+              style={{ flexDirection: "row", alignItems: "center", gap: 6 }}
+            >
+              {session.isSupplemental && (
+                <View style={styles.supplementalBadge}>
+                  <Ionicons name="attach" size={10} color="#6366f1" />
+                  <Text style={styles.supplementalBadgeText}>รูปเพิ่มเติม</Text>
+                </View>
+              )}
+              <Text style={[styles.timeText, { color: colors.textSecondary }]}>
+                {formatTime(session.createdAt)}
+              </Text>
+            </View>
+          </View>
+
+          <Text
+            style={[styles.productName, { color: colors.text }]}
+            numberOfLines={1}
+          >
+            {session.productName}
+          </Text>
+
+          {/* Count Details */}
+          <View style={styles.countRow}>
+            <View style={styles.countItem}>
+              <Text
+                style={[styles.countLabel, { color: colors.textSecondary }]}
+              >
+                ก่อนนับ
+              </Text>
+              <Text style={[styles.countValue, { color: colors.text }]}>
+                {session.beforeCountQty || 0}
+              </Text>
+            </View>
+
+            <Ionicons
+              name="arrow-forward"
+              size={16}
+              color={colors.textSecondary}
+            />
+
+            <View style={styles.countItem}>
+              <Text
+                style={[styles.countLabel, { color: colors.textSecondary }]}
+              >
+                หลังนับ
+              </Text>
+              <Text style={[styles.countValue, { color: colors.text }]}>
+                {session.finalCount ?? session.currentCountQty ?? 0}
+              </Text>
+            </View>
+
+            <View
+              style={[
+                styles.varianceBadge,
+                { backgroundColor: getVarianceColor(session.variance) + "15" },
+              ]}
+            >
+              <Ionicons
+                name={session.variance >= 0 ? "trending-up" : "trending-down"}
+                size={14}
+                color={getVarianceColor(session.variance)}
+              />
+              <Text
+                style={[
+                  styles.varianceText,
+                  { color: getVarianceColor(session.variance) },
+                ]}
+              >
+                {session.variance > 0 ? "+" : session.variance < 0 ? "" : ""}
+                {session.variance}
+              </Text>
+            </View>
           </View>
         </View>
-      </View>
 
-      <Ionicons name="chevron-forward" size={20} color={colors.textSecondary} />
-    </TouchableOpacity>
+        <Ionicons
+          name="chevron-forward"
+          size={20}
+          color={colors.textSecondary}
+        />
+      </TouchableOpacity>
+
+      {/* ถ่ายเพิ่ม button */}
+      <TouchableOpacity
+        style={[styles.supplementButton, { borderTopColor: colors.border }]}
+        onPress={() => handleSupplementPress(session)}
+        activeOpacity={0.7}
+      >
+        <Ionicons name="camera-outline" size={14} color={colors.primary} />
+        <Text style={[styles.supplementButtonText, { color: colors.primary }]}>
+          ถ่ายเพิ่ม
+        </Text>
+      </TouchableOpacity>
+    </View>
   );
 
   // No company/branch
@@ -485,18 +535,48 @@ const styles = StyleSheet.create({
     letterSpacing: 0.3,
   },
   sessionCard: {
-    flexDirection: "row",
-    alignItems: "center",
+    flexDirection: "column",
     marginHorizontal: 16,
     marginVertical: 4,
-    padding: 12,
     borderRadius: 12,
-    gap: 12,
+    overflow: "hidden",
     shadowColor: "#000",
     shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.1,
     shadowRadius: 4,
     elevation: 2,
+  },
+  sessionMainRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    padding: 12,
+    gap: 12,
+  },
+  supplementButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+    paddingVertical: 8,
+    borderTopWidth: 1,
+  },
+  supplementButtonText: {
+    fontSize: 13,
+    fontWeight: "600",
+  },
+  supplementalBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 2,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 6,
+    backgroundColor: "#6366f115",
+  },
+  supplementalBadgeText: {
+    fontSize: 10,
+    fontWeight: "600",
+    color: "#6366f1",
   },
   imageContainer: {
     width: 70,

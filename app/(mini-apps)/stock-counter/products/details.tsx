@@ -1,4 +1,8 @@
-import { getProductCountingSessions } from "@/services/counting.service";
+import { db } from "@/config/firebase";
+import {
+  getProductCountingSessions,
+  markProductNotAvailable,
+} from "@/services/counting.service";
 import { useAuthStore } from "@/stores/auth.store";
 import { useTheme } from "@/stores/theme.store";
 import { CountingSession } from "@/types";
@@ -9,6 +13,7 @@ import { Image } from "expo-image";
 import * as ImagePicker from "expo-image-picker";
 import * as Location from "expo-location";
 import { router, useLocalSearchParams } from "expo-router";
+import { addDoc, collection, serverTimestamp } from "firebase/firestore";
 import { useEffect, useState } from "react";
 import {
   ActivityIndicator,
@@ -66,6 +71,7 @@ export default function ProductDetailsScreen() {
   const beforeQty = params.beforeQty as string;
   const assignmentId = params.assignmentId as string;
   const productBarcode = params.productBarcode as string;
+  const isSupplemental = params.isSupplemental as string | undefined;
 
   useEffect(() => {
     checkPermissions();
@@ -79,14 +85,20 @@ export default function ProductDetailsScreen() {
 
     try {
       const sessions = await getProductCountingSessions(productId);
-      // แสดง completed/approved และ analyzed (ยังไม่ยืนยัน) ใน "รูปที่แนบแล้ว" — ไม่รวม pending/mismatch
+
+      // เฉพาะรูปของ assignment รอบนี้ (ตรง assignmentId)
       setCountingSessions(
-        sessions.filter(
-          (s) =>
+        sessions.filter((s) => {
+          const isCurrentAssignment = assignmentId
+            ? s.assignmentId === assignmentId
+            : true;
+          const isCurrentUser = !user?.uid || s.userId === user.uid;
+          const validStatus =
             s.status === "completed" ||
             s.status === "approved" ||
-            s.status === "analyzed",
-        ),
+            s.status === "analyzed";
+          return isCurrentAssignment && isCurrentUser && validStatus;
+        }),
       );
     } catch (error) {
       console.error("Error fetching counting sessions:", error);
@@ -148,6 +160,7 @@ export default function ProductDetailsScreen() {
         latitude: location?.coords.latitude,
         longitude: location?.coords.longitude,
         existingSessionId: pendingSession?.id || "",
+        ...(isSupplemental && { isSupplemental }),
       },
     });
   };
@@ -571,6 +584,8 @@ export default function ProductDetailsScreen() {
                     productSKU,
                     productImage,
                     beforeQty,
+                    assignmentId,
+                    productBarcode,
                   },
                 });
               }}
@@ -615,6 +630,57 @@ export default function ProductDetailsScreen() {
             <Text style={[styles.secondaryButtonText, { color: colors.text }]}>
               {isPickingImage ? "กำลังโหลด..." : "เลือกจากคลังรูป"}
             </Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[
+              styles.actionButton,
+              styles.skipButton,
+              { borderColor: colors.border },
+            ]}
+            onPress={() => {
+              Alert.alert(
+                "ไม่มีสินค้านี้ในสาขา?",
+                `ต้องการข้าม "${productName}" เพราะไม่มีในสาขาใช่หรือไม่?`,
+                [
+                  { text: "ยกเลิก", style: "cancel" },
+                  {
+                    text: "ยืนยัน",
+                    style: "destructive",
+                    onPress: async () => {
+                      try {
+                        if (assignmentId) {
+                          await markProductNotAvailable(
+                            assignmentId,
+                            productId,
+                          );
+                        }
+                        await addDoc(collection(db, "skippedProducts"), {
+                          userId: user?.uid,
+                          userName: user?.name,
+                          productId,
+                          productName,
+                          branchId: user?.branchId,
+                          companyId: user?.companyId,
+                          reason: "not_available_at_branch",
+                          skippedAt: serverTimestamp(),
+                        });
+                        router.back();
+                      } catch (error) {
+                        console.error(error);
+                        Alert.alert(
+                          "เกิดข้อผิดพลาด",
+                          "ไม่สามารถบันทึกได้ กรุณาลองอีกครั้ง",
+                        );
+                      }
+                    },
+                  },
+                ],
+              );
+            }}
+          >
+            <Ionicons name="close-circle-outline" size={22} color="#9ca3af" />
+            <Text style={styles.skipButtonText}>ไม่มีสินค้านี้ในสาขา</Text>
           </TouchableOpacity>
         </View>
 
@@ -778,6 +844,16 @@ const styles = StyleSheet.create({
   secondaryButtonText: {
     fontSize: 17,
     fontWeight: "600",
+  },
+  skipButton: {
+    borderWidth: 1,
+    borderStyle: "dashed",
+    backgroundColor: "transparent",
+  },
+  skipButtonText: {
+    fontSize: 15,
+    fontWeight: "500",
+    color: "#9ca3af",
   },
   warningCard: {
     flexDirection: "row",

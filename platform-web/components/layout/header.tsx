@@ -44,16 +44,28 @@ export function Header() {
         <h2 className="text-base lg:text-lg font-semibold text-gray-900 dark:text-white">
           ยินดีต้อนรับ, {userData?.name || "Admin"}
         </h2>
-        <p className="text-xs lg:text-sm text-gray-600 dark:text-gray-400">
-          {userData?.email}
-        </p>
+        <div className="flex items-center gap-2 mt-0.5">
+          {userData?.companyName && (
+            <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 border border-blue-100 dark:border-blue-800">
+              {userData.companyName}
+            </span>
+          )}
+          <p className="text-xs text-gray-500 dark:text-gray-400">
+            {userData?.email}
+          </p>
+        </div>
       </div>
 
-      {/* Mobile: Show only user name */}
+      {/* Mobile: Show only user name + company */}
       <div className="sm:hidden">
         <h2 className="text-sm font-semibold text-gray-900 dark:text-white">
           {userData?.name || "Admin"}
         </h2>
+        {userData?.companyName && (
+          <p className="text-xs text-blue-600 dark:text-blue-400">
+            {userData.companyName}
+          </p>
+        )}
       </div>
 
       <div className="flex items-center gap-2 sm:gap-4">

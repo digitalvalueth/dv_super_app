@@ -27,9 +27,14 @@ export default function CommissionPage() {
   const [exporting, setExporting] = useState(false);
   const [allSessions, setAllSessions] = useState<CountingSession[]>([]);
 
-  // Filters
-  const [filterPeriod, setFilterPeriod] = useState<string>("all");
+  // Filters – default to current month (yyyy-MM)
+  const [filterPeriod, setFilterPeriod] = useState<string>(
+    format(new Date(), "yyyy-MM"),
+  );
   const [filterBranch, setFilterBranch] = useState<string>("all");
+  const [filterHalf, setFilterHalf] = useState<"all" | "1" | "2">(
+    new Date().getDate() <= 15 ? "1" : "2",
+  );
 
   useEffect(() => {
     if (!userData) return;
@@ -157,6 +162,13 @@ export default function CommissionPage() {
           (s) => s.branchName === filterBranch,
         );
       }
+      if (filterHalf !== "all") {
+        sessionsToExport = sessionsToExport.filter((s) => {
+          if (!s.createdAt) return false;
+          const day = s.createdAt.getDate();
+          return filterHalf === "1" ? day <= 15 : day >= 16;
+        });
+      }
 
       if (sessionsToExport.length === 0) {
         toast.error("ไม่มีข้อมูลที่ตรงกับเงื่อนไข");
@@ -248,6 +260,13 @@ export default function CommissionPage() {
           (s) => s.branchName === filterBranch,
         );
       }
+      if (filterHalf !== "all") {
+        sessionsToExport = sessionsToExport.filter((s) => {
+          if (!s.createdAt) return false;
+          const day = s.createdAt.getDate();
+          return filterHalf === "1" ? day <= 15 : day >= 16;
+        });
+      }
 
       if (sessionsToExport.length === 0) {
         toast.error("ไม่มีข้อมูลที่ตรงกับเงื่อนไข");
@@ -320,6 +339,10 @@ export default function CommissionPage() {
     )
       return false;
     if (filterBranch !== "all" && s.branchName !== filterBranch) return false;
+    if (filterHalf !== "all" && s.createdAt) {
+      const day = s.createdAt.getDate();
+      if (filterHalf === "1" ? day > 15 : day <= 15) return false;
+    }
     return true;
   });
   const totalQty = filteredSessions.reduce(
@@ -440,6 +463,23 @@ export default function CommissionPage() {
               ))}
             </select>
           </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+              รอบ
+            </label>
+            <select
+              value={filterHalf}
+              onChange={(e) =>
+                setFilterHalf(e.target.value as "all" | "1" | "2")
+              }
+              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500"
+            >
+              <option value="all">ทั้งเดือน</option>
+              <option value="1">รอบ 1 (1-15)</option>
+              <option value="2">รอบ 2 (16-สิ้นเดือน)</option>
+            </select>
+          </div>
         </div>
       </div>
 
@@ -511,6 +551,10 @@ export default function CommissionPage() {
                   }
                   if (filterBranch !== "all" && s.branchName !== filterBranch)
                     return false;
+                  if (filterHalf !== "all" && s.createdAt) {
+                    const day = s.createdAt.getDate();
+                    if (filterHalf === "1" ? day > 15 : day <= 15) return false;
+                  }
                   return true;
                 });
                 if (filtered.length === 0) {

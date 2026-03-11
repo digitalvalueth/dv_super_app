@@ -41,11 +41,11 @@ const HIGH_QUALITY_OPTIONS: ImageCompressionOptions = {
 /**
  * Barcode counting — preserves original aspect ratio (portrait 9:16 etc.)
  * Only constrains the LONG side to avoid squashing barcodes.
- * High quality for accurate AI barcode recognition.
+ * Optimized for speed: 1024px is enough for AI barcode recognition.
  */
 const BARCODE_COUNTING_OPTIONS: ImageCompressionOptions = {
-  maxWidth: 1920, // long side cap — portrait photos become ~1920x1080 equivalent
-  quality: 1, // high quality keeps barcode lines sharp
+  maxWidth: 1024, // reduced from 1920 — faster AI processing, still readable barcodes
+  quality: 0.8, // reduced from 1.0 — good enough for barcode lines, much smaller file
   format: "jpeg",
 };
 
