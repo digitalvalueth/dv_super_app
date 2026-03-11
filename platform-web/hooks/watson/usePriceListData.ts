@@ -1104,8 +1104,9 @@ export function usePriceListData() {
                 );
               }
 
-              // Pass when calcAmt >= rawAmt (direction-based, not confidence threshold)
-              const isConfidenceOk = result.isAcceptable;
+              // Pass when calcAmt >= rawAmt, OR shortfall <= 0.50 baht (rounding difference)
+              const isConfidenceOk =
+                result.isAcceptable || rawAmt - result.calculatedAmt <= 0.5;
 
               diffStr = isConfidenceOk
                 ? `✓ ${fmt2(result.diff)}`
