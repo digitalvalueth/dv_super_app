@@ -176,7 +176,7 @@ service cloud.firestore {
     }
     
     // ==================== COUNTING SESSIONS COLLECTION ====================
-    match /counting_sessions/{sessionId} {
+    match /countingSessions/{sessionId} {
       // Users can read counting sessions in their company
       allow read: if isAuthenticated() && isSameCompany(resource.data.companyId);
       
@@ -199,6 +199,64 @@ service cloud.firestore {
       // Only admin and super admin can delete sessions
       allow delete: if isSuperAdmin() || 
                       (isAdmin() && isSameCompany(resource.data.companyId));
+    }
+
+    // ==================== COUNTING PERIODS COLLECTION ====================
+    match /countingPeriods/{periodId} {
+      allow read: if isAuthenticated() && isSameCompany(resource.data.companyId);
+      allow read: if isSuperAdmin();
+      allow create, update: if hasAnyRole(['manager', 'admin', 'super_admin']) &&
+                               isSameCompany(request.resource.data.companyId);
+      allow delete: if isSuperAdmin() || 
+                      (isAdmin() && isSameCompany(resource.data.companyId));
+    }
+    
+    // ==================== ASSIGNMENTS COLLECTION ====================
+    match /assignments/{assignmentId} {
+      allow read: if isAuthenticated() && isSameCompany(resource.data.companyId);
+      allow read: if isSuperAdmin();
+      allow create, update: if hasAnyRole(['manager', 'admin', 'super_admin']) &&
+                               isSameCompany(request.resource.data.companyId);
+      allow delete: if isSuperAdmin() || 
+                      (isAdmin() && isSameCompany(resource.data.companyId));
+    }
+
+    // ==================== USER ASSIGNMENTS COLLECTION ====================
+    match /userAssignments/{assignmentId} {
+      allow read: if isAuthenticated() && resource.data.userId == request.auth.uid;
+      allow read: if hasAnyRole(['manager', 'admin', 'super_admin']) &&
+                     isSameCompany(resource.data.companyId);
+      allow read: if isSuperAdmin();
+      allow create, update, delete: if hasAnyRole(['manager', 'admin', 'super_admin']) &&
+                                       isSameCompany(request.resource.data.companyId);
+    }
+
+    // ==================== MISSING CHECK-IN ALERTS COLLECTION ====================
+    match /missingCheckInAlerts/{alertId} {
+      allow read: if hasAnyRole(['supervisor', 'manager', 'admin', 'super_admin']) &&
+                     isSameCompany(resource.data.companyId);
+      allow read: if isSuperAdmin();
+      allow create: if hasAnyRole(['supervisor', 'manager', 'admin', 'super_admin']) &&
+                       isSameCompany(request.resource.data.companyId);
+      allow update: if hasAnyRole(['supervisor', 'manager', 'admin', 'super_admin']) &&
+                       isSameCompany(resource.data.companyId);
+    }
+
+    // ==================== ATTENDANCE SETTINGS COLLECTION ====================
+    match /attendanceSettings/{settingId} {
+      allow read: if isAuthenticated() && isSameCompany(resource.data.companyId);
+      allow read: if isSuperAdmin();
+      allow create, update, delete: if hasAnyRole(['admin', 'super_admin']) &&
+                                       isSameCompany(request.resource.data.companyId);
+    }
+
+    // ==================== SKIPPED PRODUCTS COLLECTION ====================
+    match /skippedProducts/{docId} {
+      allow read: if isAuthenticated() && isSameCompany(resource.data.companyId);
+      allow read: if isSuperAdmin();
+      allow create: if isAuthenticated() && isSameCompany(request.resource.data.companyId);
+      allow delete: if hasAnyRole(['manager', 'admin', 'super_admin']) &&
+                       isSameCompany(resource.data.companyId);
     }
     
     // ==================== DELIVERY RECORDS COLLECTION ====================
@@ -226,9 +284,29 @@ service cloud.firestore {
       allow delete: if isSuperAdmin() || 
                       (isAdmin() && isSameCompany(resource.data.companyId));
     }
+
+    // ==================== SHIPMENTS COLLECTION ====================
+    match /shipments/{shipmentId} {
+      allow read: if isAuthenticated() && isSameCompany(resource.data.companyId);
+      allow read: if isSuperAdmin();
+      allow create: if isAuthenticated() && isSameCompany(request.resource.data.companyId);
+      allow update: if isAuthenticated() && isSameCompany(resource.data.companyId);
+      allow delete: if isSuperAdmin() || 
+                      (isAdmin() && isSameCompany(resource.data.companyId));
+    }
+
+    // ==================== DELIVERY RECEIVES COLLECTION ====================
+    match /deliveryReceives/{receiveId} {
+      allow read: if isAuthenticated() && isSameCompany(resource.data.companyId);
+      allow read: if isSuperAdmin();
+      allow create: if isAuthenticated() && isSameCompany(request.resource.data.companyId);
+      allow update: if isAuthenticated() && isSameCompany(resource.data.companyId);
+      allow delete: if isSuperAdmin() || 
+                      (isAdmin() && isSameCompany(resource.data.companyId));
+    }
     
     // ==================== CHECKINS COLLECTION ====================
-    match /checkins/{checkinId} {
+    match /checkIns/{checkinId} {
       // Users can read checkins in their company
       allow read: if isAuthenticated() && isSameCompany(resource.data.companyId);
       

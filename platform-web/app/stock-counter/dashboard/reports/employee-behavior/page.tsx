@@ -17,7 +17,7 @@ import {
   Users,
 } from "lucide-react";
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 interface EmployeeBehaviorReport {
   userId: string;
@@ -44,12 +44,142 @@ interface EmployeeBehaviorReport {
 
 export default function EmployeeBehaviorPage() {
   const { userData } = useAuthStore();
-  const [reports, setReports] = useState<EmployeeBehaviorReport[]>([]);
+  const [allSessions, setAllSessions] = useState<CountingSession[]>([]);
   const [loading, setLoading] = useState(true);
+  const [filterMonth, setFilterMonth] = useState<number>(
+    new Date().getMonth() + 1,
+  );
+  const [filterYear, setFilterYear] = useState<number>(
+    new Date().getFullYear(),
+  );
+  const [filterHalf, setFilterHalf] = useState<"all" | "1" | "2">(
+    new Date().getDate() <= 15 ? "1" : "2",
+  );
   const [searchTerm, setSearchTerm] = useState("");
   const [filterRisk, setFilterRisk] = useState<string>("all");
   const [selectedEmployee, setSelectedEmployee] =
     useState<EmployeeBehaviorReport | null>(null);
+
+  const reports = useMemo((): EmployeeBehaviorReport[] => {
+    const sessions = allSessions.filter((s) => {
+      if (!s.createdAt) return false;
+      const d = s.createdAt;
+      const matchesMonth =
+        d.getMonth() + 1 === filterMonth && d.getFullYear() === filterYear;
+      const matchesHalf =
+        filterHalf === "all" ||
+        (filterHalf === "1" ? d.getDate() <= 15 : d.getDate() >= 16);
+      return matchesMonth && matchesHalf;
+    });
+    const userMap = new Map<string, EmployeeBehaviorReport>();
+    sessions.forEach((session) => {
+      const existing = userMap.get(session.userId);
+      const location = session.location;
+      let parsedLocation = location;
+      if (!parsedLocation && session.remarks) {
+        try {
+          const remarksData = JSON.parse(session.remarks);
+          parsedLocation = {
+            address: remarksData.location || "",
+            latitude: remarksData.coordinates?.latitude,
+            longitude: remarksData.coordinates?.longitude,
+          };
+        } catch {
+          /* ignore */
+        }
+      }
+      if (existing) {
+        existing.totalDiscrepancy += session.discrepancy ?? 0;
+        existing.sessionCount += 1;
+        if (parsedLocation?.address) {
+          const existingLocation = existing.locationDetails.find(
+            (l) => l.address === parsedLocation.address,
+          );
+          if (existingLocation) {
+            existingLocation.count += 1;
+          } else {
+            existing.locationDetails.push({
+              address: parsedLocation.address,
+              count: 1,
+              coordinates:
+                parsedLocation.latitude && parsedLocation.longitude
+                  ? {
+                      lat: parsedLocation.latitude,
+                      lng: parsedLocation.longitude,
+                    }
+                  : undefined,
+            });
+          }
+        }
+        if ((session.discrepancy ?? 0) > 5)
+          existing.issuesSessions.push(session);
+      } else {
+        const locationDetails: EmployeeBehaviorReport["locationDetails"] = [];
+        if (parsedLocation?.address)
+          locationDetails.push({
+            address: parsedLocation.address,
+            count: 1,
+            coordinates:
+              parsedLocation.latitude && parsedLocation.longitude
+                ? {
+                    lat: parsedLocation.latitude,
+                    lng: parsedLocation.longitude,
+                  }
+                : undefined,
+          });
+        userMap.set(session.userId, {
+          userId: session.userId,
+          userName: session.userName ?? "ไม่ระบุ",
+          userEmail: session.userEmail ?? "",
+          branchName: session.branchName ?? "ไม่ระบุ",
+          uniqueLocations: 0,
+          suspiciousLocations: 0,
+          locationDetails,
+          totalDiscrepancy: session.discrepancy ?? 0,
+          averageDiscrepancy: 0,
+          sessionCount: 1,
+          riskLevel: "low",
+          issuesSessions: (session.discrepancy ?? 0) > 5 ? [session] : [],
+        });
+      }
+    });
+    const reportsData: EmployeeBehaviorReport[] = [];
+    userMap.forEach((report) => {
+      report.uniqueLocations = report.locationDetails.length;
+      report.averageDiscrepancy =
+        report.sessionCount > 0
+          ? report.totalDiscrepancy / report.sessionCount
+          : 0;
+      const maxLocationCount = Math.max(
+        ...report.locationDetails.map((l) => l.count),
+        0,
+      );
+      if (maxLocationCount > 10 && maxLocationCount / report.sessionCount > 0.8)
+        report.suspiciousLocations = 1;
+      if (report.sessionCount > 10 && report.uniqueLocations === 1)
+        report.suspiciousLocations += 1;
+      if (
+        report.suspiciousLocations > 0 ||
+        report.averageDiscrepancy > 10 ||
+        report.issuesSessions.length > 5
+      )
+        report.riskLevel = "high";
+      else if (
+        report.averageDiscrepancy > 5 ||
+        report.issuesSessions.length > 2
+      )
+        report.riskLevel = "medium";
+      else report.riskLevel = "low";
+      reportsData.push(report);
+    });
+    reportsData.sort((a, b) => {
+      const riskOrder = { high: 0, medium: 1, low: 2 };
+      if (riskOrder[a.riskLevel] !== riskOrder[b.riskLevel])
+        return riskOrder[a.riskLevel] - riskOrder[b.riskLevel];
+      return b.totalDiscrepancy - a.totalDiscrepancy;
+    });
+    return reportsData;
+  }, [allSessions, filterMonth, filterYear, filterHalf]);
 
   useEffect(() => {
     if (!userData) return;
@@ -100,148 +230,7 @@ export default function EmployeeBehaviorPage() {
         });
       });
 
-      // Group by user and analyze behavior
-      const userMap = new Map<string, EmployeeBehaviorReport>();
-
-      sessions.forEach((session) => {
-        const existing = userMap.get(session.userId);
-        const location = session.location;
-
-        // Parse location from remarks if not available
-        let parsedLocation = location;
-        if (!parsedLocation && session.remarks) {
-          try {
-            const remarksData = JSON.parse(session.remarks);
-            parsedLocation = {
-              address: remarksData.location || "",
-              latitude: remarksData.coordinates?.latitude,
-              longitude: remarksData.coordinates?.longitude,
-            };
-          } catch {
-            // Ignore parse error
-          }
-        }
-
-        if (existing) {
-          existing.totalDiscrepancy += session.discrepancy ?? 0;
-          existing.sessionCount += 1;
-
-          // Track location
-          if (parsedLocation?.address) {
-            const existingLocation = existing.locationDetails.find(
-              (l) => l.address === parsedLocation.address,
-            );
-            if (existingLocation) {
-              existingLocation.count += 1;
-            } else {
-              existing.locationDetails.push({
-                address: parsedLocation.address,
-                count: 1,
-                coordinates:
-                  parsedLocation.latitude && parsedLocation.longitude
-                    ? {
-                        lat: parsedLocation.latitude,
-                        lng: parsedLocation.longitude,
-                      }
-                    : undefined,
-              });
-            }
-          }
-
-          // Track sessions with high discrepancy
-          if ((session.discrepancy ?? 0) > 5) {
-            existing.issuesSessions.push(session);
-          }
-        } else {
-          const locationDetails: EmployeeBehaviorReport["locationDetails"] = [];
-          if (parsedLocation?.address) {
-            locationDetails.push({
-              address: parsedLocation.address,
-              count: 1,
-              coordinates:
-                parsedLocation.latitude && parsedLocation.longitude
-                  ? {
-                      lat: parsedLocation.latitude,
-                      lng: parsedLocation.longitude,
-                    }
-                  : undefined,
-            });
-          }
-
-          userMap.set(session.userId, {
-            userId: session.userId,
-            userName: session.userName ?? "ไม่ระบุ",
-            userEmail: session.userEmail ?? "",
-            branchName: session.branchName ?? "ไม่ระบุ",
-            uniqueLocations: 0,
-            suspiciousLocations: 0,
-            locationDetails,
-            totalDiscrepancy: session.discrepancy ?? 0,
-            averageDiscrepancy: 0,
-            sessionCount: 1,
-            riskLevel: "low",
-            issuesSessions: (session.discrepancy ?? 0) > 5 ? [session] : [],
-          });
-        }
-      });
-
-      // Calculate metrics and risk level
-      const reportsData: EmployeeBehaviorReport[] = [];
-
-      userMap.forEach((report) => {
-        report.uniqueLocations = report.locationDetails.length;
-        report.averageDiscrepancy =
-          report.sessionCount > 0
-            ? report.totalDiscrepancy / report.sessionCount
-            : 0;
-
-        // Check for suspicious behavior
-        // 1. Same location used many times (possible fake location)
-        const maxLocationCount = Math.max(
-          ...report.locationDetails.map((l) => l.count),
-          0,
-        );
-        if (
-          maxLocationCount > 10 &&
-          maxLocationCount / report.sessionCount > 0.8
-        ) {
-          report.suspiciousLocations = 1;
-        }
-
-        // 2. Too few unique locations
-        if (report.sessionCount > 10 && report.uniqueLocations === 1) {
-          report.suspiciousLocations += 1;
-        }
-
-        // Calculate risk level
-        if (
-          report.suspiciousLocations > 0 ||
-          report.averageDiscrepancy > 10 ||
-          report.issuesSessions.length > 5
-        ) {
-          report.riskLevel = "high";
-        } else if (
-          report.averageDiscrepancy > 5 ||
-          report.issuesSessions.length > 2
-        ) {
-          report.riskLevel = "medium";
-        } else {
-          report.riskLevel = "low";
-        }
-
-        reportsData.push(report);
-      });
-
-      // Sort by risk level and total discrepancy
-      reportsData.sort((a, b) => {
-        const riskOrder = { high: 0, medium: 1, low: 2 };
-        if (riskOrder[a.riskLevel] !== riskOrder[b.riskLevel]) {
-          return riskOrder[a.riskLevel] - riskOrder[b.riskLevel];
-        }
-        return b.totalDiscrepancy - a.totalDiscrepancy;
-      });
-
-      setReports(reportsData);
+      setAllSessions(sessions);
     } catch (error) {
       console.error("Error fetching behavior data:", error);
     } finally {
@@ -383,6 +372,43 @@ export default function EmployeeBehaviorPage() {
       {/* Filters */}
       <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-4">
         <div className="flex flex-col md:flex-row gap-4">
+          <div className="flex gap-2">
+            <select
+              value={filterMonth}
+              onChange={(e) => setFilterMonth(Number(e.target.value))}
+              className="px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+            >
+              {Array.from({ length: 12 }, (_, i) => i + 1).map((m) => (
+                <option key={m} value={m}>
+                  {new Date(2000, m - 1, 1).toLocaleDateString("th-TH", {
+                    month: "long",
+                  })}
+                </option>
+              ))}
+            </select>
+            <select
+              value={filterYear}
+              onChange={(e) => setFilterYear(Number(e.target.value))}
+              className="px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+            >
+              {[filterYear - 1, filterYear, filterYear + 1].map((y) => (
+                <option key={y} value={y}>
+                  {y + 543}
+                </option>
+              ))}
+            </select>
+            <select
+              value={filterHalf}
+              onChange={(e) =>
+                setFilterHalf(e.target.value as "all" | "1" | "2")
+              }
+              className="px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+            >
+              <option value="all">ทั้งเดือน</option>
+              <option value="1">รอบ 1 (1–15)</option>
+              <option value="2">รอบ 2 (16–สิ้นเดือน)</option>
+            </select>
+          </div>
           <div className="flex-1 relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
             <input

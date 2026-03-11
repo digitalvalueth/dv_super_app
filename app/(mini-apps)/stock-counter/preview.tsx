@@ -1,3 +1,4 @@
+import { canUploadPhoto } from "@/services/counting-period.service";
 import {
   createCountingSession,
   updateAssignmentStatus,
@@ -7,6 +8,7 @@ import {
   BarcodeCountResult,
   countBarcodesInImage,
 } from "@/services/gemini.service";
+import { createSupplementSession } from "@/services/supplement.service";
 import { useAuthStore } from "@/stores/auth.store";
 import { useTheme } from "@/stores/theme.store";
 import { formatTimestamp, WatermarkData } from "@/utils/watermark";
@@ -59,6 +61,9 @@ export default function PreviewScreen() {
     beforeQty?: string;
     existingSessionId?: string; // ถ้ามี แสดงว่ามี session อยู่แล้ว ให้อัพเดทแทนสร้างใหม่
     nativeScannedBarcode?: string; // barcode ที่สแกนด้วย native scanner (แม่นยำ 100%)
+    isSupplementMode?: string; // "true" เมื่อเข้ามาจาก history ถ่ายเพิ่ม
+    originalSessionId?: string; // original countingSession id สำหรับ supplement
+    isSupplemental?: string; // "true" เมื่อถ่ายรูปเพิ่มเติม (ใน completed.tsx)
   }>();
 
   const [isProcessing, setIsProcessing] = useState(false);
@@ -80,11 +85,17 @@ export default function PreviewScreen() {
     params.imageUri || "",
   );
 
+  // Auto-analyze ref — ensures AI runs exactly once after upload completes
+  const autoAnalyzedRef = useRef(false);
+
   // Dispute / error-report state
   const [showDisputeForm, setShowDisputeForm] = useState(false);
   const scrollViewRef = useRef<ScrollView>(null);
   const [disputeCount, setDisputeCount] = useState("");
   const [disputeRemark, setDisputeRemark] = useState("");
+
+  // Supplement mode: stores the uploaded image URL (no countingSession created)
+  const [supplementImageUrl, setSupplementImageUrl] = useState<string>("");
 
   // Parse watermark data
   const watermarkData: WatermarkData | null = useMemo(() => {
@@ -95,15 +106,59 @@ export default function PreviewScreen() {
     }
   }, [params.watermarkData]);
 
+  // ตรวจวันล็อค: ถ้าวันที่ 1 หรือ 16 ห้ามอัปโหลดทั้งวัน
+  useEffect(() => {
+    async function checkPeriodLock() {
+      if (!user?.companyId) return;
+      try {
+        const result = await canUploadPhoto(user.companyId);
+        if (result.status === "locked") {
+          Alert.alert(
+            "🔒 ระบบปิดรับรูปชั่วคราว",
+            "วันนี้ระบบปิดรับรูปชั่วคราว กรุณากลับมาพรุ่งนี้",
+            [{ text: "ตกลง", onPress: () => router.back() }],
+            { cancelable: false },
+          );
+        }
+      } catch {
+        // ไม่มี period config → ไม่บล็อค
+      }
+    }
+    checkPeriodLock();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // เมื่อเข้าหน้า preview: อัพโหลดรูปและสร้าง/อัพเดท draft session
   useEffect(() => {
     const createOrUpdateDraftSession = async () => {
+      if (!user || !params.productId || !params.imageUri) return;
+      // isSupplemental flow (from completed.tsx) always allowed — no assignmentId required
+      const isSupplementalFlow = params.isSupplemental === "true";
+      // Normal mode requires assignmentId; supplement mode (history) skips it
       if (
-        !user ||
-        !params.assignmentId ||
-        !params.productId ||
-        !params.imageUri
-      ) {
+        !isSupplementalFlow &&
+        params.isSupplementMode !== "true" &&
+        !params.assignmentId
+      )
+        return;
+
+      // ── Supplement mode (history flow): just upload image, no counting session ──
+      if (params.isSupplementMode === "true") {
+        try {
+          setIsUploading(true);
+          const tempId = `supplement_${Date.now()}`;
+          const imageUrl = await uploadCountingImage(
+            user.uid,
+            tempId,
+            params.imageUri,
+          );
+          setSupplementImageUrl(imageUrl);
+        } catch (error) {
+          console.error("Error uploading supplement image:", error);
+          Alert.alert("เกิดข้อผิดพลาด", "ไม่สามารถอัพโหลดรูปภาพได้");
+        } finally {
+          setIsUploading(false);
+        }
         return;
       }
 
@@ -169,13 +224,15 @@ export default function PreviewScreen() {
       try {
         setIsUploading(true);
 
-        // 1. Mark product as in_progress
-        await updateAssignmentStatus(
-          params.assignmentId,
-          "in_progress",
-          undefined,
-          params.productId,
-        );
+        // 1. Mark product as in_progress (ข้ามถ้าเป็น supplemental — สินค้านับเสร็จแล้ว)
+        if (!isSupplementalFlow && params.assignmentId) {
+          await updateAssignmentStatus(
+            params.assignmentId,
+            "in_progress",
+            undefined,
+            params.productId,
+          );
+        }
 
         // 2. อัพโหลดรูปปกติ (ไม่มี watermark) ไป Firebase Storage
         // Watermark จะถูกฝังตอนกดยืนยันใน result.tsx
@@ -214,7 +271,7 @@ export default function PreviewScreen() {
           const beforeQty = parseInt(params.beforeQty || "0");
 
           const newSessionId = await createCountingSession({
-            assignmentId: params.assignmentId,
+            assignmentId: params.assignmentId || "",
             productId: params.productId,
             productName: params.productName || "",
             productSKU: params.productBarcode || "",
@@ -255,6 +312,7 @@ export default function PreviewScreen() {
             processingTime: 0,
             deviceInfo: watermarkData?.deviceModel || "Unknown",
             appVersion: "1.0.0",
+            ...(isSupplementalFlow && { isSupplemental: true }),
           });
 
           setSessionId(newSessionId);
@@ -275,10 +333,43 @@ export default function PreviewScreen() {
     params.productId,
     params.imageUri,
     params.existingSessionId,
+    params.isSupplementMode,
+    params.isSupplemental,
   ]);
 
+  // ── Auto-trigger AI analysis once sessionId is ready (normal + isSupplemental flow) ──
+  useEffect(() => {
+    if (
+      !autoAnalyzedRef.current &&
+      sessionId &&
+      barcodeCount === null &&
+      !isProcessing &&
+      params.isSupplementMode !== "true"
+    ) {
+      autoAnalyzedRef.current = true;
+      handleAnalyze();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sessionId]);
+
+  // ── Auto-trigger for supplement mode (uses supplementImageUrl instead of sessionId) ──
+  useEffect(() => {
+    if (
+      !autoAnalyzedRef.current &&
+      params.isSupplementMode === "true" &&
+      supplementImageUrl &&
+      barcodeCount === null &&
+      !isProcessing
+    ) {
+      autoAnalyzedRef.current = true;
+      handleAnalyze();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [supplementImageUrl]);
+
   const handleAnalyze = useCallback(async () => {
-    if (!sessionId) {
+    // Supplement mode doesn't need a sessionId; normal mode does
+    if (!sessionId && params.isSupplementMode !== "true") {
       Alert.alert("กรุณารอสักครู่", "กำลังอัพโหลดรูปภาพ...");
       return;
     }
@@ -340,49 +431,95 @@ export default function PreviewScreen() {
       }
 
       // 2. อัพเดท session ที่มีอยู่แล้วด้วยผลวิเคราะห์
-      const { updateDoc, doc } = await import("firebase/firestore");
-      const { db } = await import("@/config/firebase");
+      // ข้ามขั้นตอนนี้ใน supplement mode (ไม่มี countingSession)
+      if (params.isSupplementMode !== "true" && sessionId) {
+        const { updateDoc, doc } = await import("firebase/firestore");
+        const { db } = await import("@/config/firebase");
 
-      const beforeQty = parseInt(params.beforeQty || "0");
-      // ถ้าบาร์โค้ดไม่ตรง อย่าบันทึกจำนวนของสินค้าอื่น ให้ count = 0
-      const isMismatch = !!params.productBarcode && !result.barcodeMatch;
-      const countToSave = isMismatch ? 0 : result.count;
-      const variance = beforeQty - countToSave;
+        const beforeQty = parseInt(params.beforeQty || "0");
+        // ถ้าบาร์โค้ดไม่ตรง อย่าบันทึกจำนวนของสินค้าอื่น ให้ count = 0
+        const isMismatch = !!params.productBarcode && !result.barcodeMatch;
+        const countToSave = isMismatch ? 0 : result.count;
+        const variance = beforeQty - countToSave;
 
-      await updateDoc(doc(db, "countingSessions", sessionId), {
-        currentCountQty: countToSave,
-        variance: variance,
-        aiCount: countToSave,
-        aiConfidence: 0.95,
-        manualCount: countToSave,
-        finalCount: countToSave,
-        discrepancy: Math.abs(variance),
-        processingTime: result.processingTime || 0,
-        barcodeMatch: result.barcodeMatch,
-        detectedBarcodes: result.detectedBarcodes,
-        matchedBarcode: result.matchedBarcode || null,
-        // mismatch = ถ่ายผิดสินค้า, analyzed = วิเคราะห์แล้วรอยืนยัน
-        status: isMismatch ? "mismatch" : "analyzed",
-        updatedAt: new Date(),
-      });
+        await updateDoc(doc(db, "countingSessions", sessionId), {
+          currentCountQty: countToSave,
+          variance: variance,
+          aiCount: countToSave,
+          aiConfidence: 0.95,
+          manualCount: countToSave,
+          finalCount: countToSave,
+          discrepancy: Math.abs(variance),
+          processingTime: result.processingTime || 0,
+          barcodeMatch: result.barcodeMatch,
+          detectedBarcodes: result.detectedBarcodes,
+          matchedBarcode: result.matchedBarcode || null,
+          // mismatch = ถ่ายผิดสินค้า, analyzed = วิเคราะห์แล้วรอยืนยัน
+          status: isMismatch ? "mismatch" : "analyzed",
+          updatedAt: new Date(),
+        });
+      }
     } catch (error) {
       console.error("Error analyzing image:", error);
       Alert.alert("เกิดข้อผิดพลาด", "ไม่สามารถวิเคราะห์รูปภาพได้");
     } finally {
       setIsProcessing(false);
     }
-  }, [imageBase64, sessionId, params.beforeQty, params.imageUri]);
+  }, [
+    imageBase64,
+    sessionId,
+    params.beforeQty,
+    params.imageUri,
+    params.isSupplementMode,
+  ]);
 
   const handleRetake = () => {
     router.back();
   };
 
-  const handleConfirm = () => {
-    if (barcodeCount === null || !sessionId) {
+  const handleConfirm = async () => {
+    if (barcodeCount === null) {
       Alert.alert(
         "กรุณาวิเคราะห์รูปก่อน",
         "กดปุ่ม 'วิเคราะห์ด้วย AI' เพื่อนับจำนวน Barcode",
       );
+      return;
+    }
+
+    // ── Supplement mode: save supplement session and go back ──
+    if (params.isSupplementMode === "true") {
+      if (!params.originalSessionId) {
+        Alert.alert("เกิดข้อผิดพลาด", "ไม่พบข้อมูล session เดิม");
+        return;
+      }
+      try {
+        await createSupplementSession({
+          originalSessionId: params.originalSessionId,
+          userId: user!.uid,
+          userName: user!.name || "",
+          productId: params.productId || "",
+          productName: params.productName || "",
+          companyId: user!.companyId || "",
+          branchId: user!.branchId || "",
+          additionalCount: barcodeCount,
+          imageUrl: supplementImageUrl,
+          aiCount: barcodeCount,
+          reason: "เจอสินค้าเพิ่มเติม",
+        });
+        Alert.alert(
+          "✅ ส่งข้อมูลสำเร็จ",
+          "รายการถ่ายเพิ่มถูกส่งให้ Supervisor ตรวจสอบแล้ว",
+          [{ text: "ตกลง", onPress: () => router.back() }],
+        );
+      } catch (error) {
+        console.error("Error creating supplement session:", error);
+        Alert.alert("เกิดข้อผิดพลาด", "ไม่สามารถส่งข้อมูลได้ กรุณาลองใหม่");
+      }
+      return;
+    }
+
+    if (!sessionId) {
+      Alert.alert("กรุณารอสักครู่", "กำลังอัพโหลดรูปภาพ...");
       return;
     }
 
@@ -400,9 +537,12 @@ export default function PreviewScreen() {
         assignmentId: params.assignmentId,
         beforeQty: params.beforeQty,
         watermarkData: params.watermarkData,
+        // Barcode match status — used to block save on mismatch
+        barcodeMatchStatus: barcodeMatch === false ? "mismatch" : "match",
         // Dispute / error-report fields
         userReportedCount: disputeCount.trim() || "",
         disputeRemark: disputeRemark.trim() || "",
+        isSupplemental: params.isSupplemental || "",
       },
     });
   };
@@ -423,7 +563,7 @@ export default function PreviewScreen() {
           <Ionicons name="arrow-back" size={24} color={colors.text} />
         </TouchableOpacity>
         <Text style={[styles.headerTitle, { color: colors.text }]}>
-          ตรวจสอบรูปภาพ
+          {params.isSupplementMode === "true" ? "ถ่ายเพิ่ม" : "ตรวจสอบรูปภาพ"}
         </Text>
         <View style={styles.headerButton} />
       </View>
@@ -792,58 +932,45 @@ export default function PreviewScreen() {
               </View>
             ) : (
               <View style={styles.emptyResult}>
-                <Ionicons
-                  name="scan-outline"
-                  size={48}
-                  color={colors.textSecondary}
-                />
+                <ActivityIndicator size="large" color={colors.primary} />
                 <Text
                   style={[styles.emptyText, { color: colors.textSecondary }]}
                 >
-                  กดปุ่มด้านล่างเพื่อวิเคราะห์
+                  {isUploading || !sessionId
+                    ? "กำลังอัพโหลดและเตรียมวิเคราะห์..."
+                    : "กำลังวิเคราะห์อัตโนมัติ..."}
                 </Text>
               </View>
             )}
 
-            <TouchableOpacity
-              style={[
-                styles.analyzeButton,
-                { backgroundColor: colors.primary },
-                (isProcessing ||
-                  isUploading ||
-                  isLoadingImage ||
-                  !sessionId) && {
-                  opacity: 0.6,
-                },
-              ]}
-              onPress={handleAnalyze}
-              disabled={
-                isProcessing || isUploading || isLoadingImage || !sessionId
-              }
-            >
-              {isUploading ? (
-                <>
-                  <ActivityIndicator size="small" color="#fff" />
-                  <Text style={styles.analyzeButtonText}>
-                    กำลังอัพโหลดรูป...
-                  </Text>
-                </>
-              ) : isLoadingImage ? (
-                <>
-                  <ActivityIndicator size="small" color="#fff" />
-                  <Text style={styles.analyzeButtonText}>กำลังโหลดรูป...</Text>
-                </>
-              ) : (
-                <>
-                  <Ionicons name="sparkles" size={20} color="#fff" />
-                  <Text style={styles.analyzeButtonText}>
-                    {barcodeCount !== null
-                      ? "วิเคราะห์อีกครั้ง"
-                      : "วิเคราะห์ด้วย AI"}
-                  </Text>
-                </>
-              )}
-            </TouchableOpacity>
+            {/* แสดงปุ่ม "ลองอีกครั้ง" หลังจากวิเคราะห์ครั้งแรกแล้วเท่านั้น */}
+            {barcodeCount !== null && (
+              <TouchableOpacity
+                style={[
+                  styles.analyzeButton,
+                  { backgroundColor: colors.primary },
+                  (isProcessing || isUploading || isLoadingImage) && {
+                    opacity: 0.6,
+                  },
+                ]}
+                onPress={handleAnalyze}
+                disabled={isProcessing || isUploading || isLoadingImage}
+              >
+                {isProcessing ? (
+                  <>
+                    <ActivityIndicator size="small" color="#fff" />
+                    <Text style={styles.analyzeButtonText}>
+                      กำลังวิเคราะห์...
+                    </Text>
+                  </>
+                ) : (
+                  <>
+                    <Ionicons name="refresh" size={20} color="#fff" />
+                    <Text style={styles.analyzeButtonText}>ลองอีกครั้ง</Text>
+                  </>
+                )}
+              </TouchableOpacity>
+            )}
           </View>
         </ScrollView>
 

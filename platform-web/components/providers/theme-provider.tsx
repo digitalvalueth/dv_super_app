@@ -17,13 +17,8 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
         console.error("Error parsing theme:", e);
       }
     } else {
-      // Check system preference
-      if (
-        window.matchMedia &&
-        window.matchMedia("(prefers-color-scheme: dark)").matches
-      ) {
-        initialTheme = "dark";
-      }
+      // Default to light mode for the dashboard (admin portal)
+      initialTheme = "light";
     }
 
     console.log("Initial theme on mount:", initialTheme);

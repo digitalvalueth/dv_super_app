@@ -2,7 +2,7 @@
 
 import { db } from "@/lib/firebase";
 import { useAuthStore } from "@/stores/auth.store";
-import { CountingSession, DashboardStats } from "@/types";
+import { CountingSession } from "@/types";
 import { format } from "date-fns";
 import { th } from "date-fns/locale";
 import { collection, getDocs, query, where } from "firebase/firestore";
@@ -15,13 +15,54 @@ import {
   Users,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 export default function DashboardPage() {
   const { userData } = useAuthStore();
   const router = useRouter();
-  const [stats, setStats] = useState<DashboardStats | null>(null);
+  const [stats, setStats] = useState<{
+    totalUsers: number;
+    totalBranches: number;
+    totalProducts: number;
+  } | null>(null);
+  const [allSessions, setAllSessions] = useState<CountingSession[]>([]);
   const [loading, setLoading] = useState(true);
+  const [filterMonth, setFilterMonth] = useState<number>(
+    new Date().getMonth() + 1,
+  );
+  const [filterYear, setFilterYear] = useState<number>(
+    new Date().getFullYear(),
+  );
+  const [filterHalf, setFilterHalf] = useState<"all" | "1" | "2">(
+    new Date().getDate() <= 15 ? "1" : "2",
+  );
+
+  const sessionStats = useMemo(() => {
+    const filtered = allSessions.filter((s) => {
+      if (!s.createdAt) return false;
+      const d = s.createdAt;
+      const matchesMonth =
+        d.getMonth() + 1 === filterMonth && d.getFullYear() === filterYear;
+      const matchesHalf =
+        filterHalf === "all" ||
+        (filterHalf === "1" ? d.getDate() <= 15 : d.getDate() >= 16);
+      return matchesMonth && matchesHalf;
+    });
+    const totalSessions = filtered.length;
+    const pendingSessions = filtered.filter(
+      (s) => s.status === "pending-review",
+    ).length;
+    const totalDiscrepancy = filtered.reduce(
+      (sum, s) => sum + (s.discrepancy ?? 0),
+      0,
+    );
+    const recentSessions = [...filtered]
+      .sort(
+        (a, b) => (b.createdAt?.getTime() || 0) - (a.createdAt?.getTime() || 0),
+      )
+      .slice(0, 5);
+    return { totalSessions, pendingSessions, totalDiscrepancy, recentSessions };
+  }, [allSessions, filterMonth, filterYear, filterHalf]);
 
   const isStaff = userData?.role === "staff";
 
@@ -36,8 +77,8 @@ export default function DashboardPage() {
     if (!userData) return;
     if (userData.role === "supervisor") return; // Skip loading for supervisors
     if (userData.role === "staff") {
-       setLoading(false);
-       return; // Skip loading for staff
+      setLoading(false);
+      return; // Skip loading for staff
     }
 
     const fetchDashboardData = async () => {
@@ -87,8 +128,6 @@ export default function DashboardPage() {
         // Fetch counting sessions
         const sessionsSnapshot = await getDocs(sessionsQuery);
 
-        let totalDiscrepancy = 0;
-        let pendingSessions = 0;
         const sessions: CountingSession[] = [];
 
         sessionsSnapshot.forEach((doc) => {
@@ -120,41 +159,14 @@ export default function DashboardPage() {
           };
 
           sessions.push(session);
-          totalDiscrepancy += session.discrepancy ?? 0;
-
-          if (session.status === "pending-review") {
-            pendingSessions++;
-          }
         });
 
-        // Sort sessions by date (most recent first)
-        sessions.sort(
-          (a, b) =>
-            (b.createdAt?.getTime() || 0) - (a.createdAt?.getTime() || 0),
-        );
-        const recentSessions = sessions.slice(0, 5);
-
-        setStats({
-          totalUsers,
-          totalBranches,
-          totalProducts,
-          totalSessions: sessions.length,
-          pendingSessions,
-          totalDiscrepancy,
-          recentSessions,
-        });
+        setStats({ totalUsers, totalBranches, totalProducts });
+        setAllSessions(sessions);
       } catch (error) {
         console.error("Error fetching dashboard data:", error);
         // Don't block the UI, just show empty state
-        setStats({
-          totalUsers: 0,
-          totalBranches: 0,
-          totalProducts: 0,
-          totalSessions: 0,
-          pendingSessions: 0,
-          totalDiscrepancy: 0,
-          recentSessions: [],
-        });
+        setStats({ totalUsers: 0, totalBranches: 0, totalProducts: 0 });
       } finally {
         setLoading(false);
       }
@@ -187,7 +199,8 @@ export default function DashboardPage() {
           ยินดีต้อนรับสู่ระบบนับสินค้า
         </h1>
         <p className="text-gray-600 dark:text-gray-400 max-w-md">
-          คุณสามารถเข้าถึงเมนูต่างๆ ได้จากแถบด้านซ้ายมือ หากต้องการความช่วยเหลือกรุณาติดต่อผู้ดูแลระบบ
+          คุณสามารถเข้าถึงเมนูต่างๆ ได้จากแถบด้านซ้ายมือ
+          หากต้องการความช่วยเหลือกรุณาติดต่อผู้ดูแลระบบ
         </p>
       </div>
     );
@@ -196,12 +209,54 @@ export default function DashboardPage() {
   return (
     <div className="space-y-4 lg:space-y-6">
       <div>
-        <h1 className="text-2xl lg:text-3xl font-bold text-gray-900 dark:text-white">
-          แดชบอร์ด
-        </h1>
-        <p className="text-gray-600 dark:text-gray-400 mt-1">
-          ภาพรวมระบบนับสินค้า FITT BSA
-        </p>
+        <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-3">
+          <div>
+            <h1 className="text-2xl lg:text-3xl font-bold text-gray-900 dark:text-white">
+              แดชบอร์ด
+            </h1>
+            <p className="text-gray-600 dark:text-gray-400 mt-1">
+              ภาพรวมระบบนับสินค้า FITT BSA
+            </p>
+          </div>
+          {/* Month/Year filter */}
+          <div className="flex gap-2 items-center">
+            <select
+              value={filterMonth}
+              onChange={(e) => setFilterMonth(Number(e.target.value))}
+              className="px-3 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500"
+            >
+              {Array.from({ length: 12 }, (_, i) => i + 1).map((m) => (
+                <option key={m} value={m}>
+                  {new Date(2000, m - 1, 1).toLocaleDateString("th-TH", {
+                    month: "long",
+                  })}
+                </option>
+              ))}
+            </select>
+            <select
+              value={filterYear}
+              onChange={(e) => setFilterYear(Number(e.target.value))}
+              className="px-3 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500"
+            >
+              {[filterYear - 1, filterYear, filterYear + 1].map((y) => (
+                <option key={y} value={y}>
+                  {y + 543}
+                </option>
+              ))}
+            </select>
+            <select
+              value={filterHalf}
+              onChange={(e) =>
+                setFilterHalf(e.target.value as "all" | "1" | "2")
+              }
+              className="px-3 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500"
+            >
+              <option value="all">ทั้งเดือน</option>
+              <option value="1">รอบ 1 (1-15)</option>
+              <option value="2">รอบ 2 (16-สิ้นเดือน)</option>
+            </select>
+          </div>
+        </div>
       </div>
 
       {/* Stats Grid */}
@@ -226,7 +281,7 @@ export default function DashboardPage() {
         />
         <StatCard
           title="การนับทั้งหมด"
-          value={stats?.totalSessions || 0}
+          value={sessionStats.totalSessions}
           icon={<BarChart3 className="w-5 h-5 lg:w-6 lg:h-6" />}
           color="bg-orange-500"
         />
@@ -244,7 +299,7 @@ export default function DashboardPage() {
                 ของหายรวม
               </h3>
               <p className="text-2xl lg:text-3xl font-bold text-red-600 dark:text-red-400 mt-1">
-                {stats?.totalDiscrepancy || 0} ชิ้น
+                {sessionStats.totalDiscrepancy} ชิ้น
               </p>
             </div>
           </div>
@@ -260,7 +315,7 @@ export default function DashboardPage() {
                 รอตรวจสอบ
               </h3>
               <p className="text-2xl lg:text-3xl font-bold text-yellow-600 dark:text-yellow-400 mt-1">
-                {stats?.pendingSessions || 0} รายการ
+                {sessionStats.pendingSessions} รายการ
               </p>
             </div>
           </div>
@@ -302,7 +357,7 @@ export default function DashboardPage() {
               </tr>
             </thead>
             <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
-              {stats?.recentSessions.map((session) => (
+              {sessionStats.recentSessions.map((session) => (
                 <tr
                   key={session.id}
                   className="hover:bg-gray-50 dark:hover:bg-gray-700"

@@ -43,6 +43,8 @@ export interface ExportData {
   metadata?: Record<string, unknown>;
   companyId?: string | null;
   companyName?: string | null;
+  /** ID of the linked invoice upload record */
+  invoiceUploadId?: string | null;
 }
 
 /**

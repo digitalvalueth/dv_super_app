@@ -50,8 +50,9 @@ const MONTH_MAP: Record<string, number> = {
 
 /**
  * Parse Watson Invoice date formats robustly.
- * Handles: "01-JAN-0026", "06-JAN-0026", "1/6/2026", Excel serial numbers.
+ * Handles: "01-JAN-0026", "06-JAN-0026", "1/6/2026", "31/1/26", Excel serial numbers.
  * Watson uses 2-digit year suffix of Buddhist Era: 0026 = BE 2569 = CE 2026.
+ * Short D/M/YY format: "31/1/26" → day=31, month=1, year=2026
  */
 function parseWatsonDate(dateVal: unknown): Date | null {
   if (dateVal === null || dateVal === undefined) return null;
@@ -83,7 +84,20 @@ function parseWatsonDate(dateVal: unknown): Date | null {
     }
   }
 
-  // Pattern 2: M/D/YYYY (US format common in Excel)
+  // Pattern 2: D/M/YY (Thai short format, 2-digit year)
+  // e.g. "31/1/26" → Jan 31 2026, "9/2/26" → Feb 9 2026
+  // Must check before M/D/YYYY to avoid ambiguity. Identified by 2-digit year.
+  const dmyShortMatch = trimmed.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2})$/);
+  if (dmyShortMatch) {
+    const day = parseInt(dmyShortMatch[1], 10);
+    const month = parseInt(dmyShortMatch[2], 10) - 1;
+    const year = 2000 + parseInt(dmyShortMatch[3], 10);
+    if (day >= 1 && day <= 31 && month >= 0 && month <= 11) {
+      return new Date(year, month, day);
+    }
+  }
+
+  // Pattern 3: M/D/YYYY (US format common in Excel, 4-digit year)
   const mdyMatch = trimmed.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
   if (mdyMatch) {
     const month = parseInt(mdyMatch[1], 10) - 1;
@@ -187,11 +201,21 @@ export function usePriceListData() {
         };
       });
 
+      // Deduplicate periods: same priceExtVat + same startDate + same endDate = same tier
+      // Prevents duplicate rows from the source Excel from showing as multiple tiers
+      const seenPeriodKeys = new Set<string>();
+      const dedupedPeriods = periods.filter((p) => {
+        const key = `${p.priceExtVat}|${toDateOnly(p.startDate)}|${p.endDate ? toDateOnly(p.endDate) : -1}`;
+        if (seenPeriodKeys.has(key)) return false;
+        seenPeriodKeys.add(key);
+        return true;
+      });
+
       result.push({
         itemCode,
         prodCode: items[0].prodCode,
         prodName: items[0].prodName,
-        periods,
+        periods: dedupedPeriods,
       });
     });
 
@@ -557,7 +581,9 @@ export function usePriceListData() {
               (r) => r.itemCode === itemCode,
             );
             if (candidates.length === 0) return undefined;
-            const byDate = candidates.find((r) => {
+
+            // Filter candidates within the invoice date range
+            const byDateAll = candidates.filter((r) => {
               if (!r.priceStartDate) return false;
               const start = new Date(r.priceStartDate);
               const end = r.priceEndDate ? new Date(r.priceEndDate) : null;
@@ -566,20 +592,109 @@ export function usePriceListData() {
                 (end === null || toDateOnly(invoiceDate) <= toDateOnly(end))
               );
             });
-            return byDate || candidates[0];
+
+            if (byDateAll.length > 0) {
+              // Best: date range + priceExtVat match (select the tier matching invoice price)
+              if (actualPrice !== null) {
+                const byDateAndPrice = byDateAll.reduce((best, r) => {
+                  const currDiff = Math.abs(r.priceExtVat - actualPrice);
+                  const bestDiff = Math.abs(best.priceExtVat - actualPrice);
+                  return currDiff < bestDiff ? r : best;
+                });
+                calcLog.push(
+                  `  → จับคู่ราคา: invoice ${actualPrice.toFixed(2)} ≈ PL ${byDateAndPrice.priceExtVat.toFixed(2)} (${byDateAndPrice.remarki1 || "Buy1"})`,
+                );
+                calcLog.push(
+                  `  → ใช้ช่วง: ${byDateAndPrice.priceStartDate ? new Date(byDateAndPrice.priceStartDate).toLocaleDateString("th-TH") : "?"} – ${byDateAndPrice.priceEndDate ? new Date(byDateAndPrice.priceEndDate).toLocaleDateString("th-TH") : "?"}`,
+                );
+                return byDateAndPrice;
+              }
+              // Fallback: date range only (first match — actualPrice not available)
+              const byDate = byDateAll[0];
+              calcLog.push(
+                `  → ใช้ช่วง: ${byDate.priceStartDate ? new Date(byDate.priceStartDate).toLocaleDateString("th-TH") : "?"} – ${byDate.priceEndDate ? new Date(byDate.priceEndDate).toLocaleDateString("th-TH") : "?"}`,
+              );
+              return byDate;
+            }
+
+            // No exact date match — don't guess, report as no matching period
+            calcLog.push(
+              `  ⚠️ ไม่พบช่วงราคาที่ตรงวันที่ Invoice (${invoiceDate.toLocaleDateString("th-TH")})`,
+            );
+            if (candidates.length > 0) {
+              candidates.forEach((c) => {
+                const s = c.priceStartDate
+                  ? new Date(c.priceStartDate).toLocaleDateString("th-TH")
+                  : "?";
+                const e = c.priceEndDate
+                  ? new Date(c.priceEndDate).toLocaleDateString("th-TH")
+                  : "?";
+                calcLog.push(`    - ช่วงที่มี: ${s} – ${e}`);
+              });
+            }
+            return undefined;
           })();
+
+          // Build period info string for Qty=1
+          const singlePeriodStart = rawItemSingle?.priceStartDate
+            ? new Date(rawItemSingle.priceStartDate).toLocaleDateString("th-TH")
+            : "-";
+          const singlePeriodEnd = rawItemSingle?.priceEndDate
+            ? new Date(rawItemSingle.priceEndDate).toLocaleDateString("th-TH")
+            : "-";
+          const singleMatchedPeriod =
+            singlePeriodStart !== "-"
+              ? `${singlePeriodStart} → ${singlePeriodEnd}`
+              : "-";
+
+          // When no period matches, mark as "No period" so it shows as
+          // ❓ ไม่มีช่วงราคา instead of auto-passing.
+          const hasPeriodMatch = !!rawItemSingle;
+
+          // Determine if matched tier is promo or std.
+          // The std tier is the one with the HIGHEST priceExtVat for this date range.
+          // If the matched rawItemSingle has a lower priceExtVat than the highest, it's promo.
+          const allTiersForDate = hasPeriodMatch
+            ? priceListRaw.filter((r) => {
+                if (r.itemCode !== itemCode || !r.priceStartDate) return false;
+                const start = new Date(r.priceStartDate);
+                const end = r.priceEndDate ? new Date(r.priceEndDate) : null;
+                return (
+                  toDateOnly(invoiceDate) >= toDateOnly(start) &&
+                  (end === null || toDateOnly(invoiceDate) <= toDateOnly(end))
+                );
+              })
+            : [];
+          const stdTierForDate =
+            allTiersForDate.length > 0
+              ? allTiersForDate.reduce((best, r) =>
+                  r.priceExtVat > best.priceExtVat ? r : best,
+                )
+              : rawItemSingle;
+          const isPromoTier =
+            hasPeriodMatch &&
+            rawItemSingle &&
+            stdTierForDate &&
+            Math.abs(rawItemSingle.priceExtVat - stdTierForDate.priceExtVat) >
+              0.02;
+
+          if (isPromoTier) {
+            calcLog.push(
+              `  🏷️ Promo tier: invoice ฿${rawItemSingle!.priceExtVat.toFixed(2)} ≠ std ฿${stdTierForDate!.priceExtVat.toFixed(2)} → QtyPro=1`,
+            );
+          }
 
           return {
             ...row,
-            "Expected Price": rawItemSingle?.price?.toFixed(2) || "-",
-            "Price Match": "⏭️ Qty=1",
-            "Period Start": "-",
-            "Matched Period": "-",
-            "Std Qty": "1",
-            "Promo Qty": "0",
+            "Expected Price": rawItemSingle?.priceExtVat?.toFixed(2) || "-",
+            "Price Match": hasPeriodMatch ? "⏭️ Qty=1" : "❓ No period (Qty=1)",
+            "Period Start": singlePeriodStart,
+            "Matched Period": singleMatchedPeriod,
+            "Std Qty": isPromoTier ? "0" : "1",
+            "Promo Qty": isPromoTier ? "1" : "0",
             "Calc Amt": rawAmt.toFixed(2),
             Diff: "-",
-            Confidence: "100%",
+            Confidence: hasPeriodMatch ? "100%" : "-",
             "PL Name": rawItemSingle?.prodName || "-",
             "PL Remark": rawItemSingle?.remarki1 || "-",
             "PL Full Price": rawItemSingle?.price
@@ -595,28 +710,46 @@ export function usePriceListData() {
               ? `฿${fmt2(rawItemSingle.priceIncVat)}`
               : "-",
             "Calc Log": calcLog.join("\n"),
-            // New export columns
-            QtyBuy1: "1",
-            PriceBuy1_Invoice_Formula: rawItemSingle?.invoice62IncV
-              ? fmt2(rawItemSingle.invoice62IncV)
-              : fmt2(rawAmt),
-            PriceBuy1_Com_Calculate: rawItemSingle?.priceIncVat
-              ? fmt2(rawItemSingle.priceIncVat)
+            // New export columns — assign to correct tier
+            QtyBuy1: isPromoTier ? "0" : "1",
+            PriceBuy1_Invoice_Formula: isPromoTier
+              ? ""
+              : rawItemSingle?.invoice62IncV
+                ? fmt2(rawItemSingle.invoice62IncV)
+                : fmt2(rawAmt),
+            PriceBuy1_Com_Calculate: isPromoTier
+              ? ""
+              : rawItemSingle?.priceIncVat
+                ? fmt2(rawItemSingle.priceIncVat)
+                : "",
+            QtyPro: isPromoTier ? "1" : "0",
+            PricePro_Invoice_Formula: isPromoTier
+              ? rawItemSingle?.invoice62IncV
+                ? fmt2(rawItemSingle.invoice62IncV)
+                : fmt2(rawAmt)
               : "",
-            QtyPro: "0",
-            PricePro_Invoice_Formula: "",
-            PricePro_Com_Calculate: "",
+            PricePro_Com_Calculate: isPromoTier
+              ? rawItemSingle?.priceIncVat
+                ? fmt2(rawItemSingle.priceIncVat)
+                : ""
+              : "",
             Remark: rawItemSingle?.remarki1 || "-",
             FMProductCode: getFMProductCode(itemCode),
             ReportRunDateTime: reportRunDateTime || "",
             // Hidden metadata for manual qty override recalculation
-            _stdPriceExtVat: rawAmt, // single item = entire amount
-            _stdPriceIncVat: rawItemSingle?.priceIncVat || 0,
-            _stdInvoice62IncV: rawItemSingle?.invoice62IncV || 0,
-            _proPriceExtVat: rawAmt, // fallback to std for manual promo split
-            _proPriceIncVat: rawItemSingle?.priceIncVat || 0,
-            _proInvoice62IncV: rawItemSingle?.invoice62IncV || 0,
-            _proRemark: "Buy1",
+            _stdPriceExtVat: stdTierForDate?.priceExtVat || rawAmt,
+            _stdPriceIncVat: stdTierForDate?.priceIncVat || 0,
+            _stdInvoice62IncV: stdTierForDate?.invoice62IncV || 0,
+            _proPriceExtVat: isPromoTier
+              ? rawItemSingle!.priceExtVat
+              : stdTierForDate?.priceExtVat || rawAmt,
+            _proPriceIncVat: isPromoTier
+              ? rawItemSingle!.priceIncVat || 0
+              : stdTierForDate?.priceIncVat || 0,
+            _proInvoice62IncV: isPromoTier
+              ? rawItemSingle!.invoice62IncV || 0
+              : stdTierForDate?.invoice62IncV || 0,
+            _proRemark: rawItemSingle?.remarki1 || "Buy1",
           };
         }
 
@@ -764,6 +897,7 @@ export function usePriceListData() {
               startDate: p.startDate,
               priceIncVat: p.priceIncVat, // Comm Price IncV
               stdPrice: p.price, // Standard Price IncV
+              invoice62IncV: p.invoice62IncV, // Invoice 62% IncV
             }));
 
           if (validPrices.length > 0 && rawAmt > 0 && qty > 0) {
@@ -782,6 +916,7 @@ export function usePriceListData() {
             // Run Knapsack optimization
             const result = findBestPriceCombination(validPrices, qty, rawAmt, {
               confidenceThreshold,
+              maxQty: qty, // pass actual qty so knapsack is not capped at default 50
             });
 
             calcLog.push(``);
@@ -808,15 +943,40 @@ export function usePriceListData() {
             }
 
             if (result.allocations.length > 0) {
+              // Detect if all tiers are effectively the same type (e.g. all "buy 1"
+              // from different time periods but no real promo distinction).
+              // Also treat single-tier items as "all same" — there's no real promo
+              // tier to split into when only 1 price is available.
+              const allSameTier =
+                validPrices.length <= 1 ||
+                validPrices.every((vp) => {
+                  const r = (vp.remark || "Buy1")
+                    .toLowerCase()
+                    .replace(/\s/g, "");
+                  return r === "buy1" || r === "std" || r === "standard";
+                });
+
+              if (allSameTier) {
+                calcLog.push(``);
+                calcLog.push(
+                  `🔀 Tier merge: ${validPrices.length <= 1 ? "single tier — all qty → QtyBuy1" : "all tiers are buy1 — merged into QtyBuy1"}`,
+                );
+              }
+
               // Parse allocations
               const stdAlloc = result.allocations.find(
                 (a) => a.label === "Std",
               );
-              const promoAllocs = result.allocations.filter(
-                (a) => a.label !== "Std",
-              );
+              const promoAllocs = allSameTier
+                ? [] // When single tier or all buy1, don't split to promo
+                : result.allocations.filter((a) => a.label !== "Std");
 
-              stdQty = stdAlloc ? String(stdAlloc.qty) : "0";
+              // When single tier or all tiers are buy1, merge total qty into stdAlloc
+              const effectiveStdQty = allSameTier
+                ? result.allocations.reduce((sum, a) => sum + a.qty, 0)
+                : stdAlloc?.qty || 0;
+
+              stdQty = String(effectiveStdQty);
               promoQty =
                 promoAllocs.length > 0
                   ? formatAllocationString(promoAllocs)
@@ -825,17 +985,22 @@ export function usePriceListData() {
 
               // Calculate new export columns
               // Buy1 (Std) allocation
-              if (stdAlloc) {
-                qtyBuy1 = stdAlloc.qty;
+              if (effectiveStdQty > 0) {
+                qtyBuy1 = effectiveStdQty;
                 // Display: per-unit Invoice 62% IncV (not total)
                 priceBuy1InvoiceFormula =
-                  rawItem?.invoice62IncV || stdAlloc.price;
+                  rawItem?.invoice62IncV ||
+                  (stdAlloc?.price ?? validPrices[0].price);
                 // Comm Calculate = Comm Price IncV (not invoice62)
                 priceBuy1ComCalculate =
-                  rawItem?.priceIncVat || stdAlloc.priceIncVat || 0;
+                  rawItem?.priceIncVat ||
+                  stdAlloc?.priceIncVat ||
+                  validPrices[0].priceIncVat ||
+                  0;
                 // Store per-unit prices for manual override recalculation
-                _stdPricePerUnit = stdAlloc.price;
-                _stdCommPerUnit = stdAlloc.priceIncVat || 0;
+                _stdPricePerUnit = stdAlloc?.price ?? validPrices[0].price;
+                _stdCommPerUnit =
+                  stdAlloc?.priceIncVat || validPrices[0].priceIncVat || 0;
                 _stdInvoice62PerUnit = rawItem?.invoice62IncV || 0;
               }
 
@@ -843,11 +1008,11 @@ export function usePriceListData() {
               const remarks: string[] = [];
               promoAllocs.forEach((alloc) => {
                 qtyPro += alloc.qty;
-                // Use the actual promo-tier price (not the standard item's invoice62).
-                // For a "1 baht" promo, alloc.price ≈ 0.58 (ExtVat) and
-                // alloc.priceIncVat = 1.00; using rawItem.invoice62IncV here would
-                // incorrectly show the full-price 179.18 instead.
-                priceProInvoiceFormula = alloc.price;
+                // PricePro_Invoice_Formula should show Invoice 62% IncV (same as
+                // PriceBuy1_Invoice_Formula shows Invoice 62% IncV).
+                // alloc.invoice62IncV carries the promo tier's own Invoice 62% IncV.
+                priceProInvoiceFormula =
+                  alloc.invoice62IncV || alloc.priceIncVat || alloc.price;
                 // Comm Calculate = actual promo Comm Price IncV
                 priceProComCalculate = alloc.priceIncVat || 0;
                 // Store per-unit promo price (use first/dominant promo)
@@ -855,12 +1020,22 @@ export function usePriceListData() {
                   _proPricePerUnit = alloc.price;
                   _proCommPerUnit = alloc.priceIncVat || 0;
                   _proRemarkStr = alloc.remark || "";
-                  _proInvoice62PerUnit = rawItem?.invoice62IncV || 0;
+                  // For promo tiers use the promo's own invoice62IncV
+                  _proInvoice62PerUnit = alloc.invoice62IncV || 0;
                 }
                 if (alloc.remark) {
                   remarks.push(alloc.remark);
                 }
               });
+
+              // If Knapsack didn't allocate std, always store std tier per-unit price
+              // so manual QtyBuy1 override can use it for recalculation
+              if (_stdPricePerUnit === 0 && validPrices.length > 0) {
+                const stdTier = validPrices[0]; // highest price = std tier
+                _stdPricePerUnit = stdTier.price;
+                _stdCommPerUnit = stdTier.priceIncVat || 0;
+                _stdInvoice62PerUnit = rawItem?.invoice62IncV || 0;
+              }
 
               // If Knapsack didn't allocate promo, store available promo tier price
               // so manual QtyPro override can use it for recalculation
@@ -929,9 +1104,8 @@ export function usePriceListData() {
                 );
               }
 
-              // Use confidence percentage to determine status
-              const thresholdPercent = confidenceThreshold * 100;
-              const isConfidenceOk = result.confidence >= thresholdPercent;
+              // Pass when calcAmt >= rawAmt (direction-based, not confidence threshold)
+              const isConfidenceOk = result.isAcceptable;
 
               diffStr = isConfidenceOk
                 ? `✓ ${fmt2(result.diff)}`

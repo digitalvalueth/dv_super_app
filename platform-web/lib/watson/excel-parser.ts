@@ -1,5 +1,5 @@
-import * as XLSX from "xlsx";
 import { RawRow } from "@/types/watson/invoice";
+import * as XLSX from "xlsx";
 
 export interface ReportMeta {
   reportName: string | null;
@@ -173,14 +173,32 @@ export function parseExcelFile(file: File): Promise<ParsedExcel> {
         // Extract report metadata from header rows
         const reportMeta = extractReportMeta(rawData, headerRowIndex);
 
-        // Extract headers
+        // Extract headers from the header row
         const headerRow = rawData[headerRowIndex] || [];
-        const headers = headerRow.map((h, index) =>
-          h ? String(h).trim() : `Column ${index + 1}`,
+
+        // Compute max column count across header row AND all data rows,
+        // so we never lose data in columns that extend beyond the header row.
+        const dataRows = rawData.slice(headerRowIndex + 1);
+        const maxCols = Math.max(
+          headerRow.length,
+          ...dataRows.map((r) => r?.length ?? 0),
         );
 
-        // Extract data rows (after header)
-        const dataRows = rawData.slice(headerRowIndex + 1);
+        // Build headers — pad to maxCols so every data column gets a name
+        const headers: string[] = Array.from(
+          { length: maxCols },
+          (_, index) => {
+            const h = headerRow[index];
+            return h ? String(h).trim() : `Column ${index + 1}`;
+          },
+        );
+
+        // Detect "Date"-like column indices for serial-number conversion
+        const dateColIndices = new Set<number>(
+          headers
+            .map((h, i) => (h.toLowerCase() === "date" ? i : -1))
+            .filter((i) => i >= 0),
+        );
 
         // Convert to array of objects
         const parsedData: RawRow[] = dataRows
@@ -190,7 +208,19 @@ export function parseExcelFile(file: File): Promise<ParsedExcel> {
           .map((row, rowIndex) => {
             const rowObj: RawRow = { _rowIndex: rowIndex };
             headers.forEach((header, colIndex) => {
-              rowObj[header] = row[colIndex] ?? null;
+              let val: string | number | null = row[colIndex] ?? null;
+
+              // Convert Excel date serial numbers in "Date" columns to D/M/YY string
+              if (dateColIndices.has(colIndex) && typeof val === "number") {
+                const parsed = XLSX.SSF.parse_date_code(val);
+                if (parsed) {
+                  // Format as D/M/YY to match original Watson date format
+                  const yy = String(parsed.y).slice(-2);
+                  val = `${parsed.d}/${parsed.m}/${yy}`;
+                }
+              }
+
+              rowObj[header] = val;
             });
             return rowObj;
           });

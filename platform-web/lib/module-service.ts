@@ -251,8 +251,8 @@ export function canAccessModule(
 ): boolean {
   if (!userData) return false;
 
-  // Layer 1: Super admin bypasses all checks
-  if (userData.role === "super_admin") return true;
+  // Layer 1: Super admin and company admin bypass all checks
+  if (userData.role === "super_admin" || userData.role === "admin") return true;
 
   // Layer 2: Company must have the module enabled
   if (companyEnabledModules && !companyEnabledModules.includes(moduleId)) {

@@ -1,0 +1,40 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+
+    // ==================== HELPER FUNCTIONS ====================
+
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    // ==================== CHECK-IN IMAGES ====================
+    // Path: check-ins/{userId}/{date}/{filename}
+    match /check-ins/{userId}/{allPaths=**} {
+      // User can upload their own check-in images
+      allow write: if isAuthenticated() && request.auth.uid == userId
+                   && request.resource.size < 10 * 1024 * 1024  // max 10MB
+                   && request.resource.contentType.matches('image/.*');
+
+      // Authenticated users in the same company can read (handled at app level)
+      allow read: if isAuthenticated();
+    }
+
+    // ==================== PRODUCT IMAGES ====================
+    // Path: products/{companyId}/{filename}
+    match /products/{companyId}/{allPaths=**} {
+      allow read: if isAuthenticated();
+      allow write: if isAuthenticated()
+                   && request.resource.size < 20 * 1024 * 1024;
+    }
+
+    // ==================== USER PROFILE IMAGES ====================
+    match /users/{userId}/{allPaths=**} {
+      allow read: if isAuthenticated();
+      allow write: if isAuthenticated() && request.auth.uid == userId
+                   && request.resource.size < 5 * 1024 * 1024
+                   && request.resource.contentType.matches('image/.*');
+    }
+
+  }
+}

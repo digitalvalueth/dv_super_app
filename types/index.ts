@@ -158,7 +158,11 @@ export interface UserAssignment {
   updatedAt?: Timestamp;
 }
 
-export type AssignmentStatus = "pending" | "in_progress" | "completed";
+export type AssignmentStatus =
+  | "pending"
+  | "in_progress"
+  | "completed"
+  | "not_available"; // ไม่มีสินค้านี้ในสาขา
 
 // ==================== Counting Session ====================
 
@@ -226,6 +230,8 @@ export interface CountingSession {
   // Optional fields
   remarks?: string;
   hasBarcodeScan?: boolean;
+  isLate?: boolean; // ส่งในช่วง grace period (ลับ)
+  isSupplemental?: boolean; // รูปเพิ่มเติม ไม่นับรวมกับจำนวนหลัก
 
   // Metadata
   deviceInfo?: string;
@@ -481,6 +487,124 @@ export interface DeliveryReceive {
   notes?: string;
   remarks?: string;
 
+  createdAt: Timestamp;
+  updatedAt?: Timestamp;
+}
+
+// ==================== Counting Period ====================
+export type CountingPeriodStatus = "active" | "locked" | "grace" | "closed";
+export type CountingPeriodHalf = 1 | 2;
+
+export interface CountingPeriod {
+  id: string;
+  companyId: string;
+  year: number;
+  month: number; // 1-12
+  half: CountingPeriodHalf; // 1 = วันที่ 1-15, 2 = วันที่ 16-สิ้นเดือน
+  startDate: Timestamp; // วันเปิดให้ถ่าย (เช่น 2 มี.ค.)
+  endDate: Timestamp; // วันสุดท้ายของรอบ (เช่น 15 มี.ค.)
+  lockDates: Timestamp[]; // วันที่ห้าม upload ทั้งวัน (1, 16)
+  graceEndDate: Timestamp; // endDate + 5 วัน (ลับ)
+  supervisorGraceEndDate?: Timestamp; // Supervisor ขยายเวลา grace (ลับ)
+  status: CountingPeriodStatus;
+  createdAt: Timestamp;
+  updatedAt?: Timestamp;
+}
+
+export type UploadStatus = "open" | "locked" | "grace" | "closed";
+
+// ==================== Supervisor Override ====================
+export type FinalCountSource = "ai" | "employee" | "custom";
+
+export interface SupervisorOverride {
+  overriddenBy: string;
+  overriddenByName?: string;
+  overriddenAt: Timestamp;
+  aiCount: number;
+  employeeCount: number;
+  selectedCount: number;
+  source: FinalCountSource;
+  customCount?: number;
+  reason?: string;
+}
+
+export type ApprovalStatus = "pending" | "approved" | "rejected";
+
+// ==================== Supplement Session ====================
+export type SupplementStatus = "pending" | "approved" | "rejected";
+
+export interface SupplementSession {
+  id: string;
+  originalSessionId: string;
+  userId: string;
+  userName?: string;
+  productId: string;
+  productName?: string;
+  companyId: string;
+  branchId: string;
+  additionalCount: number;
+  imageUrl: string;
+  aiCount: number;
+  reason: string;
+  status: SupplementStatus;
+  reviewedBy?: string;
+  reviewedAt?: Timestamp;
+  createdAt: Timestamp;
+  updatedAt?: Timestamp;
+}
+
+// ==================== Prompt Management ====================
+export type PromptCategory = "counting" | "barcode" | "product_detection";
+export type PromptPlatform = "mobile" | "web" | "all";
+
+export interface PromptTemplate {
+  id: string;
+  name: string;
+  description: string;
+  prompt: string;
+  modelId: string;
+  version: number;
+  isActive: boolean;
+  platform: PromptPlatform;
+  category: PromptCategory;
+  variables: string[];
+  createdBy: string;
+  createdByName?: string;
+  createdAt: Timestamp;
+  updatedAt: Timestamp;
+}
+
+export interface PromptUsageLog {
+  id: string;
+  promptId: string;
+  promptName?: string;
+  version: number;
+  userId: string;
+  result: "success" | "failure";
+  responseTime: number;
+  errorMessage?: string;
+  createdAt: Timestamp;
+}
+
+// ==================== Missing Check-in Alert ====================
+export type AlertStatus = "new" | "tracking" | "resolved";
+
+export interface MissingCheckInAlert {
+  id: string;
+  userId: string;
+  userName: string;
+  userEmail?: string;
+  companyId: string;
+  branchId: string;
+  branchName?: string;
+  supervisorId?: string;
+  supervisorName?: string;
+  missedDays: number;
+  lastCheckInDate?: Timestamp;
+  status: AlertStatus;
+  resolvedBy?: string;
+  resolvedAt?: Timestamp;
+  resolvedNote?: string;
   createdAt: Timestamp;
   updatedAt?: Timestamp;
 }

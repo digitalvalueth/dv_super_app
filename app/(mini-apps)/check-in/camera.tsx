@@ -1,11 +1,11 @@
 import { useAuthStore } from "@/stores/auth.store";
 import { useTheme } from "@/stores/theme.store";
-import { createWatermarkMetadata } from "@/utils/watermark";
+import { createWatermarkMetadata, getCurrentLocation } from "@/utils/watermark";
 import { Ionicons } from "@expo/vector-icons";
 import { CameraView, useCameraPermissions } from "expo-camera";
 import * as ImagePicker from "expo-image-picker";
 import { router, useFocusEffect, useLocalSearchParams } from "expo-router";
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -35,6 +35,18 @@ export default function CheckInCameraScreen() {
   const [isCapturing, setIsCapturing] = useState(false);
   const cameraRef = useRef<CameraView>(null);
 
+  // Pre-fetch location when camera mounts so it's ready when user taps capture
+  const [prefetchedLocation, setPrefetchedLocation] = useState<{
+    address: string;
+    coordinates: { latitude: number; longitude: number };
+  } | null>(null);
+
+  useEffect(() => {
+    getCurrentLocation()
+      .then(setPrefetchedLocation)
+      .catch(() => {});
+  }, []);
+
   // Pause camera when navigating away (prevents overheating)
   const [isCameraActive, setIsCameraActive] = useState(true);
   useFocusEffect(
@@ -54,29 +66,31 @@ export default function CheckInCameraScreen() {
       const watermarkPromise = createWatermarkMetadata(
         user?.name || "Unknown",
         user?.uid || "",
+        user?.branchName || "",
+        undefined,
+        undefined,
+        prefetchedLocation ?? undefined,
       );
 
-      // Take photo
+      // Take photo — URI only (no base64/exif overhead = much faster)
       const photo = await cameraRef.current.takePictureAsync({
         quality: 0.8,
-        base64: true,
-        exif: true,
       });
 
-      if (!photo?.uri || !photo?.base64) {
+      if (!photo?.uri) {
         Alert.alert("เกิดข้อผิดพลาด", "ไม่สามารถถ่ายรูปได้");
         return;
       }
 
-      // Wait for watermark data
+      // Wait for watermark data (should already be ready from pre-fetch)
       const watermarkData = await watermarkPromise;
 
-      // Navigate to preview with photo data
+      // Navigate to preview immediately — no base64 needed for check-in upload
       router.push({
         pathname: "/(mini-apps)/check-in/preview",
         params: {
           imageUri: photo.uri,
-          imageBase64: photo.base64,
+          imageBase64: "",
           watermarkData: JSON.stringify(watermarkData),
           type: checkInType,
         },
@@ -87,7 +101,7 @@ export default function CheckInCameraScreen() {
     } finally {
       setIsCapturing(false);
     }
-  }, [isCapturing, user, checkInType]);
+  }, [isCapturing, user, checkInType, prefetchedLocation]);
 
   const handlePickImage = useCallback(async () => {
     try {
@@ -107,10 +121,13 @@ export default function CheckInCameraScreen() {
         return;
       }
 
-      // Get watermark metadata
       const watermarkData = await createWatermarkMetadata(
         user?.name || "Unknown",
         user?.uid || "",
+        user?.branchName || "",
+        undefined,
+        undefined,
+        prefetchedLocation ?? undefined,
       );
 
       // Navigate to preview
@@ -118,7 +135,7 @@ export default function CheckInCameraScreen() {
         pathname: "/(mini-apps)/check-in/preview",
         params: {
           imageUri: asset.uri,
-          imageBase64: asset.base64,
+          imageBase64: asset.base64 || "",
           watermarkData: JSON.stringify(watermarkData),
           type: checkInType,
         },
@@ -127,7 +144,7 @@ export default function CheckInCameraScreen() {
       console.error("Error picking image:", error);
       Alert.alert("เกิดข้อผิดพลาด", "ไม่สามารถเลือกรูปภาพได้");
     }
-  }, [user, checkInType]);
+  }, [user, checkInType, prefetchedLocation]);
 
   const toggleFlash = () => {
     setFlash((prev) => (prev === "off" ? "on" : "off"));
@@ -202,7 +219,11 @@ export default function CheckInCameraScreen() {
           <Text style={styles.headerTitle}>
             {isCheckIn ? "ลงเวลาเข้างาน" : "ลงเวลาเลิกงาน"}
           </Text>
-          <Text style={styles.headerSubtitle}>ถ่ายรูปยืนยันพร้อมบูธของคุณ</Text>
+          <Text style={styles.headerSubtitle}>
+            {user?.branchName
+              ? `สาขา: ${user.branchName}`
+              : "ถ่ายรูปยืนยันพร้อมบูธของคุณ"}
+          </Text>
         </View>
 
         <TouchableOpacity style={styles.headerButton} onPress={toggleFlash}>
