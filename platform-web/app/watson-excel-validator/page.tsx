@@ -557,7 +557,8 @@ export default function WatsonExcelValidatorPage() {
         const isBulkAccepted = bulkAcceptedItemCodes.has(itemCode);
 
         if (confidenceValue !== "-" && diffValue !== "-") {
-          if (confidencePercent >= thresholdPercent || isBulkAccepted) {
+          // Pass when Diff shows ✓ (i.e. calcAmt >= rawAmt) or item was bulk-accepted
+          if (diffValue.includes("✓") || isBulkAccepted) {
             acceptable.add(idx);
             // Track passed items
             const existing = passedMap.get(itemCode);
@@ -568,7 +569,7 @@ export default function WatsonExcelValidatorPage() {
                 rowIndices: [idx],
                 itemName: itemDesc,
                 confidence:
-                  isBulkAccepted && confidencePercent < thresholdPercent
+                  isBulkAccepted && !diffValue.includes("✓")
                     ? `${confidenceValue} ✓` // Mark as bulk-accepted
                     : confidenceValue,
               });
@@ -808,8 +809,8 @@ export default function WatsonExcelValidatorPage() {
             const diff = calcAmt - rawAmt;
             const confidence =
               rawAmt > 0 ? Math.max(0, (1 - Math.abs(diff) / rawAmt) * 100) : 0;
-            const thresholdPercent = confidenceThreshold * 100;
-            const isOk = confidence >= thresholdPercent;
+            // Pass when calcAmt >= rawAmt
+            const isOk = calcAmt >= rawAmt;
 
             updated["Calc Amt"] = fmt2(calcAmt);
             updated["Diff"] = isOk ? `✓ ${fmt2(diff)}` : `⚠ ${fmt2(diff)}`;
@@ -889,8 +890,8 @@ export default function WatsonExcelValidatorPage() {
           const diff = calcAmt - rawAmt;
           const confidence =
             rawAmt > 0 ? Math.max(0, (1 - Math.abs(diff) / rawAmt) * 100) : 0;
-          const thresholdPercent = confidenceThreshold * 100;
-          const isOk = confidence >= thresholdPercent;
+          // Pass when calcAmt >= rawAmt
+          const isOk = calcAmt >= rawAmt;
           updated["Calc Amt"] = fmt2(calcAmt);
           updated["Diff"] = isOk ? `✓ ${fmt2(diff)}` : `⚠ ${fmt2(diff)}`;
           updated["Confidence"] = `${confidence.toFixed(0)}%`;
@@ -1947,21 +1948,61 @@ export default function WatsonExcelValidatorPage() {
   );
 
   const handleExportFixed = useCallback(() => {
-    const exportFileName = `fixed_${fileName || "data.xlsx"}`;
-    const exportHeaders = getExportHeaders(displayHeaders);
-    exportToExcel(displayData, exportHeaders, exportFileName);
-    logExportExcel(exportFileName);
-  }, [displayData, displayHeaders, fileName, logExportExcel]);
+    if (showPriceColumns) {
+      setExportDialogOpen({ open: true, format: "excel" });
+    } else {
+      const exportFileName = `fixed_${fileName || "data.xlsx"}`;
+      const exportHeaders = getExportHeaders(displayHeaders);
+      exportToExcel(displayData, exportHeaders, exportFileName);
+      logExportExcel(exportFileName);
+    }
+  }, [showPriceColumns, displayData, displayHeaders, fileName, logExportExcel]);
 
   const handleExportJson = useCallback(() => {
-    const baseName = (fileName || "data.xlsx").replace(/\.[^.]+$/, "");
-    const exportFileName = `${baseName}.json`;
-    const exportHeaders = getExportHeaders(displayHeaders);
-    exportToJson(displayData, exportHeaders, exportFileName);
-    logExportExcel(exportFileName);
-  }, [displayData, displayHeaders, fileName, logExportExcel]);
+    if (showPriceColumns) {
+      setExportDialogOpen({ open: true, format: "json" });
+    } else {
+      const baseName = (fileName || "data.xlsx").replace(/\.[^.]+$/, "");
+      const exportFileName = `${baseName}.json`;
+      const exportHeaders = getExportHeaders(displayHeaders);
+      exportToJson(displayData, exportHeaders, exportFileName);
+      logExportExcel(exportFileName);
+    }
+  }, [showPriceColumns, displayData, displayHeaders, fileName, logExportExcel]);
+
+  const doExport = useCallback(
+    (scope: "all" | "problems", format: "excel" | "json") => {
+      const exportHeaders = getExportHeaders(displayHeaders);
+      const sourceData =
+        scope === "all"
+          ? allEnrichedData
+          : allEnrichedData.filter((row) => {
+              const diff = String(row["Diff"] || "");
+              const pm = String(row["Price Match"] || "");
+              if (diff !== "-" && diff !== "") return diff.includes("⚠");
+              return pm.includes("❌") || pm.includes("❓");
+            });
+      const label = scope === "all" ? "fixed" : "problems";
+      if (format === "excel") {
+        const exportFileName = `${label}_${fileName || "data.xlsx"}`;
+        exportToExcel(sourceData, exportHeaders, exportFileName);
+        logExportExcel(exportFileName);
+      } else {
+        const baseName = (fileName || "data.xlsx").replace(/\.[^.]+$/, "");
+        const exportFileName = `${label}_${baseName}.json`;
+        exportToJson(sourceData, exportHeaders, exportFileName);
+        logExportExcel(exportFileName);
+      }
+      setExportDialogOpen({ open: false, format: null });
+    },
+    [allEnrichedData, displayHeaders, fileName, logExportExcel],
+  );
 
   const [isSavingToCloud, setIsSavingToCloud] = useState(false);
+  const [exportDialogOpen, setExportDialogOpen] = useState<{
+    open: boolean;
+    format: "excel" | "json" | null;
+  }>({ open: false, format: null });
   const [exportSuccessModal, setExportSuccessModal] = useState<{
     open: boolean;
     exportId: string;
@@ -3511,6 +3552,103 @@ export default function WatsonExcelValidatorPage() {
               )}
               ยืนยันและบันทึก
             </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Export Mode Dialog */}
+      <Dialog
+        open={exportDialogOpen.open}
+        onOpenChange={(open) =>
+          setExportDialogOpen((prev) => ({ ...prev, open }))
+        }
+      >
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              {exportDialogOpen.format === "excel" ? (
+                <FileSpreadsheet className="h-5 w-5 text-green-600" />
+              ) : (
+                <FileJson className="h-5 w-5 text-blue-600" />
+              )}
+              {exportDialogOpen.format === "excel"
+                ? "Export Excel (.xlsx)"
+                : "Export JSON (.json)"}
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            {/* Filter warning */}
+            {(showOnlyLowConfidence || priceFilterCategory) && (
+              <div className="flex gap-2 items-start bg-amber-50 border border-amber-300 rounded-lg p-3 text-sm text-amber-800">
+                <span className="mt-0.5 shrink-0">⚠️</span>
+                <div className="flex-1">
+                  <p className="font-medium">
+                    Filter เปิดอยู่ (กำลังแสดง {displayData.length} แถว)
+                  </p>
+                  <p className="text-xs mt-0.5">
+                    ต้องการปิด Filter ก่อน Export ไหม?
+                  </p>
+                </div>
+                <button
+                  className="shrink-0 text-xs underline text-amber-700 hover:text-amber-900"
+                  onClick={() => {
+                    setShowOnlyLowConfidence(false);
+                    setPriceFilterCategory(null);
+                  }}
+                >
+                  ปิด Filter
+                </button>
+              </div>
+            )}
+
+            {/* Export scope options */}
+            <div className="grid gap-3">
+              <button
+                onClick={() =>
+                  doExport("all", exportDialogOpen.format ?? "excel")
+                }
+                className="flex items-center gap-4 p-4 rounded-lg border-2 border-gray-200 hover:border-blue-400 hover:bg-blue-50 transition-colors text-left"
+              >
+                <Download className="h-8 w-8 text-blue-500 shrink-0" />
+                <div>
+                  <div className="font-semibold text-gray-900">
+                    Export ทั้งหมด
+                  </div>
+                  <div className="text-sm text-gray-500">
+                    {allEnrichedData.length.toLocaleString()} แถว (ข้อมูลทั้งหมด
+                    ไม่คำนึงถึง Filter)
+                  </div>
+                </div>
+              </button>
+
+              {(() => {
+                const problemCount = allEnrichedData.filter((row) => {
+                  const diff = String(row["Diff"] || "");
+                  const pm = String(row["Price Match"] || "");
+                  if (diff !== "-" && diff !== "") return diff.includes("⚠");
+                  return pm.includes("❌") || pm.includes("❓");
+                }).length;
+                return problemCount > 0 ? (
+                  <button
+                    onClick={() =>
+                      doExport("problems", exportDialogOpen.format ?? "excel")
+                    }
+                    className="flex items-center gap-4 p-4 rounded-lg border-2 border-gray-200 hover:border-orange-400 hover:bg-orange-50 transition-colors text-left"
+                  >
+                    <Download className="h-8 w-8 text-orange-500 shrink-0" />
+                    <div>
+                      <div className="font-semibold text-gray-900">
+                        Export เฉพาะข้อมูลปัญหา
+                      </div>
+                      <div className="text-sm text-gray-500">
+                        {problemCount.toLocaleString()} แถว (ราคาไม่ตรง,
+                        ไม่พบสินค้า, ไม่พบช่วงราคา)
+                      </div>
+                    </div>
+                  </button>
+                ) : null;
+              })()}
+            </div>
           </div>
         </DialogContent>
       </Dialog>

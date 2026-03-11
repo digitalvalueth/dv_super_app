@@ -596,29 +596,24 @@ export function usePriceListData() {
             if (byDateAll.length > 0) {
               // Best: date range + priceExtVat match (select the tier matching invoice price)
               if (actualPrice !== null) {
-                const byDateAndPrice = byDateAll.find(
-                  (r) => Math.abs(r.priceExtVat - actualPrice) < 0.02,
+                const byDateAndPrice = byDateAll.reduce((best, r) => {
+                  const currDiff = Math.abs(r.priceExtVat - actualPrice);
+                  const bestDiff = Math.abs(best.priceExtVat - actualPrice);
+                  return currDiff < bestDiff ? r : best;
+                });
+                calcLog.push(
+                  `  → จับคู่ราคา: invoice ${actualPrice.toFixed(2)} ≈ PL ${byDateAndPrice.priceExtVat.toFixed(2)} (${byDateAndPrice.remarki1 || "Buy1"})`,
                 );
-                if (byDateAndPrice) {
-                  calcLog.push(
-                    `  → จับคู่ราคา: invoice ${actualPrice.toFixed(2)} ≈ PL ${byDateAndPrice.priceExtVat.toFixed(2)} (${byDateAndPrice.remarki1 || "Buy1"})`,
-                  );
-                  calcLog.push(
-                    `  → ใช้ช่วง: ${byDateAndPrice.priceStartDate ? new Date(byDateAndPrice.priceStartDate).toLocaleDateString("th-TH") : "?"} – ${byDateAndPrice.priceEndDate ? new Date(byDateAndPrice.priceEndDate).toLocaleDateString("th-TH") : "?"}`,
-                  );
-                  return byDateAndPrice;
-                }
+                calcLog.push(
+                  `  → ใช้ช่วง: ${byDateAndPrice.priceStartDate ? new Date(byDateAndPrice.priceStartDate).toLocaleDateString("th-TH") : "?"} – ${byDateAndPrice.priceEndDate ? new Date(byDateAndPrice.priceEndDate).toLocaleDateString("th-TH") : "?"}`,
+                );
+                return byDateAndPrice;
               }
-              // Fallback: date range only (first match)
+              // Fallback: date range only (first match — actualPrice not available)
               const byDate = byDateAll[0];
               calcLog.push(
                 `  → ใช้ช่วง: ${byDate.priceStartDate ? new Date(byDate.priceStartDate).toLocaleDateString("th-TH") : "?"} – ${byDate.priceEndDate ? new Date(byDate.priceEndDate).toLocaleDateString("th-TH") : "?"}`,
               );
-              if (actualPrice !== null) {
-                calcLog.push(
-                  `  ⚠️ ไม่พบ tier ที่ตรงราคา ${actualPrice.toFixed(2)} — ใช้ tier แรก (${byDate.priceExtVat.toFixed(2)})`,
-                );
-              }
               return byDate;
             }
 
@@ -1109,9 +1104,8 @@ export function usePriceListData() {
                 );
               }
 
-              // Use confidence percentage to determine status
-              const thresholdPercent = confidenceThreshold * 100;
-              const isConfidenceOk = result.confidence >= thresholdPercent;
+              // Pass when calcAmt >= rawAmt (direction-based, not confidence threshold)
+              const isConfidenceOk = result.isAcceptable;
 
               diffStr = isConfidenceOk
                 ? `✓ ${fmt2(result.diff)}`

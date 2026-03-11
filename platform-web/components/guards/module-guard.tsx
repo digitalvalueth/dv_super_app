@@ -47,11 +47,15 @@ export function ModuleGuard({ moduleId, children }: ModuleGuardProps) {
     async function checkAccess() {
       try {
         // Get company enabled modules
-        const companyModules = userData!.companyId
+        const companyModulesResult = userData!.companyId
           ? await getCompanyEnabledModules(userData!.companyId)
-          : undefined;
+          : [];
 
-        const allowed = canAccessModule(userData, moduleId, companyModules);
+        // If company has no modules configured, skip company-level check (same as home page)
+        const companyModulesArg =
+          companyModulesResult.length > 0 ? companyModulesResult : undefined;
+
+        const allowed = canAccessModule(userData, moduleId, companyModulesArg);
 
         if (!allowed) {
           toast.error("ไม่มีสิทธิ์เข้าถึง module นี้");
