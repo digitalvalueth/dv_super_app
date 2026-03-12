@@ -100,6 +100,7 @@ export function exportToExcel(
   data: RawRow[],
   headers: string[],
   filename: string = "exported_data.xlsx",
+  meta?: { version?: string; exportedAt?: Date },
 ) {
   // Convert data to array of arrays
   const rows: (string | number | null)[][] = data.map((row) =>
@@ -128,6 +129,27 @@ export function exportToExcel(
   // Create workbook
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, "Data");
+
+  // Info sheet: version + export datetime
+  const now = meta?.exportedAt ?? new Date();
+  const exportedAtStr = now.toLocaleString("th-TH", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+  });
+  const infoData = [
+    ["Watson Excel Validator"],
+    ["Version", meta?.version ?? "-"],
+    ["Export Date/Time", exportedAtStr],
+    ["Total Rows", rows.length],
+    ["File", filename],
+  ];
+  const infoWs = XLSX.utils.aoa_to_sheet(infoData);
+  infoWs["!cols"] = [{ wch: 20 }, { wch: 40 }];
+  XLSX.utils.book_append_sheet(wb, infoWs, "Info");
 
   // Download
   XLSX.writeFile(wb, filename);

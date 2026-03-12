@@ -1955,16 +1955,28 @@ export default function WatsonExcelValidatorPage() {
     [data, headers, setData, logAutoFix],
   );
 
+  const WATSON_VERSION = "v6.02.0.6";
+
   const handleExportFixed = useCallback(() => {
     if (showPriceColumns) {
       setExportDialogOpen({ open: true, format: "excel" });
     } else {
       const exportFileName = `fixed_${fileName || "data.xlsx"}`;
       const exportHeaders = getExportHeaders(displayHeaders);
-      exportToExcel(displayData, exportHeaders, exportFileName);
+      exportToExcel(displayData, exportHeaders, exportFileName, {
+        version: WATSON_VERSION,
+        exportedAt: new Date(),
+      });
       logExportExcel(exportFileName);
     }
-  }, [showPriceColumns, displayData, displayHeaders, fileName, logExportExcel]);
+  }, [
+    showPriceColumns,
+    displayData,
+    displayHeaders,
+    fileName,
+    logExportExcel,
+    WATSON_VERSION,
+  ]);
 
   const handleExportJson = useCallback(() => {
     if (showPriceColumns) {
@@ -1981,19 +1993,32 @@ export default function WatsonExcelValidatorPage() {
   const doExport = useCallback(
     (scope: "all" | "problems", format: "excel" | "json") => {
       const exportHeaders = getExportHeaders(displayHeaders);
+      const isProblemRow = (row: (typeof allEnrichedData)[0]) => {
+        const diff = String(row["Diff"] || "");
+        const pm = String(row["Price Match"] || "");
+        const confStr = String(row["Confidence"] || "");
+        const confMatch = confStr.match(/(\d+)/);
+        const confidencePercent = confMatch ? parseInt(confMatch[1], 10) : 0;
+        // ⚠ diff = hard fail; or passed-but-low-confidence
+        if (diff !== "-" && diff !== "") {
+          if (diff.includes("⚠")) return true;
+          if (
+            diff.includes("✓") &&
+            confidencePercent < confidenceThreshold * 100
+          )
+            return true;
+        }
+        return pm.includes("❌") || pm.includes("❓");
+      };
       const sourceData =
         scope === "all"
           ? allEnrichedData
-          : allEnrichedData.filter((row) => {
-              const diff = String(row["Diff"] || "");
-              const pm = String(row["Price Match"] || "");
-              if (diff !== "-" && diff !== "") return diff.includes("⚠");
-              return pm.includes("❌") || pm.includes("❓");
-            });
+          : allEnrichedData.filter(isProblemRow);
       const label = scope === "all" ? "fixed" : "problems";
+      const exportMeta = { version: WATSON_VERSION, exportedAt: new Date() };
       if (format === "excel") {
         const exportFileName = `${label}_${fileName || "data.xlsx"}`;
-        exportToExcel(sourceData, exportHeaders, exportFileName);
+        exportToExcel(sourceData, exportHeaders, exportFileName, exportMeta);
         logExportExcel(exportFileName);
       } else {
         const baseName = (fileName || "data.xlsx").replace(/\.[^.]+$/, "");
@@ -2003,7 +2028,13 @@ export default function WatsonExcelValidatorPage() {
       }
       setExportDialogOpen({ open: false, format: null });
     },
-    [allEnrichedData, displayHeaders, fileName, logExportExcel],
+    [
+      allEnrichedData,
+      displayHeaders,
+      fileName,
+      logExportExcel,
+      confidenceThreshold,
+    ],
   );
 
   const [isSavingToCloud, setIsSavingToCloud] = useState(false);
@@ -2137,7 +2168,7 @@ export default function WatsonExcelValidatorPage() {
       setIsGlobalLoading(false);
     }
   }, [
-    displayData,
+    allEnrichedData,
     displayHeaders,
     reportMeta,
     fileName,
@@ -3633,7 +3664,19 @@ export default function WatsonExcelValidatorPage() {
                 const problemCount = allEnrichedData.filter((row) => {
                   const diff = String(row["Diff"] || "");
                   const pm = String(row["Price Match"] || "");
-                  if (diff !== "-" && diff !== "") return diff.includes("⚠");
+                  const confStr = String(row["Confidence"] || "");
+                  const confMatch = confStr.match(/(\d+)/);
+                  const confidencePercent = confMatch
+                    ? parseInt(confMatch[1], 10)
+                    : 0;
+                  if (diff !== "-" && diff !== "") {
+                    if (diff.includes("⚠")) return true;
+                    if (
+                      diff.includes("✓") &&
+                      confidencePercent < confidenceThreshold * 100
+                    )
+                      return true;
+                  }
                   return pm.includes("❌") || pm.includes("❓");
                 }).length;
                 return problemCount > 0 ? (
