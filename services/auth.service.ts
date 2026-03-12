@@ -10,7 +10,9 @@ import {
   signOut as firebaseSignOut,
   User as FirebaseUser,
   GoogleAuthProvider,
+  OAuthProvider,
   onAuthStateChanged,
+  reauthenticateWithCredential,
   signInWithCredential,
 } from "firebase/auth";
 import {
@@ -144,12 +146,12 @@ export const processAppleAuth = async (
       return userDoc.data() as User;
     }
 
-    // New user — create Firestore document
+    // New user — create Firestore document (omit undefined fields)
     const newUser: User = {
       uid: firebaseUser.uid,
       email: email || firebaseUser.email || "",
       name: displayName || firebaseUser.displayName || "Apple User",
-      photoURL: firebaseUser.photoURL || undefined,
+      ...(firebaseUser.photoURL ? { photoURL: firebaseUser.photoURL } : {}),
       createdAt: Timestamp.now(),
       updatedAt: Timestamp.now(),
     };
@@ -161,12 +163,12 @@ export const processAppleAuth = async (
     return newUser;
   } catch (error: any) {
     console.error("❌ Error processing Apple Auth:", error);
-    // Fallback to Firebase Auth data
+    // Fallback to Firebase Auth data (also omit undefined photoURL)
     return {
       uid: firebaseUser.uid,
       email: email || firebaseUser.email || "",
       name: displayName || "Apple User",
-      photoURL: firebaseUser.photoURL || undefined,
+      ...(firebaseUser.photoURL ? { photoURL: firebaseUser.photoURL } : {}),
       createdAt: Timestamp.now(),
       updatedAt: Timestamp.now(),
     };
@@ -366,12 +368,52 @@ export const deleteAccount = async (): Promise<void> => {
     console.warn("⚠️ AsyncStorage clear:", err);
   }
 
-  // 7. Revoke Google OAuth access so the account picker won't auto-reconnect
-  try {
-    await GoogleSignin.revokeAccess();
-    await GoogleSignin.signOut();
-  } catch (err) {
-    console.warn("⚠️ Google revoke:", err);
+  // 7. Revoke Google OAuth / Apple token & re-authenticate before delete
+  const appleProvider = firebaseUser.providerData.find(
+    (p) => p.providerId === "apple.com",
+  );
+  const googleProvider = firebaseUser.providerData.find(
+    (p) => p.providerId === "google.com",
+  );
+
+  if (appleProvider) {
+    // Apple requires re-authentication + token revocation before account deletion
+    try {
+      const AppleAuthentication = await import("expo-apple-authentication");
+      const Crypto = await import("expo-crypto");
+      const rawNonce = Math.random().toString(36).substring(2, 10);
+      const hashedNonce = await Crypto.digestStringAsync(
+        Crypto.CryptoDigestAlgorithm.SHA256,
+        rawNonce,
+      );
+      const credential = await AppleAuthentication.signInAsync({
+        requestedScopes: [
+          AppleAuthentication.AppleAuthenticationScope.FULL_NAME,
+          AppleAuthentication.AppleAuthenticationScope.EMAIL,
+        ],
+        nonce: hashedNonce,
+      });
+      if (credential.identityToken) {
+        const provider = new OAuthProvider("apple.com");
+        const oAuthCredential = provider.credential({
+          idToken: credential.identityToken,
+          rawNonce,
+        });
+        await reauthenticateWithCredential(firebaseUser, oAuthCredential);
+      }
+    } catch (err: any) {
+      if (err.code === "ERR_REQUEST_CANCELED") {
+        throw new Error("ERR_REQUEST_CANCELED");
+      }
+      console.warn("⚠️ Apple re-auth:", err);
+    }
+  } else if (googleProvider) {
+    try {
+      await GoogleSignin.revokeAccess();
+      await GoogleSignin.signOut();
+    } catch (err) {
+      console.warn("⚠️ Google revoke:", err);
+    }
   }
 
   // 8. Delete Firebase Auth account — may throw auth/requires-recent-login

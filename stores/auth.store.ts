@@ -53,6 +53,9 @@ export const useAuthStore = create<AuthState>((set) => ({
 
           // Setup realtime listener for user document
           const userDocRef = doc(db, "users", firebaseUser.uid);
+          // Track pending retry timer so we can cancel it if the document appears
+          let notFoundRetryTimer: ReturnType<typeof setTimeout> | null = null;
+
           userUnsubscribe = onSnapshot(
             userDocRef,
             { includeMetadataChanges: true },
@@ -60,14 +63,29 @@ export const useAuthStore = create<AuthState>((set) => ({
               if (docSnapshot.exists()) {
                 const userData = docSnapshot.data() as User;
                 console.log("✅ User data updated:", userData.email);
+                // Cancel any pending "not-found" clear
+                if (notFoundRetryTimer) {
+                  clearTimeout(notFoundRetryTimer);
+                  notFoundRetryTimer = null;
+                }
                 set({ user: userData, loading: false });
               } else if (!docSnapshot.metadata.fromCache) {
-                // Only clear user when SERVER confirms document doesn't exist
-                // (ignore cache-miss from local Firestore cache)
+                // Server confirmed document doesn't exist.
+                // Wait briefly — processAppleAuth / processGoogleAuth may still
+                // be creating the document (race condition on first sign-in).
                 console.log(
-                  "⚠️ User document doesn't exist (server confirmed)",
+                  "⚠️ User document doesn't exist (server confirmed), retrying in 3s...",
                 );
-                set({ user: null, loading: false });
+                notFoundRetryTimer = setTimeout(() => {
+                  notFoundRetryTimer = null;
+                  // If document still hasn't appeared, clear the user
+                  getCurrentUser().then((userData) => {
+                    if (!userData) {
+                      console.log("⚠️ User document still missing, clearing user");
+                      set({ user: null, loading: false });
+                    }
+                  });
+                }, 3000);
               }
               // If fromCache && !exists: stay loading, wait for server response
             },
