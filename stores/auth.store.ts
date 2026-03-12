@@ -9,6 +9,7 @@ interface AuthState {
   loading: boolean;
   error: string | null;
   isFirebaseAuthenticated: boolean; // Firebase Auth layer (not Firestore yet)
+  isDeletingAccount: boolean; // suppress notFound timer during deletion
 
   // Actions
   setUser: (user: User | null) => void;
@@ -17,13 +18,15 @@ interface AuthState {
   clearError: () => void;
   initialize: () => void;
   logout: () => void;
+  setDeletingAccount: (value: boolean) => void;
 }
 
-export const useAuthStore = create<AuthState>((set) => ({
+export const useAuthStore = create<AuthState>((set, get) => ({
   user: null,
   loading: true,
   error: null,
   isFirebaseAuthenticated: false,
+  isDeletingAccount: false,
 
   setUser: (user) => set({ user, loading: false }),
 
@@ -32,6 +35,8 @@ export const useAuthStore = create<AuthState>((set) => ({
   setError: (error) => set({ error, loading: false }),
 
   clearError: () => set({ error: null }),
+
+  setDeletingAccount: (value) => set({ isDeletingAccount: value }),
 
   initialize: () => {
     set({ loading: true });
@@ -87,6 +92,8 @@ export const useAuthStore = create<AuthState>((set) => ({
                 );
                 notFoundRetryTimer = setTimeout(() => {
                   notFoundRetryTimer = null;
+                  // Suppress if account deletion is in progress
+                  if (get().isDeletingAccount) return;
                   // If document still hasn't appeared, clear the user
                   getCurrentUser().then((userData) => {
                     if (!userData) {
@@ -131,6 +138,6 @@ export const useAuthStore = create<AuthState>((set) => ({
   },
 
   logout: () => {
-    set({ user: null, loading: false, isFirebaseAuthenticated: false });
+    set({ user: null, loading: false, isFirebaseAuthenticated: false, isDeletingAccount: false });
   },
 }));

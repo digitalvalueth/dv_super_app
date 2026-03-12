@@ -46,6 +46,7 @@ type SettingItem = SettingItemWithComponent | SettingItemWithPress;
 export default function ProfileScreen() {
   const user = useAuthStore((state) => state.user);
   const logout = useAuthStore((state) => state.logout);
+  const setDeletingAccount = useAuthStore((state) => state.setDeletingAccount);
   const { colors, isDark, mode } = useTheme();
   const setMode = useThemeStore((state) => state.setMode);
   const { language, setLanguage } = useLanguageStore();
@@ -144,10 +145,12 @@ export default function ProfileScreen() {
         style: "destructive",
         onPress: async () => {
           try {
+            setDeletingAccount(true);
             await deleteAccount();
             logout();
             router.replace("/(login)");
           } catch (err: any) {
+            setDeletingAccount(false);
             if (
               err?.code === "ERR_REQUEST_CANCELED" ||
               err?.message === "ERR_REQUEST_CANCELED"
