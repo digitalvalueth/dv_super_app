@@ -1,15 +1,21 @@
 import { useTranslation } from "@/constants/i18n";
-import { processGoogleAuth } from "@/services/auth.service";
+import {
+  isAppleSignInAvailable,
+  signInWithApple,
+} from "@/services/apple-auth.service";
+import { processAppleAuth, processGoogleAuth } from "@/services/auth.service";
 import { useAuthStore } from "@/stores/auth.store";
 import { useTheme } from "@/stores/theme.store";
 import { Ionicons } from "@expo/vector-icons";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { GoogleSignin } from "@react-native-google-signin/google-signin";
+import * as AppleAuthentication from "expo-apple-authentication";
 import { LinearGradient } from "expo-linear-gradient";
 import { router } from "expo-router";
 import { useEffect, useState } from "react";
 import {
   ActivityIndicator,
+  Platform,
   StatusBar,
   StyleSheet,
   Text,
@@ -30,6 +36,14 @@ export default function LoginScreen() {
   const { colors, isDark } = useTheme();
   const t = useTranslation();
   const [isLoading, setIsLoading] = useState(false);
+  const [appleAvailable, setAppleAvailable] = useState(false);
+
+  // Check Apple Sign-In availability (iOS 13+)
+  useEffect(() => {
+    if (Platform.OS === "ios") {
+      isAppleSignInAvailable().then(setAppleAvailable);
+    }
+  }, []);
 
   // Configure Google Sign In
   useEffect(() => {
@@ -44,6 +58,40 @@ export default function LoginScreen() {
     console.log("🤖 Android Client ID:", GOOGLE_ANDROID_CLIENT_ID);
     console.log("🌐 Web Client ID:", GOOGLE_WEB_CLIENT_ID);
   }, []);
+
+  const handleAppleLogin = async () => {
+    try {
+      setIsLoading(true);
+      const result = await signInWithApple();
+      if (!result) return; // user cancelled
+
+      const user = await processAppleAuth(
+        result.firebaseUser,
+        result.displayName,
+        result.email,
+        result.isNewUser,
+      );
+
+      if (user) {
+        setUser(user);
+        const onboardingCompleted = await AsyncStorage.getItem(
+          "onboarding_completed",
+        );
+        if (onboardingCompleted === "true") {
+          router.replace("/(tabs)/home");
+        } else {
+          router.replace("/onboarding");
+        }
+      }
+    } catch (error: any) {
+      if (error.code !== "ERR_REQUEST_CANCELED") {
+        console.error("❌ Apple Sign-In Error:", error);
+        setError(error.message || "Apple Sign-In failed");
+      }
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   const handleGoogleLogin = async () => {
     try {
@@ -233,6 +281,23 @@ export default function LoginScreen() {
           )}
         </TouchableOpacity>
 
+        {/* Sign in with Apple (iOS only, required for App Store) */}
+        {appleAvailable && (
+          <AppleAuthentication.AppleAuthenticationButton
+            buttonType={
+              AppleAuthentication.AppleAuthenticationButtonType.SIGN_IN
+            }
+            buttonStyle={
+              isDark
+                ? AppleAuthentication.AppleAuthenticationButtonStyle.WHITE
+                : AppleAuthentication.AppleAuthenticationButtonStyle.BLACK
+            }
+            cornerRadius={16}
+            style={styles.appleButton}
+            onPress={handleAppleLogin}
+          />
+        )}
+
         <Text style={[styles.note, { color: colors.textSecondary }]}>
           {t.login.note}
         </Text>
@@ -327,6 +392,11 @@ const styles = StyleSheet.create({
     color: "#fff",
     fontSize: 17,
     fontWeight: "700",
+  },
+  appleButton: {
+    width: 300,
+    height: 56,
+    marginTop: 16,
   },
   note: {
     marginTop: 24,

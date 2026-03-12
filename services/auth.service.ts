@@ -127,6 +127,53 @@ export const processGoogleAuth = async (
 // expo-auth-session is not needed for React Native apps
 
 /**
+ * Process Apple Sign-In result and sync with Firestore
+ */
+export const processAppleAuth = async (
+  firebaseUser: import("firebase/auth").User,
+  displayName: string,
+  email: string,
+  isNewUser: boolean,
+): Promise<User | null> => {
+  try {
+    // Try to get existing user from Firestore
+    const userDoc = await getDoc(doc(db, "users", firebaseUser.uid));
+
+    if (userDoc.exists()) {
+      await logLoginActivity(firebaseUser.uid);
+      return userDoc.data() as User;
+    }
+
+    // New user — create Firestore document
+    const newUser: User = {
+      uid: firebaseUser.uid,
+      email: email || firebaseUser.email || "",
+      name: displayName || firebaseUser.displayName || "Apple User",
+      photoURL: firebaseUser.photoURL || undefined,
+      createdAt: Timestamp.now(),
+      updatedAt: Timestamp.now(),
+    };
+
+    await setDoc(doc(db, "users", firebaseUser.uid), newUser);
+    await createAccessRequest(firebaseUser.uid, newUser.email);
+    await logLoginActivity(firebaseUser.uid);
+
+    return newUser;
+  } catch (error: any) {
+    console.error("❌ Error processing Apple Auth:", error);
+    // Fallback to Firebase Auth data
+    return {
+      uid: firebaseUser.uid,
+      email: email || firebaseUser.email || "",
+      name: displayName || "Apple User",
+      photoURL: firebaseUser.photoURL || undefined,
+      createdAt: Timestamp.now(),
+      updatedAt: Timestamp.now(),
+    };
+  }
+};
+
+/**
  * Create access request for new user (to be approved by admin)
  */
 const createAccessRequest = async (
