@@ -2,7 +2,7 @@ import { useAuthStore } from "@/stores/auth.store";
 import { useTheme } from "@/stores/theme.store";
 import { Redirect } from "expo-router";
 import { Icon, Label, NativeTabs } from "expo-router/unstable-native-tabs";
-import { Platform } from "react-native";
+import { ActivityIndicator, Platform, View } from "react-native";
 
 export default function TabLayout() {
   const { colors } = useTheme();
@@ -15,11 +15,37 @@ export default function TabLayout() {
   console.log("📍 TabLayout - loading:", loading, "user:", user?.email);
 
   // Still initializing
-  if (loading) return null;
+  if (loading) {
+    return (
+      <View
+        style={{
+          flex: 1,
+          justifyContent: "center",
+          alignItems: "center",
+          backgroundColor: colors.background,
+        }}
+      >
+        <ActivityIndicator size="large" color={colors.primary} />
+      </View>
+    );
+  }
 
   // Firebase Auth confirmed but Firestore snapshot hasn't arrived yet
   // (prevents flicker-redirect to login during cache-miss)
-  if (isFirebaseAuthenticated && !user) return null;
+  if (isFirebaseAuthenticated && !user) {
+    return (
+      <View
+        style={{
+          flex: 1,
+          justifyContent: "center",
+          alignItems: "center",
+          backgroundColor: colors.background,
+        }}
+      >
+        <ActivityIndicator size="large" color={colors.primary} />
+      </View>
+    );
+  }
 
   // If user is not authenticated, redirect to login
   if (!user) {

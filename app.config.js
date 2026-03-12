@@ -19,6 +19,7 @@ const config = {
   ios: {
     supportsTablet: true,
     bundleIdentifier: "com.digitalvalue.fittbsa",
+    usesAppleSignIn: true,
     associatedDomains: ["applinks:fittbsa.com", "applinks:admin.fittbsa.com"],
     infoPlist: {
       ITSAppUsesNonExemptEncryption: false,
@@ -85,6 +86,7 @@ const config = {
   },
   plugins: [
     "expo-router",
+    "expo-apple-authentication",
     [
       "expo-splash-screen",
       {
