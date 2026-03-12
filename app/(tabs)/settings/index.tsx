@@ -148,7 +148,13 @@ export default function ProfileScreen() {
             logout();
             router.replace("/(login)");
           } catch (err: any) {
-            if (err?.code === "auth/requires-recent-login") {
+            if (
+              err?.code === "ERR_REQUEST_CANCELED" ||
+              err?.message === "ERR_REQUEST_CANCELED"
+            ) {
+              // User cancelled Apple Sign-In sheet — do nothing
+              return;
+            } else if (err?.code === "auth/requires-recent-login") {
               Alert.alert(t.settings.reloginTitle, t.settings.reloginMessage, [
                 { text: t.cancel, style: "cancel" },
                 {

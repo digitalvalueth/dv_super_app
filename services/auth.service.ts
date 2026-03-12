@@ -404,7 +404,7 @@ export const deleteAccount = async (): Promise<void> => {
       }
     } catch (err: any) {
       if (err.code === "ERR_REQUEST_CANCELED") {
-        throw new Error("ERR_REQUEST_CANCELED");
+        throw err; // preserve original error with .code intact
       }
       console.warn("⚠️ Apple re-auth:", err);
     }

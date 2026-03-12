@@ -81,7 +81,9 @@ export const useAuthStore = create<AuthState>((set) => ({
                   // If document still hasn't appeared, clear the user
                   getCurrentUser().then((userData) => {
                     if (!userData) {
-                      console.log("⚠️ User document still missing, clearing user");
+                      console.log(
+                        "⚠️ User document still missing, clearing user",
+                      );
                       set({ user: null, loading: false });
                     }
                   });
