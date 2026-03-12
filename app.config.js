@@ -10,7 +10,7 @@ const isProduction = process.env.APP_ENV === "production";
 const config = {
   name: "FITT BSA",
   slug: "fitt-bsa",
-  version: "1.1.0",
+  version: "1.1.1",
   orientation: "portrait",
   icon: "./assets/images/icon.png",
   scheme: "fittbsa",
