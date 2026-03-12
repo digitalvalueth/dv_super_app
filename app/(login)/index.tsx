@@ -3,7 +3,11 @@ import {
   isAppleSignInAvailable,
   signInWithApple,
 } from "@/services/apple-auth.service";
-import { processAppleAuth, processGoogleAuth } from "@/services/auth.service";
+import {
+  processAppleAuth,
+  processGoogleAuth,
+  signInWithDemo,
+} from "@/services/auth.service";
 import { useAuthStore } from "@/stores/auth.store";
 import { useTheme } from "@/stores/theme.store";
 import { Ionicons } from "@expo/vector-icons";
@@ -58,6 +62,21 @@ export default function LoginScreen() {
     console.log("🤖 Android Client ID:", GOOGLE_ANDROID_CLIENT_ID);
     console.log("🌐 Web Client ID:", GOOGLE_WEB_CLIENT_ID);
   }, []);
+
+  const handleDemoLogin = async () => {
+    try {
+      setIsLoading(true);
+      const user = await signInWithDemo();
+      if (user) {
+        setUser(user);
+        router.replace("/(tabs)/home");
+      }
+    } catch (error: any) {
+      setError(error.message);
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   const handleAppleLogin = async () => {
     try {
@@ -301,6 +320,15 @@ export default function LoginScreen() {
         <Text style={[styles.note, { color: colors.textSecondary }]}>
           {t.login.note}
         </Text>
+
+        {/* App Review Demo — hidden at bottom, for Apple reviewers */}
+        <TouchableOpacity
+          style={styles.demoButton}
+          onPress={handleDemoLogin}
+          disabled={isLoading}
+        >
+          <Text style={styles.demoButtonText}>App Review Demo</Text>
+        </TouchableOpacity>
       </View>
     </SafeAreaView>
   );
@@ -397,6 +425,16 @@ const styles = StyleSheet.create({
     width: 300,
     height: 56,
     marginTop: 16,
+  },
+  demoButton: {
+    marginTop: 32,
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+  },
+  demoButtonText: {
+    fontSize: 11,
+    color: "#888",
+    textAlign: "center",
   },
   note: {
     marginTop: 24,

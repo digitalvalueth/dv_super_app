@@ -14,6 +14,7 @@ import {
   onAuthStateChanged,
   reauthenticateWithCredential,
   signInWithCredential,
+  signInWithEmailAndPassword,
 } from "firebase/auth";
 import {
   collection,
@@ -418,6 +419,32 @@ export const deleteAccount = async (): Promise<void> => {
 
   // 8. Delete Firebase Auth account — may throw auth/requires-recent-login
   await deleteUser(firebaseUser);
+};
+
+/**
+ * Demo / App Review sign-in using email+password
+ * Account must be pre-created in Firebase Auth + Firestore (production)
+ */
+export const DEMO_EMAIL = "demo@review.fittbsa.com";
+export const signInWithDemo = async (): Promise<User | null> => {
+  const DEMO_PASSWORD = "FittBSA@Demo2026";
+  try {
+    const userCredential = await signInWithEmailAndPassword(
+      auth,
+      DEMO_EMAIL,
+      DEMO_PASSWORD,
+    );
+    const firebaseUser = userCredential.user;
+    const userDoc = await getDoc(doc(db, "users", firebaseUser.uid));
+    if (userDoc.exists()) {
+      await logLoginActivity(firebaseUser.uid);
+      return userDoc.data() as User;
+    }
+    return null;
+  } catch (error: any) {
+    console.error("❌ Demo sign-in error:", error);
+    throw new Error("Demo account not configured. Contact administrator.");
+  }
 };
 
 /**
