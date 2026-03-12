@@ -25,6 +25,7 @@ import {
   query,
   setDoc,
   Timestamp,
+  updateDoc,
   where,
   writeBatch,
 } from "firebase/firestore";
@@ -143,8 +144,22 @@ export const processAppleAuth = async (
     const userDoc = await getDoc(doc(db, "users", firebaseUser.uid));
 
     if (userDoc.exists()) {
+      const existingUser = userDoc.data() as User;
+
+      // If name was previously saved as placeholder and we now have a real name
+      // (e.g. from Firebase Auth displayName saved on first login), update it
+      const resolvedName = displayName || firebaseUser.displayName;
+      if (resolvedName && existingUser.name === "Apple User") {
+        await updateDoc(doc(db, "users", firebaseUser.uid), {
+          name: resolvedName,
+          updatedAt: Timestamp.now(),
+        });
+        existingUser.name = resolvedName;
+        console.log("✅ Updated Apple User name to:", resolvedName);
+      }
+
       await logLoginActivity(firebaseUser.uid);
-      return userDoc.data() as User;
+      return existingUser;
     }
 
     // New user — create Firestore document (omit undefined fields)
@@ -284,7 +299,9 @@ const logLoginActivity = async (userId: string): Promise<void> => {
  * Throws auth/requires-recent-login if the session is too old —
  * caller should sign the user out, have them sign back in, then retry.
  */
-export const deleteAccount = async (): Promise<void> => {
+export const deleteAccount = async (
+  onReauthComplete?: () => void,
+): Promise<void> => {
   const firebaseUser = auth.currentUser;
   if (!firebaseUser) throw new Error("No authenticated user");
 
@@ -308,7 +325,52 @@ export const deleteAccount = async (): Promise<void> => {
     await batch.commit();
   };
 
-  // 1. Delete Firestore subcollections under users/{uid}
+  // STEP 0: Re-authenticate FIRST — before touching Firestore.
+  // This way the Apple/Google sheet appears immediately (before any deletions),
+  // and the onSnapshot "not found" race condition cannot occur.
+  const appleProvider = firebaseUser.providerData.find(
+    (p) => p.providerId === "apple.com",
+  );
+  const googleProvider = firebaseUser.providerData.find(
+    (p) => p.providerId === "google.com",
+  );
+
+  if (appleProvider) {
+    // Apple requires re-authentication before account deletion.
+    // Use refreshAsync (REFRESH operation) instead of signInAsync (LOGIN) —
+    // Apple shows "Continue with Apple ID" UI instead of "Sign in with Apple",
+    // which is semantically correct for re-auth during deletion.
+    // Throwing here aborts the delete entirely — no data is touched.
+    console.log("🍎 Starting Apple re-auth for delete...");
+    const AppleAuthentication = await import("expo-apple-authentication");
+    const credential = await AppleAuthentication.refreshAsync({
+      user: appleProvider.uid, // Apple user ID from provider data
+      requestedScopes: [
+        AppleAuthentication.AppleAuthenticationScope.FULL_NAME,
+        AppleAuthentication.AppleAuthenticationScope.EMAIL,
+      ],
+    });
+    if (credential.identityToken) {
+      const provider = new OAuthProvider("apple.com");
+      const oAuthCredential = provider.credential({
+        idToken: credential.identityToken,
+      });
+      await reauthenticateWithCredential(firebaseUser, oAuthCredential);
+      console.log("✅ Apple re-auth success");
+    }
+  } else if (googleProvider) {
+    try {
+      await GoogleSignin.revokeAccess();
+      await GoogleSignin.signOut();
+    } catch (err) {
+      console.warn("⚠️ Google revoke:", err);
+    }
+  }
+
+  // Signal caller that re-auth is done — safe to show "deleting" UI now
+  onReauthComplete?.();
+
+  // STEP 1: Delete Firestore subcollections under users/{uid}
   try {
     await deleteSubcollection(`users/${uid}/countingHistory`);
   } catch (err) {
@@ -320,21 +382,21 @@ export const deleteAccount = async (): Promise<void> => {
     console.warn("⚠️ login_logs:", err);
   }
 
-  // 2. Delete users/{uid} document
+  // STEP 2: Delete users/{uid} document
   try {
     await deleteDoc(doc(db, "users", uid));
   } catch (err) {
     console.warn("⚠️ users doc:", err);
   }
 
-  // 3. Delete access_requests/{uid}
+  // STEP 3: Delete access_requests/{uid}
   try {
     await deleteDoc(doc(db, "access_requests", uid));
   } catch (err) {
     console.warn("⚠️ access_requests doc:", err);
   }
 
-  // 4. Delete notifications where userId == uid
+  // STEP 4: Delete notifications where userId == uid
   try {
     await deleteQueryResults(
       query(collection(db, "notifications"), where("userId", "==", uid)),
@@ -343,7 +405,7 @@ export const deleteAccount = async (): Promise<void> => {
     console.warn("⚠️ notifications:", err);
   }
 
-  // 5. Delete checkIns where userId == uid
+  // STEP 5: Delete checkIns where userId == uid
   try {
     await deleteQueryResults(
       query(collection(db, "checkIns"), where("userId", "==", uid)),
@@ -352,7 +414,7 @@ export const deleteAccount = async (): Promise<void> => {
     console.warn("⚠️ checkIns:", err);
   }
 
-  // 6. Clear all local AsyncStorage data for this user
+  // STEP 6: Clear all local AsyncStorage data for this user
   try {
     const allKeys = await AsyncStorage.getAllKeys();
     const userKeys = allKeys.filter(
@@ -369,56 +431,51 @@ export const deleteAccount = async (): Promise<void> => {
     console.warn("⚠️ AsyncStorage clear:", err);
   }
 
-  // 7. Revoke Google OAuth / Apple token & re-authenticate before delete
-  const appleProvider = firebaseUser.providerData.find(
-    (p) => p.providerId === "apple.com",
-  );
-  const googleProvider = firebaseUser.providerData.find(
-    (p) => p.providerId === "google.com",
-  );
+  // STEP 7: Delete Firebase Auth account
+  console.log("🗑️ Deleting Firebase Auth account...");
+  await deleteUser(firebaseUser);
+  console.log("✅ Firebase Auth account deleted");
+};
 
-  if (appleProvider) {
-    // Apple requires re-authentication + token revocation before account deletion
-    try {
-      const AppleAuthentication = await import("expo-apple-authentication");
-      const Crypto = await import("expo-crypto");
-      const rawNonce = Math.random().toString(36).substring(2, 10);
-      const hashedNonce = await Crypto.digestStringAsync(
-        Crypto.CryptoDigestAlgorithm.SHA256,
-        rawNonce,
-      );
-      const credential = await AppleAuthentication.signInAsync({
-        requestedScopes: [
-          AppleAuthentication.AppleAuthenticationScope.FULL_NAME,
-          AppleAuthentication.AppleAuthenticationScope.EMAIL,
-        ],
-        nonce: hashedNonce,
-      });
-      if (credential.identityToken) {
-        const provider = new OAuthProvider("apple.com");
-        const oAuthCredential = provider.credential({
-          idToken: credential.identityToken,
-          rawNonce,
-        });
-        await reauthenticateWithCredential(firebaseUser, oAuthCredential);
-      }
-    } catch (err: any) {
-      if (err.code === "ERR_REQUEST_CANCELED") {
-        throw err; // preserve original error with .code intact
-      }
-      console.warn("⚠️ Apple re-auth:", err);
-    }
-  } else if (googleProvider) {
-    try {
-      await GoogleSignin.revokeAccess();
-      await GoogleSignin.signOut();
-    } catch (err) {
-      console.warn("⚠️ Google revoke:", err);
-    }
+/**
+ * Sign in with email and password.
+ * If the user has no Firestore document yet (first login), creates one and
+ * submits a pending access request — same flow as Google / Apple sign-in.
+ */
+export const signInWithEmail = async (
+  email: string,
+  password: string,
+): Promise<User | null> => {
+  const userCredential = await signInWithEmailAndPassword(
+    auth,
+    email,
+    password,
+  );
+  const firebaseUser = userCredential.user;
+  const userDocRef = doc(db, "users", firebaseUser.uid);
+  const userDoc = await getDoc(userDocRef);
+
+  if (userDoc.exists()) {
+    await logLoginActivity(firebaseUser.uid);
+    return userDoc.data() as User;
   }
 
-  // 8. Delete Firebase Auth account — may throw auth/requires-recent-login
-  await deleteUser(firebaseUser);
+  // No Firestore document → create one so the auth listener doesn't
+  // enter the "document missing → sign out" cycle.
+  const newUser: User = {
+    uid: firebaseUser.uid,
+    email: firebaseUser.email || email,
+    name: firebaseUser.displayName || email.split("@")[0],
+    ...(firebaseUser.photoURL ? { photoURL: firebaseUser.photoURL } : {}),
+    createdAt: Timestamp.now(),
+    updatedAt: Timestamp.now(),
+  };
+
+  await setDoc(userDocRef, newUser);
+  await createAccessRequest(firebaseUser.uid, newUser.email);
+  await logLoginActivity(firebaseUser.uid);
+
+  return newUser;
 };
 
 /**
@@ -435,12 +492,24 @@ export const signInWithDemo = async (): Promise<User | null> => {
       DEMO_PASSWORD,
     );
     const firebaseUser = userCredential.user;
-    const userDoc = await getDoc(doc(db, "users", firebaseUser.uid));
+    const userDocRef = doc(db, "users", firebaseUser.uid);
+    const userDoc = await getDoc(userDocRef);
     if (userDoc.exists()) {
       await logLoginActivity(firebaseUser.uid);
       return userDoc.data() as User;
     }
-    return null;
+    // Demo account exists in Auth but not in Firestore — create it
+    console.warn("⚠️ Demo Firestore doc missing, creating it...");
+    const demoUser: User = {
+      uid: firebaseUser.uid,
+      email: DEMO_EMAIL,
+      name: "Demo Reviewer",
+      createdAt: Timestamp.now(),
+      updatedAt: Timestamp.now(),
+    };
+    await setDoc(userDocRef, demoUser);
+    await logLoginActivity(firebaseUser.uid);
+    return demoUser;
   } catch (error: any) {
     console.error("❌ Demo sign-in error:", error);
     throw new Error("Demo account not configured. Contact administrator.");

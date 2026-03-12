@@ -1,8 +1,16 @@
 import { db } from "@/config/firebase";
-import { getCurrentUser, onAuthStateChange } from "@/services/auth.service";
+import {
+  getCurrentUser,
+  onAuthStateChange,
+  signOut,
+} from "@/services/auth.service";
 import { User } from "@/types";
 import { doc, onSnapshot } from "firebase/firestore";
 import { create } from "zustand";
+
+// Module-level timer so StrictMode double-invoke doesn't create multiple timers
+let _notFoundRetryTimer: ReturnType<typeof setTimeout> | null = null;
+let _isInitialized = false;
 
 interface AuthState {
   user: User | null;
@@ -39,17 +47,19 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   setDeletingAccount: (value) => set({ isDeletingAccount: value }),
 
   initialize: () => {
+    // Guard against StrictMode double-invoke creating duplicate listeners
+    if (_isInitialized) return;
+    _isInitialized = true;
+
     set({ loading: true });
 
     try {
       let userUnsubscribe: (() => void) | null = null;
-      // Lifted outside snapshot closure so it can be cancelled on any auth change
-      let notFoundRetryTimer: ReturnType<typeof setTimeout> | null = null;
 
       const cancelRetryTimer = () => {
-        if (notFoundRetryTimer) {
-          clearTimeout(notFoundRetryTimer);
-          notFoundRetryTimer = null;
+        if (_notFoundRetryTimer) {
+          clearTimeout(_notFoundRetryTimer);
+          _notFoundRetryTimer = null;
         }
       };
 
@@ -86,21 +96,23 @@ export const useAuthStore = create<AuthState>((set, get) => ({
                 // Wait briefly — processAppleAuth / processGoogleAuth may still
                 // be creating the document (race condition on first sign-in).
                 // Only start timer if one isn't already running.
-                if (notFoundRetryTimer) return;
+                if (_notFoundRetryTimer) return;
                 console.log(
                   "⚠️ User document doesn't exist (server confirmed), retrying in 3s...",
                 );
-                notFoundRetryTimer = setTimeout(() => {
-                  notFoundRetryTimer = null;
+                _notFoundRetryTimer = setTimeout(() => {
+                  _notFoundRetryTimer = null;
                   // Suppress if account deletion is in progress
                   if (get().isDeletingAccount) return;
-                  // If document still hasn't appeared, clear the user
+                  // If document still hasn't appeared, sign out completely.
+                  // Just set(user:null) is NOT enough — isFirebaseAuthenticated
+                  // stays true and TabLayout returns null instead of redirecting.
                   getCurrentUser().then((userData) => {
                     if (!userData) {
                       console.log(
-                        "⚠️ User document still missing, clearing user",
+                        "⚠️ User document still missing, signing out",
                       );
-                      set({ user: null, loading: false });
+                      signOut().catch(() => {});
                     }
                   });
                 }, 3000);
@@ -138,6 +150,11 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   },
 
   logout: () => {
-    set({ user: null, loading: false, isFirebaseAuthenticated: false, isDeletingAccount: false });
+    set({
+      user: null,
+      loading: false,
+      isFirebaseAuthenticated: false,
+      isDeletingAccount: false,
+    });
   },
 }));
