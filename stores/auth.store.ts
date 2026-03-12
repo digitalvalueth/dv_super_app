@@ -38,12 +38,24 @@ export const useAuthStore = create<AuthState>((set) => ({
 
     try {
       let userUnsubscribe: (() => void) | null = null;
+      // Lifted outside snapshot closure so it can be cancelled on any auth change
+      let notFoundRetryTimer: ReturnType<typeof setTimeout> | null = null;
+
+      const cancelRetryTimer = () => {
+        if (notFoundRetryTimer) {
+          clearTimeout(notFoundRetryTimer);
+          notFoundRetryTimer = null;
+        }
+      };
 
       // Listen to auth state changes
       onAuthStateChange(async (firebaseUser) => {
         if (firebaseUser) {
           console.log("🔐 User authenticated, setting up realtime listener...");
           set({ isFirebaseAuthenticated: true });
+
+          // Cancel any pending retry timer from previous listener
+          cancelRetryTimer();
 
           // Unsubscribe previous listener before setting up a new one
           if (userUnsubscribe) {
@@ -53,8 +65,6 @@ export const useAuthStore = create<AuthState>((set) => ({
 
           // Setup realtime listener for user document
           const userDocRef = doc(db, "users", firebaseUser.uid);
-          // Track pending retry timer so we can cancel it if the document appears
-          let notFoundRetryTimer: ReturnType<typeof setTimeout> | null = null;
 
           userUnsubscribe = onSnapshot(
             userDocRef,
@@ -64,15 +74,14 @@ export const useAuthStore = create<AuthState>((set) => ({
                 const userData = docSnapshot.data() as User;
                 console.log("✅ User data updated:", userData.email);
                 // Cancel any pending "not-found" clear
-                if (notFoundRetryTimer) {
-                  clearTimeout(notFoundRetryTimer);
-                  notFoundRetryTimer = null;
-                }
+                cancelRetryTimer();
                 set({ user: userData, loading: false });
               } else if (!docSnapshot.metadata.fromCache) {
                 // Server confirmed document doesn't exist.
                 // Wait briefly — processAppleAuth / processGoogleAuth may still
                 // be creating the document (race condition on first sign-in).
+                // Only start timer if one isn't already running.
+                if (notFoundRetryTimer) return;
                 console.log(
                   "⚠️ User document doesn't exist (server confirmed), retrying in 3s...",
                 );
@@ -101,6 +110,8 @@ export const useAuthStore = create<AuthState>((set) => ({
           );
         } else {
           console.log("🔓 No authenticated user");
+          // Cancel any pending retry timer before clearing state
+          cancelRetryTimer();
           set({ isFirebaseAuthenticated: false });
           // Cleanup user listener if exists
           if (userUnsubscribe) {
