@@ -102,23 +102,38 @@ export function exportToExcel(
   filename: string = "exported_data.xlsx",
   meta?: { version?: string; exportedAt?: Date },
 ) {
+  const now = meta?.exportedAt ?? new Date();
+  const exportedAtStr = now.toLocaleString("th-TH", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+  });
+  const versionStr = meta?.version ?? "1.0.0";
+
+  const exportHeaders = [...headers, "Web Version", "Export Date/Time"];
+
   // Convert data to array of arrays
-  const rows: (string | number | null)[][] = data.map((row) =>
-    headers.map((header) => row[header] ?? null),
-  );
+  const rows: (string | number | null)[][] = data.map((row) => [
+    ...headers.map((header) => row[header] ?? null),
+    versionStr,
+    exportedAtStr
+  ]);
 
   // Add headers as first row
-  const exportData = [headers, ...rows];
+  const exportData = [exportHeaders, ...rows];
 
   // Create worksheet
   const ws = XLSX.utils.aoa_to_sheet(exportData);
 
   // Auto-fit column widths
-  const colWidths = headers.map((header, colIndex) => {
+  const colWidths = exportHeaders.map((header, colIndex) => {
     let maxWidth = header.length;
     rows.forEach((row) => {
       const cellValue = row[colIndex];
-      if (cellValue !== null) {
+      if (cellValue !== null && cellValue !== undefined) {
         maxWidth = Math.max(maxWidth, String(cellValue).length);
       }
     });
@@ -131,15 +146,6 @@ export function exportToExcel(
   XLSX.utils.book_append_sheet(wb, ws, "Data");
 
   // Info sheet: version + export datetime
-  const now = meta?.exportedAt ?? new Date();
-  const exportedAtStr = now.toLocaleString("th-TH", {
-    day: "2-digit",
-    month: "short",
-    year: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-  });
   const infoData = [
     ["Watson Excel Validator"],
     ["Version", meta?.version ?? "-"],
