@@ -2,25 +2,25 @@
 
 import { UndoRedoControls } from "@/components/watson/editor/UndoRedoControls";
 import {
-  ExportStatusFull,
-  ExportSuccessModal,
+    ExportStatusFull,
+    ExportSuccessModal,
 } from "@/components/watson/export/ExportSuccessModal";
 import { ActivityLogsSidebar } from "@/components/watson/logs/ActivityLogsSidebar";
 import { OfflinePage } from "@/components/watson/OfflinePage";
 import {
-  BulkFixAction,
-  BulkFixSuggestionPanel,
+    BulkFixAction,
+    BulkFixSuggestionPanel,
 } from "@/components/watson/pricelist/BulkFixSuggestionPanel";
 import { CalculationLogModal } from "@/components/watson/pricelist/CalculationLogModal";
 import {
-  IssueCategory,
-  PriceIssueBreakdown,
-  PriceIssuePanel,
+    IssueCategory,
+    PriceIssueBreakdown,
+    PriceIssuePanel,
 } from "@/components/watson/pricelist/PriceIssuePanel";
 import { PriceListSidebar } from "@/components/watson/pricelist/PriceListSidebar";
 import {
-  QtyEditModal,
-  QtyEditModalData,
+    QtyEditModal,
+    QtyEditModalData,
 } from "@/components/watson/pricelist/QtyEditModal";
 import { FixSuggestionModal } from "@/components/watson/suggestions/FixSuggestionModal";
 import { DataTable } from "@/components/watson/table/DataTable";
@@ -28,23 +28,23 @@ import { Alert, AlertDescription } from "@/components/watson/ui/alert";
 import { Badge } from "@/components/watson/ui/badge";
 import { Button } from "@/components/watson/ui/button";
 import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
+    Card,
+    CardContent,
+    CardHeader,
+    CardTitle,
 } from "@/components/watson/ui/card";
 import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
+    Dialog,
+    DialogContent,
+    DialogHeader,
+    DialogTitle,
 } from "@/components/watson/ui/dialog";
 import {
-  DropdownMenu,
-  DropdownMenuCheckboxItem,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
+    DropdownMenu,
+    DropdownMenuCheckboxItem,
+    DropdownMenuContent,
+    DropdownMenuItem,
+    DropdownMenuTrigger,
 } from "@/components/watson/ui/dropdown-menu";
 import { LoadingOverlay } from "@/components/watson/ui/loading-overlay";
 import { Skeleton } from "@/components/watson/ui/skeleton";
@@ -62,38 +62,38 @@ import { usePriceImportHistory } from "@/hooks/watson/usePriceImportHistory";
 import { usePriceListData } from "@/hooks/watson/usePriceListData";
 import type { WorkflowStatus } from "@/lib/watson-firebase";
 import {
-  exportToExcel,
-  exportToJson,
-  exportValidationReport,
-  getExportHeaders,
-  saveExportToCloud,
+    exportToExcel,
+    exportToJson,
+    exportValidationReport,
+    getExportHeaders,
+    saveExportToCloud,
 } from "@/lib/watson/excel-exporter";
 import {
-  applySuggestions,
-  FixSuggestion,
-  FixSuggestionGroup,
-  getAllSuggestions,
+    applySuggestions,
+    FixSuggestion,
+    FixSuggestionGroup,
+    getAllSuggestions,
 } from "@/lib/watson/fix-suggestions";
 import { validateData } from "@/lib/watson/validators";
 import { useAuthStore } from "@/stores/auth.store";
 import { ValidationResult } from "@/types/watson/invoice";
 import {
-  Building2,
-  Calendar,
-  CheckCircle,
-  ChevronDown,
-  ChevronLeft,
-  ChevronRight,
-  Cloud,
-  Download,
-  FileJson,
-  FileSpreadsheet,
-  Home,
-  Library,
-  Loader2,
-  RotateCcw,
-  UploadCloud,
-  Wand2,
+    Building2,
+    Calendar,
+    CheckCircle,
+    ChevronDown,
+    ChevronLeft,
+    ChevronRight,
+    Cloud,
+    Download,
+    FileJson,
+    FileSpreadsheet,
+    Home,
+    Library,
+    Loader2,
+    RotateCcw,
+    UploadCloud,
+    Wand2,
 } from "lucide-react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -1955,7 +1955,7 @@ export default function WatsonExcelValidatorPage() {
     [data, headers, setData, logAutoFix],
   );
 
-  const WATSON_VERSION = "v6.02.0.6";
+  const WATSON_VERSION = "v6.02.0.7";
 
   const handleExportFixed = useCallback(() => {
     if (showPriceColumns) {
