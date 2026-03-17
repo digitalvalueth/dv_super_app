@@ -104,22 +104,23 @@ export default function SupervisorDashboard() {
   const handleBulkAssign = async () => {
     if (bulkAssigning) return;
 
+    const currentDate = new Date();
+    const half = currentDate.getDate() <= 15 ? 1 : 2;
     const confirmAssign = confirm(
-      "ต้องการมอบหมายสินค้าทั้งหมดให้กับพนักงานทุกคนสำหรับเดือนนี้ใช่หรือไม่?",
+      `ต้องการมอบหมายสินค้าทั้งหมดให้กับพนักงานทุกคน (รอบ ${half}) สำหรับเดือนนี้ใช่หรือไม่?`,
     );
 
     if (!confirmAssign) return;
 
     try {
       setBulkAssigning(true);
-      const currentDate = new Date();
       const month = currentDate.getMonth() + 1;
       const year = currentDate.getFullYear();
 
       const response = await fetch("/api/assignments/bulk-assign", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ month, year }),
+        body: JSON.stringify({ month, year, half }),
       });
 
       const data = await response.json();

@@ -142,6 +142,7 @@ export default function PendingProductsPage() {
       if (product.createdBy) {
         const currentMonth = new Date().getMonth() + 1;
         const currentYear = new Date().getFullYear();
+        const currentHalf: 1 | 2 = new Date().getDate() <= 15 ? 1 : 2;
 
         // Check existing assignment
         const existingQuery = query(
@@ -149,6 +150,7 @@ export default function PendingProductsPage() {
           where("userId", "==", product.createdBy),
           where("month", "==", currentMonth),
           where("year", "==", currentYear),
+          where("half", "==", currentHalf),
         );
         const existingSnapshot = await getDocs(existingQuery);
 
@@ -173,6 +175,7 @@ export default function PendingProductsPage() {
             productIds: [product.productId],
             month: currentMonth,
             year: currentYear,
+            half: currentHalf,
             status: "pending",
             createdAt: serverTimestamp(),
             updatedAt: serverTimestamp(),

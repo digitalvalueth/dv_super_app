@@ -277,25 +277,27 @@ export default function CountingPeriodsPage() {
   }
 
   async function handleAutoAssign(period: CountingPeriod) {
-    await runAutoAssign(period.month, period.year, period.id);
+    await runAutoAssign(period.month, period.year, period.id, period.half);
   }
 
   async function handleGlobalAutoAssign() {
     const now = new Date();
-    await runAutoAssign(now.getMonth() + 1, now.getFullYear(), null);
+    const half: PeriodHalf = now.getDate() <= 15 ? 1 : 2;
+    await runAutoAssign(now.getMonth() + 1, now.getFullYear(), null, half);
   }
 
   async function runAutoAssign(
     month: number,
     year: number,
     periodId: string | null,
+    half: PeriodHalf,
   ) {
     if (!companyId) {
       toast.error("ไม่พบ companyId");
       return;
     }
     const confirmed = window.confirm(
-      `มอบหมายสินค้าทั้งหมดให้พนักงานทุกคน สำหรับเดือน ${THAI_MONTHS[month]}/${year} ใช่หรือไม่?`,
+      `มอบหมายสินค้าทั้งหมดให้พนักงานทุกคน สำหรับเดือน ${THAI_MONTHS[month]}/${year} รอบ ${half} ใช่หรือไม่?`,
     );
     if (!confirmed) return;
 
@@ -339,13 +341,14 @@ export default function CountingPeriodsPage() {
         const user = userDoc.data();
         const userId = userDoc.id;
 
-        // Check if assignment already exists for this month/year
+        // Check if assignment already exists for this month/year/half
         const existingSnap = await getDocs(
           query(
             collection(db, "assignments"),
             where("userId", "==", userId),
             where("month", "==", month),
             where("year", "==", year),
+            where("half", "==", half),
           ),
         );
 
@@ -375,6 +378,7 @@ export default function CountingPeriodsPage() {
             productCount: allProductIds.length,
             month,
             year,
+            half,
             status: "pending",
             completedCount: 0,
             createdAt: serverTimestamp(),
@@ -385,7 +389,7 @@ export default function CountingPeriodsPage() {
       }
 
       toast.success(
-        `มอบหมายสำเร็จ! สร้างใหม่ ${assignedCount} คน, อัปเดต ${skippedCount} คน (สินค้า ${allProductIds.length} รายการ)`,
+        `มอบหมายสำเร็จ! รอบ ${half} สร้างใหม่ ${assignedCount} คน, อัปเดต ${skippedCount} คน (สินค้า ${allProductIds.length} รายการ)`,
       );
     } catch (err) {
       console.error(err);
@@ -437,7 +441,9 @@ export default function CountingPeriodsPage() {
               ) : (
                 <Users className="w-4 h-4" />
               )}
-              {globalAssigning ? "กำลังมอบ..." : "Auto-assign เดือนนี้"}
+              {globalAssigning
+                ? "กำลังมอบ..."
+                : `Auto-assign รอบ ${currentHalf} เดือนนี้`}
             </button>
             {/* Generate year button */}
             <button

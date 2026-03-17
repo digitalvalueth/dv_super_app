@@ -50,6 +50,8 @@ interface UserWithAssignments extends User {
   assignments?: Assignment[];
 }
 
+type ProductBrandFilter = "all" | "nestme" | "primanest";
+
 export default function BranchDetailPage() {
   const params = useParams();
   const router = useRouter();
@@ -71,11 +73,14 @@ export default function BranchDetailPage() {
     productIds: [] as string[],
     month: new Date().getMonth() + 1,
     year: new Date().getFullYear(),
+    half: (new Date().getDate() <= 15 ? 1 : 2) as 1 | 2,
   });
   const [existingAssignment, setExistingAssignment] =
     useState<Assignment | null>(null);
   const [productSearchTerm, setProductSearchTerm] = useState("");
   const [assignedSearchTerm, setAssignedSearchTerm] = useState("");
+  const [productBrandFilter, setProductBrandFilter] =
+    useState<ProductBrandFilter>("all");
   const [expandedUser, setExpandedUser] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [selectedAssignmentId, setSelectedAssignmentId] = useState<
@@ -179,6 +184,7 @@ export default function BranchDetailPage() {
             productIds: data.productIds || [],
             month: data.month,
             year: data.year,
+            half: data.half ?? 1,
             status: data.status || "pending",
             createdAt: data.createdAt?.toDate(),
             updatedAt: data.updatedAt?.toDate(),
@@ -241,6 +247,7 @@ export default function BranchDetailPage() {
 
     const currentMonth = new Date().getMonth() + 1;
     const currentYear = new Date().getFullYear();
+    const currentHalf: 1 | 2 = new Date().getDate() <= 15 ? 1 : 2;
 
     // If editing specific assignment
     if (assignmentId) {
@@ -252,12 +259,16 @@ export default function BranchDetailPage() {
           productIds: existing.productIds || [],
           month: existing.month,
           year: existing.year,
+          half: (existing.half ?? 1) as 1 | 2,
         });
       }
     } else {
-      // Check if user already has assignment for current month/year
+      // Check if user already has assignment for current month/year/half
       const existing = user.assignments?.find(
-        (a) => a.month === currentMonth && a.year === currentYear,
+        (a) =>
+          a.month === currentMonth &&
+          a.year === currentYear &&
+          (a.half ?? 1) === currentHalf,
       );
 
       if (existing) {
@@ -267,34 +278,40 @@ export default function BranchDetailPage() {
           productIds: existing.productIds || [],
           month: existing.month,
           year: existing.year,
+          half: (existing.half ?? 1) as 1 | 2,
         });
       } else {
         setExistingAssignment(null);
         setSelectedAssignmentId(null);
         setAssignmentForm({
-          productIds: [],
+          productIds: products.map((p) => p.productId),
           month: currentMonth,
           year: currentYear,
+          half: currentHalf,
         });
       }
     }
 
     setProductSearchTerm("");
     setAssignedSearchTerm("");
+    setProductBrandFilter("all");
     setShowAssignModal(true);
   };
 
-  // Check if assignment exists for selected month/year
-  const checkExistingAssignment = (month: number, year: number) => {
+  // Check if assignment exists for selected month/year/half
+  const checkExistingAssignment = (month: number, year: number, half: 1 | 2) => {
     if (!selectedUser) return;
 
     const existing = selectedUser.assignments?.find(
       (a) =>
-        a.month === month && a.year === year && a.id !== selectedAssignmentId,
+        a.month === month &&
+        a.year === year &&
+        (a.half ?? 1) === half &&
+        a.id !== selectedAssignmentId,
     );
 
     if (existing) {
-      toast.warning(`มีการมอบหมายงานสำหรับเดือนนี้แล้ว กำลังโหลดข้อมูล...`);
+      toast.warning(`มีการมอบหมายงานสำหรับเดือนนี้ รอบ ${half} แล้ว กำลังโหลดข้อมูล...`);
       setExistingAssignment(existing);
       setSelectedAssignmentId(existing.id);
       setAssignmentForm((prev) => ({
@@ -303,14 +320,16 @@ export default function BranchDetailPage() {
       }));
     } else if (
       selectedAssignmentId &&
-      (month !== existingAssignment?.month || year !== existingAssignment?.year)
+      (month !== existingAssignment?.month ||
+        year !== existingAssignment?.year ||
+        half !== (existingAssignment?.half ?? 1))
     ) {
-      // Switching to a new month/year, clear selection
+      // Switching to a new month/year/half with no existing assignment — pre-fill all products
       setExistingAssignment(null);
       setSelectedAssignmentId(null);
       setAssignmentForm((prev) => ({
         ...prev,
-        productIds: [],
+        productIds: products.map((p) => p.productId),
       }));
     }
   };
@@ -346,9 +365,35 @@ export default function BranchDetailPage() {
     }));
   };
 
+  const detectProductBrand = (product: Product): ProductBrandFilter => {
+    const normalizedName = (product.name || "")
+      .toLowerCase()
+      .replace(/\s+/g, "")
+      .trim();
+
+    if (normalizedName.includes("nestme")) {
+      return "nestme";
+    }
+
+    if (
+      normalizedName.includes("primanest") ||
+      normalizedName.includes("prima")
+    ) {
+      return "primanest";
+    }
+
+    return "all";
+  };
+
+  const matchesBrandFilter = (product: Product) => {
+    if (productBrandFilter === "all") return true;
+    return detectProductBrand(product) === productBrandFilter;
+  };
+
   // Products that are NOT yet assigned
   const availableProducts = products.filter(
     (p) =>
+      matchesBrandFilter(p) &&
       !assignmentForm.productIds.includes(p.productId) &&
       (productSearchTerm === "" ||
         p.name?.toLowerCase().includes(productSearchTerm.toLowerCase()) ||
@@ -359,6 +404,7 @@ export default function BranchDetailPage() {
   // Products that ARE assigned
   const assignedProducts = products.filter(
     (p) =>
+      matchesBrandFilter(p) &&
       assignmentForm.productIds.includes(p.productId) &&
       (assignedSearchTerm === "" ||
         p.name?.toLowerCase().includes(assignedSearchTerm.toLowerCase()) ||
@@ -383,6 +429,7 @@ export default function BranchDetailPage() {
           productIds: assignmentForm.productIds,
           month: assignmentForm.month,
           year: assignmentForm.year,
+          half: assignmentForm.half,
           updatedAt: serverTimestamp(),
         });
         toast.success("อัปเดตการมอบหมายสำเร็จ");
@@ -395,6 +442,7 @@ export default function BranchDetailPage() {
           productIds: assignmentForm.productIds,
           month: assignmentForm.month,
           year: assignmentForm.year,
+          half: assignmentForm.half,
           status: "pending",
           createdAt: serverTimestamp(),
           updatedAt: serverTimestamp(),
@@ -406,6 +454,7 @@ export default function BranchDetailPage() {
       setSelectedUser(null);
       setExistingAssignment(null);
       setSelectedAssignmentId(null);
+      setProductBrandFilter("all");
       fetchData();
     } catch (error) {
       console.error("Error saving assignment:", error);
@@ -1010,6 +1059,7 @@ export default function BranchDetailPage() {
                     setSelectedUser(null);
                     setExistingAssignment(null);
                     setSelectedAssignmentId(null);
+                    setProductBrandFilter("all");
                   }}
                   className="p-2 hover:bg-white/20 rounded-lg transition-colors"
                 >
@@ -1033,7 +1083,7 @@ export default function BranchDetailPage() {
                     onChange={(e) => {
                       const month = parseInt(e.target.value);
                       setAssignmentForm((prev) => ({ ...prev, month }));
-                      checkExistingAssignment(month, assignmentForm.year);
+                      checkExistingAssignment(month, assignmentForm.year, assignmentForm.half);
                     }}
                     className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm focus:ring-2 focus:ring-blue-500"
                   >
@@ -1048,7 +1098,7 @@ export default function BranchDetailPage() {
                     onChange={(e) => {
                       const year = parseInt(e.target.value);
                       setAssignmentForm((prev) => ({ ...prev, year }));
-                      checkExistingAssignment(assignmentForm.month, year);
+                      checkExistingAssignment(assignmentForm.month, year, assignmentForm.half);
                     }}
                     className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm focus:ring-2 focus:ring-blue-500"
                   >
@@ -1061,12 +1111,59 @@ export default function BranchDetailPage() {
                       );
                     })}
                   </select>
+                  <select
+                    value={assignmentForm.half}
+                    onChange={(e) => {
+                      const half = parseInt(e.target.value) as 1 | 2;
+                      setAssignmentForm((prev) => ({ ...prev, half }));
+                      checkExistingAssignment(assignmentForm.month, assignmentForm.year, half);
+                    }}
+                    className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm focus:ring-2 focus:ring-blue-500"
+                  >
+                    <option value={1}>รอบ 1 (2–15)</option>
+                    <option value={2}>รอบ 2 (17–สิ้นเดือน)</option>
+                  </select>
                 </div>
                 {existingAssignment && (
                   <span className="px-3 py-1 bg-yellow-100 dark:bg-yellow-900/30 text-yellow-700 dark:text-yellow-400 text-sm rounded-full">
                     กำลังแก้ไขงานเดิม
                   </span>
                 )}
+              </div>
+              <div className="mt-3 flex flex-wrap items-center gap-2">
+                <span className="text-sm font-medium text-gray-700 dark:text-gray-300 mr-1">
+                  แบรนด์สินค้า:
+                </span>
+                <button
+                  onClick={() => setProductBrandFilter("all")}
+                  className={`px-3 py-1.5 text-sm rounded-lg border transition-colors ${
+                    productBrandFilter === "all"
+                      ? "bg-gray-900 text-white border-gray-900 dark:bg-white dark:text-gray-900 dark:border-white"
+                      : "bg-white text-gray-700 border-gray-300 hover:bg-gray-100 dark:bg-gray-700 dark:text-gray-200 dark:border-gray-600 dark:hover:bg-gray-600"
+                  }`}
+                >
+                  ทุกแบรนด์
+                </button>
+                <button
+                  onClick={() => setProductBrandFilter("nestme")}
+                  className={`px-3 py-1.5 text-sm rounded-lg border transition-colors ${
+                    productBrandFilter === "nestme"
+                      ? "bg-blue-600 text-white border-blue-600"
+                      : "bg-white text-gray-700 border-gray-300 hover:bg-blue-50 dark:bg-gray-700 dark:text-gray-200 dark:border-gray-600 dark:hover:bg-gray-600"
+                  }`}
+                >
+                  NestMe
+                </button>
+                <button
+                  onClick={() => setProductBrandFilter("primanest")}
+                  className={`px-3 py-1.5 text-sm rounded-lg border transition-colors ${
+                    productBrandFilter === "primanest"
+                      ? "bg-purple-600 text-white border-purple-600"
+                      : "bg-white text-gray-700 border-gray-300 hover:bg-purple-50 dark:bg-gray-700 dark:text-gray-200 dark:border-gray-600 dark:hover:bg-gray-600"
+                  }`}
+                >
+                  PrimaNest
+                </button>
               </div>
             </div>
 
@@ -1080,8 +1177,7 @@ export default function BranchDetailPage() {
                       <Package className="w-5 h-5 text-gray-500" />
                       สินค้าที่ยังไม่ได้มอบหมาย
                       <span className="text-sm font-normal text-gray-500">
-                        ({products.length - assignmentForm.productIds.length}{" "}
-                        รายการ)
+                        ({availableProducts.length} รายการ)
                       </span>
                     </h3>
                     <button
@@ -1156,7 +1252,7 @@ export default function BranchDetailPage() {
                       <ClipboardCheck className="w-5 h-5 text-blue-500" />
                       สินค้าที่มอบหมาย
                       <span className="px-2 py-0.5 bg-blue-600 text-white text-xs rounded-full">
-                        {assignmentForm.productIds.length}
+                        {assignedProducts.length}
                       </span>
                     </h3>
                     {assignmentForm.productIds.length > 0 && (
@@ -1251,6 +1347,7 @@ export default function BranchDetailPage() {
                       setSelectedUser(null);
                       setExistingAssignment(null);
                       setSelectedAssignmentId(null);
+                      setProductBrandFilter("all");
                     }}
                     className="px-6 py-2.5 border border-gray-300 dark:border-gray-600 rounded-lg text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 font-medium transition-colors"
                   >

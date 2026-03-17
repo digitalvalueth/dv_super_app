@@ -78,7 +78,6 @@ const navGroups: NavGroup[] = [
         name: "สาขา",
         href: "/stock-counter/dashboard/branches",
         icon: Building2,
-        hideForSupervisor: true,
       },
       {
         name: "Manager",

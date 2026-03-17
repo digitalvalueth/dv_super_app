@@ -1,5 +1,5 @@
 const DMAIL_API_URL =
-  "https://dmailservicebackend-1095128507689.asia-southeast1.run.app/api/v1/mail/send";
+  "https://dmailservicebackend-sandbox-1095128507689.asia-southeast1.run.app/api/v1/mail/send";
 const DMAIL_API_KEY = process.env.DMAIL_API_KEY || "not-set-in-env"; // Ensure this is set in .env.local and .env.production
 const INVITATION_TEMPLATE_ID = "4b72b137-4124-4b4a-982b-a7b38d723547";
 

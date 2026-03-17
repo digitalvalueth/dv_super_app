@@ -678,9 +678,28 @@ export function usePriceListData() {
             Math.abs(rawItemSingle.priceExtVat - stdTierForDate.priceExtVat) >
               0.02;
 
-          if (isPromoTier) {
+          // If matched promo requires minimum batch > qty purchased, can't classify as promo
+          const matchedMinBatchSingle = (() => {
+            const m = (rawItemSingle?.remarki1 || "").match(
+              /\b(\d+)\s+for\s+\d+/i,
+            );
+            return m ? parseInt(m[1], 10) : 1;
+          })();
+          const effectiveIsPromoTier =
+            !!isPromoTier && matchedMinBatchSingle <= qty;
+          // Use std tier prices when promo minBatch overrides the match
+          const displayItemSingle =
+            !!isPromoTier && !effectiveIsPromoTier
+              ? stdTierForDate
+              : rawItemSingle;
+
+          if (effectiveIsPromoTier) {
             calcLog.push(
               `  🏷️ Promo tier: invoice ฿${rawItemSingle!.priceExtVat.toFixed(2)} ≠ std ฿${stdTierForDate!.priceExtVat.toFixed(2)} → QtyPro=1`,
+            );
+          } else if (isPromoTier && !effectiveIsPromoTier) {
+            calcLog.push(
+              `  ⚠️ Promo tier matched but minBatch=${matchedMinBatchSingle} > qty=${qty} → override to std (Buy1)`,
             );
           }
 
@@ -690,8 +709,8 @@ export function usePriceListData() {
             "Price Match": hasPeriodMatch ? "⏭️ Qty=1" : "❓ No period (Qty=1)",
             "Period Start": singlePeriodStart,
             "Matched Period": singleMatchedPeriod,
-            "Std Qty": isPromoTier ? "0" : "1",
-            "Promo Qty": isPromoTier ? "1" : "0",
+            "Std Qty": effectiveIsPromoTier ? "0" : "1",
+            "Promo Qty": effectiveIsPromoTier ? "1" : "0",
             "Calc Amt": rawAmt.toFixed(2),
             Diff: "-",
             Confidence: hasPeriodMatch ? "100%" : "-",
@@ -706,29 +725,29 @@ export function usePriceListData() {
             "PL Invoice62 IncV": rawItemSingle?.invoice62IncV
               ? fmt2(rawItemSingle.invoice62IncV)
               : "-",
-            "Total Comm": rawItemSingle?.priceIncVat
-              ? `฿${fmt2(rawItemSingle.priceIncVat)}`
+            "Total Comm": displayItemSingle?.priceIncVat
+              ? `฿${fmt2(displayItemSingle.priceIncVat)}`
               : "-",
             "Calc Log": calcLog.join("\n"),
             // New export columns — assign to correct tier
-            QtyBuy1: isPromoTier ? "0" : "1",
-            PriceBuy1_Invoice_Formula: isPromoTier
+            QtyBuy1: effectiveIsPromoTier ? "0" : "1",
+            PriceBuy1_Invoice_Formula: effectiveIsPromoTier
               ? ""
-              : rawItemSingle?.invoice62IncV
-                ? fmt2(rawItemSingle.invoice62IncV)
+              : displayItemSingle?.invoice62IncV
+                ? fmt2(displayItemSingle.invoice62IncV)
                 : fmt2(rawAmt),
-            PriceBuy1_Com_Calculate: isPromoTier
+            PriceBuy1_Com_Calculate: effectiveIsPromoTier
               ? ""
-              : rawItemSingle?.priceIncVat
-                ? fmt2(rawItemSingle.priceIncVat)
+              : displayItemSingle?.priceIncVat
+                ? fmt2(displayItemSingle.priceIncVat)
                 : "",
-            QtyPro: isPromoTier ? "1" : "0",
-            PricePro_Invoice_Formula: isPromoTier
+            QtyPro: effectiveIsPromoTier ? "1" : "0",
+            PricePro_Invoice_Formula: effectiveIsPromoTier
               ? rawItemSingle?.invoice62IncV
                 ? fmt2(rawItemSingle.invoice62IncV)
                 : fmt2(rawAmt)
               : "",
-            PricePro_Com_Calculate: isPromoTier
+            PricePro_Com_Calculate: effectiveIsPromoTier
               ? rawItemSingle?.priceIncVat
                 ? fmt2(rawItemSingle.priceIncVat)
                 : ""
@@ -740,13 +759,13 @@ export function usePriceListData() {
             _stdPriceExtVat: stdTierForDate?.priceExtVat || rawAmt,
             _stdPriceIncVat: stdTierForDate?.priceIncVat || 0,
             _stdInvoice62IncV: stdTierForDate?.invoice62IncV || 0,
-            _proPriceExtVat: isPromoTier
+            _proPriceExtVat: effectiveIsPromoTier
               ? rawItemSingle!.priceExtVat
               : stdTierForDate?.priceExtVat || rawAmt,
-            _proPriceIncVat: isPromoTier
+            _proPriceIncVat: effectiveIsPromoTier
               ? rawItemSingle!.priceIncVat || 0
               : stdTierForDate?.priceIncVat || 0,
-            _proInvoice62IncV: isPromoTier
+            _proInvoice62IncV: effectiveIsPromoTier
               ? rawItemSingle!.invoice62IncV || 0
               : stdTierForDate?.invoice62IncV || 0,
             _proRemark: rawItemSingle?.remarki1 || "Buy1",
@@ -887,7 +906,9 @@ export function usePriceListData() {
             .sort((a, b) => b.priceExtVat - a.priceExtVat) // Sort by price desc
             .map((p, idx) => {
               // Parse "N For M" / "buy N for M" pattern from remark → minBatch = N
-              const bundleMatch = (p.remark || "").match(/\b(\d+)\s+for\s+\d+/i);
+              const bundleMatch = (p.remark || "").match(
+                /\b(\d+)\s+for\s+\d+/i,
+              );
               const minBatch = bundleMatch ? parseInt(bundleMatch[1], 10) : 1;
               return {
                 price: p.priceExtVat,
