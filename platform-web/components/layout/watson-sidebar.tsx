@@ -79,10 +79,10 @@ export function WatsonSidebar() {
               <>
                 <div className="flex items-baseline gap-2">
                   <h1 className="text-2xl font-bold text-blue-600 dark:text-blue-400">
-                    Watson Excel
+                    Watson Excel Validator
                   </h1>
                   <span className="text-xs font-semibold text-blue-400 dark:text-blue-500 bg-blue-50 dark:bg-blue-900/30 px-1.5 py-0.5 rounded">
-                    v6.02.0.7
+                    v6.02.0.8
                   </span>
                 </div>
                 <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">

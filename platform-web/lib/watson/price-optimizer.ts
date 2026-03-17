@@ -11,6 +11,7 @@ export interface PriceOption {
   priceIncVat?: number; // Comm Price IncV (ราคาคอม รวม VAT)
   stdPrice?: number; // Standard Price IncV (ราคาเต็ม)
   invoice62IncV?: number; // Invoice 62% IncV (ราคาใบแจ้งหนี้ รวม VAT)
+  minBatch?: number; // จำนวนขั้นต่ำต่อชุด เช่น "5 For 275" → 5
 }
 
 export interface PriceAllocation {
@@ -133,7 +134,11 @@ export function findBestPriceCombination(
     if (idx === n) {
       // ถ้าเหลือ qty ต้องใช้ราคาสุดท้าย
       if (remainQty > 0 && n > 0) {
-        const lastPrice = limitedPrices[n - 1].price;
+        const lastOption = limitedPrices[n - 1];
+        const lastBatch = lastOption.minBatch ?? 1;
+        // ถ้า minBatch > 1 และ qty ที่เหลือไม่เป็น multiple → ข้าม
+        if (lastBatch > 1 && remainQty % lastBatch !== 0) return;
+        const lastPrice = lastOption.price;
         const sum = currentSum + lastPrice * remainQty;
         if (!notExceedRawAmt || sum <= rawAmt) {
           if (isBetter(sum)) {
@@ -157,7 +162,9 @@ export function findBestPriceCombination(
     }
 
     // Try all possible quantities for current price
-    for (let i = 0; i <= remainQty; i++) {
+    // If minBatch > 1 (e.g. "5 For 275"), only try multiples of minBatch
+    const batch = limitedPrices[idx].minBatch ?? 1;
+    for (let i = 0; i <= remainQty; i += batch) {
       x[idx] = i;
       dfs(idx + 1, remainQty - i, currentSum + limitedPrices[idx].price * i);
 
