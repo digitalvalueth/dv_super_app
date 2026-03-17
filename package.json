@@ -13,6 +13,8 @@
     "seed:companies": "tsx scripts/seed-companies.ts",
     "seed:branches": "tsx scripts/seed-branches.ts",
     "seed:products": "tsx scripts/seed-products.ts",
+    "products:tojson": "tsx scripts/convert-products-file-to-json.ts",
+    "seed:products:file": "tsx scripts/seed-products-from-file.ts",
     "copy:prod": "tsx scripts/copy-to-prod.ts"
   },
   "dependencies": {
