@@ -57,12 +57,29 @@ export default function CountingPage() {
       const companyId = userData.companyId;
 
       // ถ้าเป็น superadmin (ไม่มี companyId) ดึงทั้งหมด
+      const isSuperOrManager =
+        userData.role === "supervisor" || userData.role === "manager";
+      const managedIds = isSuperOrManager
+        ? userData.managedBranchIds?.length
+          ? userData.managedBranchIds
+          : userData.branchId
+            ? [userData.branchId]
+            : []
+        : null;
+
       let sessionsQuery;
       if (companyId) {
-        sessionsQuery = query(
-          collection(db, "countingSessions"),
-          where("companyId", "==", companyId),
-        );
+        sessionsQuery =
+          managedIds && managedIds.length > 0
+            ? query(
+                collection(db, "countingSessions"),
+                where("companyId", "==", companyId),
+                where("branchId", "in", managedIds),
+              )
+            : query(
+                collection(db, "countingSessions"),
+                where("companyId", "==", companyId),
+              );
       } else {
         sessionsQuery = query(collection(db, "countingSessions"));
       }

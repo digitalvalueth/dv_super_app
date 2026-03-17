@@ -14,8 +14,6 @@ import * as admin from "firebase-admin";
 import { logger } from "firebase-functions/v2";
 import { onSchedule } from "firebase-functions/v2/scheduler";
 
-const db = admin.firestore();
-
 // ─── Helper ───────────────────────────────────────────────────────────────────
 
 function isWeekend(date: Date): boolean {
@@ -45,6 +43,7 @@ export const checkMissingCheckIn = onSchedule(
     memory: "512MiB",
   },
   async () => {
+    const db = admin.firestore();
     logger.info("🔔 checkMissingCheckIn: starting daily run");
 
     const today = new Date();
@@ -70,7 +69,7 @@ export const checkMissingCheckIn = onSchedule(
 
     for (const companyId of companyIds) {
       try {
-        await processCompany(companyId, today, tenDaysAgo);
+        await processCompany(db, companyId, today, tenDaysAgo);
       } catch (err) {
         logger.error(`Error processing company ${companyId}:`, err);
       }
@@ -83,6 +82,7 @@ export const checkMissingCheckIn = onSchedule(
 // ─── Per-Company Logic ────────────────────────────────────────────────────────
 
 async function processCompany(
+  db: admin.firestore.Firestore,
   companyId: string,
   today: Date,
   tenDaysAgo: Date,
