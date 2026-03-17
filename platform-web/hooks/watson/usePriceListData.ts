@@ -885,20 +885,26 @@ export function usePriceListData() {
           });
           const validPrices: PriceOption[] = Array.from(uniquePrices.values())
             .sort((a, b) => b.priceExtVat - a.priceExtVat) // Sort by price desc
-            .map((p, idx) => ({
-              price: p.priceExtVat,
-              label:
-                idx === 0
-                  ? "Std"
-                  : p.remark
-                    ? `Pro${idx}(${p.remark})`
-                    : `Pro${idx}`,
-              remark: p.remark || (idx === 0 ? "Buy1" : undefined),
-              startDate: p.startDate,
-              priceIncVat: p.priceIncVat, // Comm Price IncV
-              stdPrice: p.price, // Standard Price IncV
-              invoice62IncV: p.invoice62IncV, // Invoice 62% IncV
-            }));
+            .map((p, idx) => {
+              // Parse "N For M" / "buy N for M" pattern from remark → minBatch = N
+              const bundleMatch = (p.remark || "").match(/\b(\d+)\s+for\s+\d+/i);
+              const minBatch = bundleMatch ? parseInt(bundleMatch[1], 10) : 1;
+              return {
+                price: p.priceExtVat,
+                label:
+                  idx === 0
+                    ? "Std"
+                    : p.remark
+                      ? `Pro${idx}(${p.remark})`
+                      : `Pro${idx}`,
+                remark: p.remark || (idx === 0 ? "Buy1" : undefined),
+                startDate: p.startDate,
+                priceIncVat: p.priceIncVat, // Comm Price IncV
+                stdPrice: p.price, // Standard Price IncV
+                invoice62IncV: p.invoice62IncV, // Invoice 62% IncV
+                minBatch: minBatch > 1 ? minBatch : undefined,
+              };
+            });
 
           if (validPrices.length > 0 && rawAmt > 0 && qty > 0) {
             calcLog.push(``);
@@ -908,8 +914,9 @@ export function usePriceListData() {
             );
             calcLog.push(`  Prices:`);
             validPrices.forEach((vp) => {
+              const batchInfo = vp.minBatch ? ` [batch=${vp.minBatch}]` : "";
               calcLog.push(
-                `    ${vp.label}: ${vp.price.toFixed(2)} (${vp.remark || "-"})`,
+                `    ${vp.label}: ${vp.price.toFixed(2)} (${vp.remark || "-"})${batchInfo}`,
               );
             });
 

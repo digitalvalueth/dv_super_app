@@ -1,5 +1,6 @@
 import { useAuthStore } from "@/stores/auth.store";
 import { Redirect, Stack } from "expo-router";
+import { ActivityIndicator, View } from "react-native";
 
 export default function AuthLayout() {
   const user = useAuthStore((state) => state.user);
@@ -13,10 +14,21 @@ export default function AuthLayout() {
     user?.branchId,
   );
 
-  // Show nothing while loading
+  // Show loading spinner while initializing
   if (loading) {
     console.log("⏳ AuthLayout - Still loading...");
-    return null;
+    return (
+      <View
+        style={{
+          flex: 1,
+          justifyContent: "center",
+          alignItems: "center",
+          backgroundColor: "#000",
+        }}
+      >
+        <ActivityIndicator size="large" color="#ffffff" />
+      </View>
+    );
   }
 
   // If user is authenticated, redirect to tabs (regardless of company/branch)
