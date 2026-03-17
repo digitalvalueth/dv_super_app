@@ -8,11 +8,11 @@ import { NextRequest, NextResponse } from "next/server";
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { month, year } = body;
+    const { month, year, half } = body;
 
-    if (!month || !year) {
+    if (!month || !year || !half) {
       return NextResponse.json(
-        { error: "Month and year are required" },
+        { error: "Month, year, and half are required" },
         { status: 400 },
       );
     }
@@ -52,12 +52,13 @@ export async function POST(request: NextRequest) {
     let assignmentCount = 0;
 
     for (const employee of employees) {
-      // Check if assignment already exists for this month/year
+      // Check if assignment already exists for this month/year/half
       const existingAssignment = await db
         .collection("assignments")
         .where("userId", "==", employee.id)
         .where("month", "==", month)
         .where("year", "==", year)
+        .where("half", "==", half)
         .limit(1)
         .get();
 
@@ -78,6 +79,7 @@ export async function POST(request: NextRequest) {
         productCount: productIds.length,
         month,
         year,
+        half,
         status: "pending",
         completedCount: 0,
         createdAt: new Date(),

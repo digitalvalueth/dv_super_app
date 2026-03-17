@@ -54,12 +54,30 @@ export default function AlertsPage() {
     if (!userData?.companyId) return;
     setLoading(true);
     try {
-      // Get all BA employees
-      const usersQuery = query(
-        collection(db, "users"),
-        where("companyId", "==", userData.companyId),
-        where("role", "==", "employee"),
-      );
+      const isSuperOrManager =
+        userData.role === "supervisor" || userData.role === "manager";
+      const managedIds = isSuperOrManager
+        ? userData.managedBranchIds?.length
+          ? userData.managedBranchIds
+          : userData.branchId
+            ? [userData.branchId]
+            : []
+        : null;
+
+      // Get all BA employees (filtered by branch for supervisor/manager)
+      const usersQuery =
+        managedIds && managedIds.length > 0
+          ? query(
+              collection(db, "users"),
+              where("companyId", "==", userData.companyId),
+              where("role", "==", "employee"),
+              where("branchId", "in", managedIds),
+            )
+          : query(
+              collection(db, "users"),
+              where("companyId", "==", userData.companyId),
+              where("role", "==", "employee"),
+            );
       const usersSnap = await getDocs(usersQuery);
 
       // Get check-ins from last 10 days

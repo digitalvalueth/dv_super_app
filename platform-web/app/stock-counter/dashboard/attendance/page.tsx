@@ -120,7 +120,21 @@ export default function AttendancePage() {
         });
       });
 
-      setCheckIns(checkInsData);
+      const isSuperOrManager =
+        userData.role === "supervisor" || userData.role === "manager";
+      const managedIds = isSuperOrManager
+        ? userData.managedBranchIds?.length
+          ? userData.managedBranchIds
+          : userData.branchId
+            ? [userData.branchId]
+            : []
+        : null;
+      const visibleCheckIns =
+        managedIds && managedIds.length > 0
+          ? checkInsData.filter((c) => managedIds.includes(c.branchId ?? ""))
+          : checkInsData;
+
+      setCheckIns(visibleCheckIns);
 
       // Calculate stats
       const checkInRecords = checkInsData.filter((c) => c.type === "check-in");

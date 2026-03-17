@@ -125,6 +125,7 @@ export interface Assignment {
   productIds: string[]; // Array ของ productId (เช่น SK-C-250)
   month: number;
   year: number;
+  half: 1 | 2; // รอบที่ 1 (2–15) หรือ รอบที่ 2 (17–สิ้นเดือน)
   status: "pending" | "in_progress" | "completed";
   createdAt?: Date;
   updatedAt?: Date;

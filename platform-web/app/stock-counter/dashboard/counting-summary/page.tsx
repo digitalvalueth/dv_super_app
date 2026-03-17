@@ -86,6 +86,13 @@ export default function CountingSummaryPage() {
   const [currentGraceEnd, setCurrentGraceEnd] = useState<string>("");
   const [extendToDate, setExtendToDate] = useState<string>("");
   const [extendingGrace, setExtendingGrace] = useState(false);
+  const [gracePeriodInfo, setGracePeriodInfo] = useState<{
+    half: 1 | 2;
+    month: number;
+    year: number;
+    startDate: string;
+    endDate: string;
+  } | null>(null);
 
   const fetchCurrentGracePeriod = async () => {
     if (!userData?.companyId) return;
@@ -101,6 +108,10 @@ export default function CountingSummaryPage() {
       const snap = await getDocs(q);
       const periods = snap.docs.map((d) => ({ id: d.id, ...d.data() })) as {
         id: string;
+        half: 1 | 2;
+        month: number;
+        year: number;
+        startDate: Timestamp;
         graceEndDate: Timestamp;
         supervisorGraceEndDate?: Timestamp;
         endDate: Timestamp;
@@ -118,17 +129,26 @@ export default function CountingSummaryPage() {
         periods.sort(
           (a, b) => b.endDate.toDate().getTime() - a.endDate.toDate().getTime(),
         )[0];
-      if (gracePeriod) {
-        setGracePeriodId(gracePeriod.id);
-        const graceEnd = (
-          gracePeriod.supervisorGraceEndDate ?? gracePeriod.graceEndDate
-        )
-          .toDate()
-          .toISOString()
-          .slice(0, 10);
-        setCurrentGraceEnd(graceEnd);
-        setExtendToDate(graceEnd);
+      if (!gracePeriod) {
+        toast.error("ไม่พบรอบการนับ (countingPeriod) สำหรับบริษัทนี้");
+        return;
       }
+      setGracePeriodId(gracePeriod.id);
+      const graceEnd = (
+        gracePeriod.supervisorGraceEndDate ?? gracePeriod.graceEndDate
+      )
+        .toDate()
+        .toISOString()
+        .slice(0, 10);
+      setCurrentGraceEnd(graceEnd);
+      setExtendToDate(graceEnd);
+      setGracePeriodInfo({
+        half: gracePeriod.half,
+        month: gracePeriod.month,
+        year: gracePeriod.year,
+        startDate: gracePeriod.startDate?.toDate().toISOString().slice(0, 10) ?? "",
+        endDate: gracePeriod.endDate?.toDate().toISOString().slice(0, 10) ?? graceEnd,
+      });
       setShowGraceModal(true);
     } catch (e) {
       console.error(e);
@@ -165,12 +185,29 @@ export default function CountingSummaryPage() {
     if (!userData) return;
     try {
       const companyId = userData.companyId;
+      const isSuperOrManager =
+        userData.role === "supervisor" || userData.role === "manager";
+      const managedIds = isSuperOrManager
+        ? userData.managedBranchIds?.length
+          ? userData.managedBranchIds
+          : userData.branchId
+            ? [userData.branchId]
+            : []
+        : null;
+
       let sessionsQuery;
       if (companyId) {
-        sessionsQuery = query(
-          collection(db, "countingSessions"),
-          where("companyId", "==", companyId),
-        );
+        sessionsQuery =
+          managedIds && managedIds.length > 0
+            ? query(
+                collection(db, "countingSessions"),
+                where("companyId", "==", companyId),
+                where("branchId", "in", managedIds),
+              )
+            : query(
+                collection(db, "countingSessions"),
+                where("companyId", "==", companyId),
+              );
       } else {
         sessionsQuery = query(collection(db, "countingSessions"));
       }
@@ -1222,6 +1259,29 @@ export default function CountingSummaryPage() {
             <h2 className="text-lg font-bold text-gray-900 mb-1">
               ⏰ ขยาย Grace Period
             </h2>
+            {gracePeriodInfo && (
+              <div className="flex items-center gap-2 bg-blue-50 border border-blue-200 rounded-lg px-3 py-2 mb-2 text-sm">
+                <span className="font-semibold text-blue-800">
+                  รอบ {gracePeriodInfo.half}
+                </span>
+                {gracePeriodInfo.startDate && gracePeriodInfo.endDate && (
+                  <span className="text-blue-600">
+                    {format(
+                      new Date(gracePeriodInfo.startDate + "T00:00:00"),
+                      "d",
+                      { locale: th },
+                    )}
+                    –
+                    {format(
+                      new Date(gracePeriodInfo.endDate + "T00:00:00"),
+                      "d MMM",
+                      { locale: th },
+                    )}{" "}
+                    {gracePeriodInfo.year + 543}
+                  </span>
+                )}
+              </div>
+            )}
             <p className="text-sm text-gray-500 mb-4">
               พนักงานเห็น &ldquo;หมดเวลา&rdquo; แต่ระบบยังรับได้ &mdash; session
               จะถูก tag &ldquo;ส่งล่าช้า&rdquo;

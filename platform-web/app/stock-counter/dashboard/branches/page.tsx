@@ -81,9 +81,13 @@ export default function BranchesPage() {
     try {
       const companyId = userData.companyId;
 
-      // Manager: ดึงเฉพาะสาขาที่ถูก assign ให้เท่านั้น
-      if (userData.role === "manager") {
-        const managedIds = userData.managedBranchIds ?? [];
+      // Manager/Supervisor: ดึงเฉพาะสาขาที่ถูก assign ให้เท่านั้น
+      if (userData.role === "manager" || userData.role === "supervisor") {
+        const managedIds = userData.managedBranchIds?.length
+          ? userData.managedBranchIds
+          : userData.branchId
+            ? [userData.branchId]
+            : [];
         if (managedIds.length === 0) {
           setBranches([]);
           setLoading(false);
@@ -219,9 +223,13 @@ export default function BranchesPage() {
     const matchesCompany =
       filterCompany === "all" || branch.companyId === filterCompany;
 
-    // Manager เห็นเฉพาะสาขาที่ถูก assign ให้เท่านั้น
-    if (userData?.role === "manager") {
-      const managedIds = userData.managedBranchIds ?? [];
+    // Manager/Supervisor เห็นเฉพาะสาขาที่ถูก assign ให้เท่านั้น
+    if (userData?.role === "manager" || userData?.role === "supervisor") {
+      const managedIds = userData.managedBranchIds?.length
+        ? userData.managedBranchIds
+        : userData.branchId
+          ? [userData.branchId]
+          : [];
       if (managedIds.length === 0) return false;
       return matchesSearch && managedIds.includes(branch.id);
     }
@@ -331,7 +339,12 @@ export default function BranchesPage() {
   }
 
   // ถ้ายังไม่มีบริษัทเลย แสดงข้อความแจ้งเตือน (ยกเว้น manager)
-  if (!isSuperAdmin && userData?.role !== "manager" && companies.length === 0) {
+  if (
+    !isSuperAdmin &&
+    userData?.role !== "manager" &&
+    userData?.role !== "supervisor" &&
+    companies.length === 0
+  ) {
     return (
       <div className="space-y-6">
         <div>
@@ -401,8 +414,8 @@ export default function BranchesPage() {
         )}
       </div>
 
-      {/* Manager Info Banner */}
-      {userData?.role === "manager" && (
+      {/* Manager/Supervisor Info Banner */}
+      {(userData?.role === "manager" || userData?.role === "supervisor") && (
         <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-xl p-4">
           <div className="flex items-start gap-3">
             <div className="bg-blue-100 dark:bg-blue-900/30 rounded-lg p-2 shrink-0">
@@ -415,13 +428,16 @@ export default function BranchesPage() {
               <p className="text-sm text-blue-700 dark:text-blue-300 mb-2">
                 คุณมีหน้าที่ดูแลและจัดการสาขาเหล่านี้ในบริษัท{" "}
                 <strong>{userData.companyName || "ของคุณ"}</strong>
-                {userData.managedBranchIds &&
-                userData.managedBranchIds.length > 0
-                  ? ` (${userData.managedBranchIds.length} สาขา)`
-                  : ""}
+                {(() => {
+                  const count = userData.managedBranchIds?.length
+                    ? userData.managedBranchIds.length
+                    : userData.branchId
+                      ? 1
+                      : 0;
+                  return count > 0 ? ` (${count} สาขา)` : "";
+                })()}
               </p>
-              {(!userData.managedBranchIds ||
-                userData.managedBranchIds.length === 0) && (
+              {!userData.managedBranchIds?.length && !userData.branchId && (
                 <p className="text-xs text-blue-600 dark:text-blue-400">
                   ⚠️ ยังไม่มีสาขาที่ถูกกำหนดให้คุณ กรุณาติดต่อเจ้าของบริษัท
                 </p>
