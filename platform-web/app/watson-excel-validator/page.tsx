@@ -404,6 +404,10 @@ export default function WatsonExcelValidatorPage() {
   const [priceFilterCategory, setPriceFilterCategory] =
     useState<IssueCategory | null>(null);
 
+  // Custom filters
+  const [dateFilter, setDateFilter] = useState<string | null>(null);
+  const [storeFilter, setStoreFilter] = useState<string | null>(null);
+
   // Calc Log modal state
   const [calcLogOpen, setCalcLogOpen] = useState(false);
   const [calcLogText, setCalcLogText] = useState("");
@@ -996,6 +1000,84 @@ export default function WatsonExcelValidatorPage() {
     qtyOverrides,
     reportMeta,
   ]);
+
+  // Date and Store filters options
+  const dateFilterOptions = useMemo(() => {
+    const dates = new Set<string>();
+    const dateHeader = displayHeaders.find((h) => h.toLowerCase() === "date");
+    if (dateHeader) {
+      allEnrichedData.forEach((row) => {
+        const val = row[dateHeader];
+        if (val) dates.add(String(val).trim());
+      });
+    }
+    return Array.from(dates).sort();
+  }, [allEnrichedData, displayHeaders]);
+
+  const storeFilterOptions = useMemo(() => {
+    const stores = new Set<string>();
+    const storeHeader = displayHeaders.find((h) => h.toLowerCase() === "store");
+    if (storeHeader) {
+      allEnrichedData.forEach((row) => {
+        const val = row[storeHeader];
+        if (val) stores.add(String(val).trim());
+      });
+    }
+    return Array.from(stores).sort((a, b) =>
+      a.localeCompare(b, "th-TH", { numeric: true }),
+    );
+  }, [allEnrichedData, displayHeaders]);
+
+  // Apply date/store filters
+  const finalDisplayData = useMemo(() => {
+    let result = displayData;
+    const dateHeader = displayHeaders.find((h) => h.toLowerCase() === "date");
+    const storeHeader = displayHeaders.find((h) => h.toLowerCase() === "store");
+
+    if (dateFilter && dateHeader) {
+      result = result.filter(
+        (row) => String(row[dateHeader] || "").trim() === dateFilter,
+      );
+    }
+    if (storeFilter && storeHeader) {
+      result = result.filter(
+        (row) => String(row[storeHeader] || "").trim() === storeFilter,
+      );
+    }
+    return result;
+  }, [displayData, dateFilter, storeFilter, displayHeaders]);
+
+  // Calculate summary
+  const footerSummary = useMemo(() => {
+    let totalCostExVat = 0;
+    let totalCostIncVat = 0;
+
+    // total cost exclusive
+    const costHeader = displayHeaders.find(
+      (h) =>
+        h.toLowerCase().includes("total cost") &&
+        h.toLowerCase().includes("exclusive"),
+    );
+    // vat percent
+    const vatHeader = displayHeaders.find((h) => h.toLowerCase() === "vat %");
+
+    if (costHeader) {
+      finalDisplayData.forEach((row) => {
+        const exVat = Number(row[costHeader]) || 0;
+        totalCostExVat += exVat;
+
+        const vatPercentStr = vatHeader ? String(row[vatHeader] || "7") : "7";
+        const match = vatPercentStr.match(/[\d.]+/);
+        const vatRate = match ? Number(match[0]) : 7;
+
+        totalCostIncVat += exVat * (1 + vatRate / 100);
+      });
+    }
+
+    if (!costHeader) return undefined;
+
+    return { totalCostExVat, totalCostIncVat };
+  }, [finalDisplayData, displayHeaders]);
 
   // Persist hidden columns to localStorage whenever they change
   useEffect(() => {
@@ -1955,7 +2037,7 @@ export default function WatsonExcelValidatorPage() {
     [data, headers, setData, logAutoFix],
   );
 
-  const WATSON_VERSION = "v6.02.0.9";
+  const WATSON_VERSION = "v6.02.0.10";
 
   const handleExportFixed = useCallback(() => {
     if (showPriceColumns) {
@@ -3362,7 +3444,7 @@ export default function WatsonExcelValidatorPage() {
                   </CardHeader>
                   <CardContent>
                     <DataTable
-                      data={displayData}
+                      data={finalDisplayData}
                       headers={visibleHeaders}
                       errors={validationResult?.errors || []}
                       onCellUpdate={handleCellUpdate}
@@ -3385,6 +3467,13 @@ export default function WatsonExcelValidatorPage() {
                         showPriceColumns ? handleCalcLogClick : undefined
                       }
                       readOnly={!!confirmedExportId}
+                      footerSummary={footerSummary}
+                      dateFilterOptions={dateFilterOptions}
+                      storeFilterOptions={storeFilterOptions}
+                      selectedDate={dateFilter}
+                      selectedStore={storeFilter}
+                      onDateFilterChange={setDateFilter}
+                      onStoreFilterChange={setStoreFilter}
                     />
                   </CardContent>
                 </Card>
