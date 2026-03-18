@@ -12,6 +12,7 @@ interface EditableCellProps {
   isWarning?: boolean;
   className?: string;
   disabled?: boolean;
+  displaySuffix?: React.ReactNode;
 }
 
 export function EditableCell({
@@ -21,6 +22,7 @@ export function EditableCell({
   isWarning = false,
   className = "",
   disabled = false,
+  displaySuffix,
 }: EditableCellProps) {
   const [isEditing, setIsEditing] = useState(false);
   const [editValue, setEditValue] = useState("");
@@ -108,10 +110,11 @@ export function EditableCell({
   return (
     <div
       onDoubleClick={handleDoubleClick}
-      className={`cursor-pointer p-1 min-h-8 rounded transition-colors ${bgColor} ${className}`}
+      className={`cursor-pointer p-1 min-h-8 rounded transition-colors ${bgColor} flex items-center gap-1 ${className}`}
       title="ดับเบิลคลิกเพื่อแก้ไข"
     >
-      {displayValue}
+      <span className="truncate">{displayValue}</span>
+      {displaySuffix && <span className="flex-shrink-0">{displaySuffix}</span>}
     </div>
   );
 }
