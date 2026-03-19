@@ -54,6 +54,15 @@ interface DataTableProps {
   onCalcLogClick?: (rowIndex: number, logText: string) => void;
   /** If true, disables all editing capabilities */
   readOnly?: boolean;
+  
+  // Custom Filters & Summary props
+  footerSummary?: { totalCostExVat: number; totalCostIncVat: number };
+  dateFilterOptions?: string[];
+  storeFilterOptions?: string[];
+  selectedDate?: string | null;
+  selectedStore?: string | null;
+  onDateFilterChange?: (date: string | null) => void;
+  onStoreFilterChange?: (store: string | null) => void;
 }
 
 const PAGE_SIZE = 20;
@@ -76,10 +85,20 @@ export function DataTable({
   bulkAcceptedItemCodes,
   onCalcLogClick,
   readOnly = false,
+  footerSummary,
+  dateFilterOptions = [],
+  storeFilterOptions = [],
+  selectedDate = null,
+  selectedStore = null,
+  onDateFilterChange,
+  onStoreFilterChange,
 }: DataTableProps) {
   const [currentPage, setCurrentPage] = useState(0);
   const [searchQuery, setSearchQuery] = useState("");
   const [prevSearchQuery, setPrevSearchQuery] = useState("");
+  const [prevSelectedDate, setPrevSelectedDate] = useState<string | null>(null);
+  const [prevSelectedStore, setPrevSelectedStore] = useState<string | null>(null);
+  
   const [contextMenu, setContextMenu] = useState<{
     rowIndex: number;
     colIndex: number;
@@ -90,14 +109,22 @@ export function DataTable({
   const highlightedRowRef = useRef<HTMLTableRowElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
 
-  // Reset page when search changes (using pattern to avoid useEffect setState)
-  if (searchQuery !== prevSearchQuery) {
-    setPrevSearchQuery(searchQuery);
+  // Reset page when search or filters change
+  if (
+    searchQuery !== prevSearchQuery || 
+    selectedDate !== prevSelectedDate || 
+    selectedStore !== prevSelectedStore
+  ) {
+    if (searchQuery !== prevSearchQuery) setPrevSearchQuery(searchQuery);
+    if (selectedDate !== prevSelectedDate) setPrevSelectedDate(selectedDate);
+    if (selectedStore !== prevSelectedStore) setPrevSelectedStore(selectedStore);
     setCurrentPage(0);
   }
 
   // Filtered data with original indices preserved
-  // If row has _originalIdx (from enriched data), use that; otherwise use array index
+  // First apply search text, then it's already pre-filtered by date/store internally in page.tsx if implemented correctly,
+  // but if we want DataTable to handle the filtering natively, it's already done by the parent passing displayData.
+  // We'll let the parent handle filtering and we just handle the text search on the current `data`.
   const filteredEntries = (() => {
     if (!searchQuery.trim()) {
       return data.map((row, idx) => ({
@@ -170,44 +197,81 @@ export function DataTable({
   return (
     <div ref={tableRef} className="relative">
       {/* Search & Pagination Controls */}
-      <div className="flex items-center justify-between mb-4 gap-4">
-        <div className="flex items-center gap-3 flex-1">
-          <div className="relative max-w-xs flex-1">
-            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
-            <Input
-              ref={searchInputRef}
-              placeholder="ค้นหาข้อมูล..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="pl-9 pr-8 h-9 text-sm"
-            />
-            {searchQuery && (
-              <button
-                onClick={() => {
-                  setSearchQuery("");
-                  searchInputRef.current?.focus();
-                }}
-                className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+      <div className="flex flex-col md:flex-row items-start md:items-center justify-between mb-4 gap-4">
+        <div className="flex flex-col md:flex-row items-start md:items-center gap-3 flex-1 w-full">
+          <div className="flex flex-wrap items-center gap-3">
+            <div className="relative w-full sm:max-w-xs flex-1 shrink-0">
+              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+              <Input
+                ref={searchInputRef}
+                placeholder="ค้นหาข้อมูล..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="pl-9 pr-8 h-9 text-sm"
+              />
+              {searchQuery && (
+                <button
+                  onClick={() => {
+                    setSearchQuery("");
+                    searchInputRef.current?.focus();
+                  }}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              )}
+            </div>
+
+            {/* Date Filter */}
+            {dateFilterOptions && dateFilterOptions.length > 0 && onDateFilterChange && (
+              <select
+                value={selectedDate || ""}
+                onChange={(e) => onDateFilterChange(e.target.value || null)}
+                className="h-9 px-3 text-sm border border-gray-300 rounded-lg bg-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none shrink-0"
               >
-                <X className="h-4 w-4" />
-              </button>
+                <option value="">วันที่ทั้งหมด</option>
+                {dateFilterOptions.map((date) => (
+                  <option key={date} value={date}>
+                    {date}
+                  </option>
+                ))}
+              </select>
+            )}
+
+            {/* Store Filter */}
+            {storeFilterOptions && storeFilterOptions.length > 0 && onStoreFilterChange && (
+              <select
+                value={selectedStore || ""}
+                onChange={(e) => onStoreFilterChange(e.target.value || null)}
+                className="h-9 px-3 text-sm border border-gray-300 rounded-lg bg-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none max-w-40 truncate shrink-0"
+              >
+                <option value="">สาขาทั้งหมด</option>
+                {storeFilterOptions.map((store) => (
+                  <option key={store} value={store}>
+                    {store}
+                  </option>
+                ))}
+              </select>
             )}
           </div>
-          <div className="text-sm text-gray-600 whitespace-nowrap">
-            {searchQuery ? (
-              <>
-                พบ {filteredEntries.length} จาก {data.length} แถว
-              </>
-            ) : (
-              <>
-                แสดง {data.length > 0 ? startIndex + 1 : 0} -{" "}
-                {Math.min(endIndex, filteredEntries.length)} จาก {data.length}{" "}
-                แถว
-              </>
-            )}
+
+          <div className="text-sm text-gray-600 flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-4 shrink-0">
+            <div>
+              {searchQuery || selectedDate || selectedStore ? (
+                <>
+                  พบ {filteredEntries.length} จาก {data.length} แถว
+                </>
+              ) : (
+                <>
+                  แสดง {data.length > 0 ? startIndex + 1 : 0} -{" "}
+                  {Math.min(endIndex, filteredEntries.length)} จาก {data.length}{" "}
+                  แถว
+                </>
+              )}
+            </div>
           </div>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 shrink-0 self-end md:self-auto">
           <Button
             variant="outline"
             size="sm"
@@ -387,6 +451,34 @@ export function DataTable({
                       originalIndex,
                       header,
                     );
+
+                    let displaySuffix: React.ReactNode = undefined;
+                    // Add VAT-inclusive total as a suffix for Total Cost Exclusive VAT column
+                    if (
+                      header.toLowerCase().includes("total cost") &&
+                      header.toLowerCase().includes("exclusive")
+                    ) {
+                      const exVat = Number(row[header]) || 0;
+                      if (exVat > 0 || exVat < 0) {
+                        const vatHeader = headers.find((h) => h.toLowerCase() === "vat %");
+                        const vatPercentStr = vatHeader
+                          ? String(row[vatHeader] || "7")
+                          : "7";
+                        const match = vatPercentStr.match(/[\d.]+/);
+                        const vatRate = match ? Number(match[0]) : 7;
+
+                        const incVat = exVat * (1 + vatRate / 100);
+                        displaySuffix = (
+                          <span className="text-blue-500 font-medium ml-1">
+                            ({incVat.toLocaleString(undefined, {
+                              minimumFractionDigits: 2,
+                              maximumFractionDigits: 2,
+                            })})
+                          </span>
+                        );
+                      }
+                    }
+
                     return (
                       <TableCell
                         key={colIdx}
@@ -397,6 +489,7 @@ export function DataTable({
                       >
                         <EditableCell
                           value={row[header] ?? null}
+                          displaySuffix={displaySuffix}
                           onSave={(value) =>
                             onCellUpdate(originalIndex, header, value)
                           }
