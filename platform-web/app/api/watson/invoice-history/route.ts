@@ -10,7 +10,7 @@ export async function GET(req: NextRequest) {
 
     const collectionRef = adminDb.collection(COLLECTIONS.INVOICE_UPLOADS);
 
-    let ref: FirebaseFirestore.Query = companyId
+    const ref: FirebaseFirestore.Query = companyId
       ? collectionRef
           .where("companyId", "==", companyId)
           .orderBy("uploadedAt", "desc")

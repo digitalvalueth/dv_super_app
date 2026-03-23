@@ -76,6 +76,19 @@ const actionCategories: Record<ActionType, string> = {
 const BUBBLE_SIZE = 44;
 const PANEL_WIDTH = 340;
 
+const formatTime = (date: Date) => {
+  const diff = Date.now() - date.getTime();
+  if (diff < 60000) return "เมื่อกี้";
+  if (diff < 3600000) return `${Math.floor(diff / 60000)} นาทีที่แล้ว`;
+  if (diff < 86400000) return `${Math.floor(diff / 3600000)} ชม.ที่แล้ว`;
+  return date.toLocaleDateString("th-TH", {
+    day: "2-digit",
+    month: "short",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+};
+
 export function ActivityLogsSidebar({
   logs,
   summary,
@@ -100,6 +113,7 @@ export function ActivityLogsSidebar({
   });
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setIsMounted(true);
   }, []);
 
@@ -185,19 +199,6 @@ export function ActivityLogsSidebar({
     if (filter === "shifts") return log.action.startsWith("shift_");
     return true;
   });
-
-  const formatTime = (date: Date) => {
-    const diff = Date.now() - date.getTime();
-    if (diff < 60000) return "เมื่อกี้";
-    if (diff < 3600000) return `${Math.floor(diff / 60000)} นาทีที่แล้ว`;
-    if (diff < 86400000) return `${Math.floor(diff / 3600000)} ชม.ที่แล้ว`;
-    return date.toLocaleDateString("th-TH", {
-      day: "2-digit",
-      month: "short",
-      hour: "2-digit",
-      minute: "2-digit",
-    });
-  };
 
   const formatDetails = (log: ActivityLog) => {
     const d = log.details;
