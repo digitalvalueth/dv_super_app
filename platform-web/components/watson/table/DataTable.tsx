@@ -2,32 +2,32 @@
 
 import { Button } from "@/components/watson/ui/button";
 import {
-    DropdownMenu,
-    DropdownMenuContent,
-    DropdownMenuItem,
-    DropdownMenuTrigger,
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
 } from "@/components/watson/ui/dropdown-menu";
 import { Input } from "@/components/watson/ui/input";
 import {
-    Table,
-    TableBody,
-    TableCell,
-    TableHead,
-    TableHeader,
-    TableRow,
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
 } from "@/components/watson/ui/table";
 import { getCellError } from "@/lib/watson/validators";
 import { RawRow, ValidationError } from "@/types/watson/invoice";
 import {
-    ArrowLeft,
-    ArrowRight,
-    Calculator,
-    ChevronLeft,
-    ChevronRight,
-    MoreHorizontal,
-    Search,
-    Trash2,
-    X,
+  ArrowLeft,
+  ArrowRight,
+  Calculator,
+  ChevronLeft,
+  ChevronRight,
+  MoreHorizontal,
+  Search,
+  Trash2,
+  X,
 } from "lucide-react";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { EditableCell } from "./EditableCell";
@@ -54,7 +54,7 @@ interface DataTableProps {
   onCalcLogClick?: (rowIndex: number, logText: string) => void;
   /** If true, disables all editing capabilities */
   readOnly?: boolean;
-  
+
   // Custom Filters & Summary props
   footerSummary?: { totalCostExVat: number; totalCostIncVat: number };
   dateFilterOptions?: string[];
@@ -63,6 +63,15 @@ interface DataTableProps {
   selectedStore?: string | null;
   onDateFilterChange?: (date: string | null) => void;
   onStoreFilterChange?: (store: string | null) => void;
+  qtyBuy1FilterOptions?: string[];
+  qtyProFilterOptions?: string[];
+  fmProductCodeFilterOptions?: string[];
+  selectedQtyBuy1?: string | null;
+  selectedQtyPro?: string | null;
+  selectedFmProductCode?: string | null;
+  onQtyBuy1FilterChange?: (v: string | null) => void;
+  onQtyProFilterChange?: (v: string | null) => void;
+  onFmProductCodeFilterChange?: (v: string | null) => void;
 }
 
 const PAGE_SIZE = 20;
@@ -85,20 +94,40 @@ export function DataTable({
   bulkAcceptedItemCodes,
   onCalcLogClick,
   readOnly = false,
-  footerSummary,
+  footerSummary: _footerSummary,
   dateFilterOptions = [],
   storeFilterOptions = [],
   selectedDate = null,
   selectedStore = null,
   onDateFilterChange,
   onStoreFilterChange,
+  qtyBuy1FilterOptions = [],
+  qtyProFilterOptions = [],
+  fmProductCodeFilterOptions = [],
+  selectedQtyBuy1 = null,
+  selectedQtyPro = null,
+  selectedFmProductCode = null,
+  onQtyBuy1FilterChange,
+  onQtyProFilterChange,
+  onFmProductCodeFilterChange,
 }: DataTableProps) {
   const [currentPage, setCurrentPage] = useState(0);
   const [searchQuery, setSearchQuery] = useState("");
   const [prevSearchQuery, setPrevSearchQuery] = useState("");
   const [prevSelectedDate, setPrevSelectedDate] = useState<string | null>(null);
-  const [prevSelectedStore, setPrevSelectedStore] = useState<string | null>(null);
-  
+  const [prevSelectedStore, setPrevSelectedStore] = useState<string | null>(
+    null,
+  );
+  const [prevSelectedQtyBuy1, setPrevSelectedQtyBuy1] = useState<string | null>(
+    null,
+  );
+  const [prevSelectedQtyPro, setPrevSelectedQtyPro] = useState<string | null>(
+    null,
+  );
+  const [prevSelectedFmProductCode, setPrevSelectedFmProductCode] = useState<
+    string | null
+  >(null);
+
   const [contextMenu, setContextMenu] = useState<{
     rowIndex: number;
     colIndex: number;
@@ -111,13 +140,23 @@ export function DataTable({
 
   // Reset page when search or filters change
   if (
-    searchQuery !== prevSearchQuery || 
-    selectedDate !== prevSelectedDate || 
-    selectedStore !== prevSelectedStore
+    searchQuery !== prevSearchQuery ||
+    selectedDate !== prevSelectedDate ||
+    selectedStore !== prevSelectedStore ||
+    selectedQtyBuy1 !== prevSelectedQtyBuy1 ||
+    selectedQtyPro !== prevSelectedQtyPro ||
+    selectedFmProductCode !== prevSelectedFmProductCode
   ) {
     if (searchQuery !== prevSearchQuery) setPrevSearchQuery(searchQuery);
     if (selectedDate !== prevSelectedDate) setPrevSelectedDate(selectedDate);
-    if (selectedStore !== prevSelectedStore) setPrevSelectedStore(selectedStore);
+    if (selectedStore !== prevSelectedStore)
+      setPrevSelectedStore(selectedStore);
+    if (selectedQtyBuy1 !== prevSelectedQtyBuy1)
+      setPrevSelectedQtyBuy1(selectedQtyBuy1);
+    if (selectedQtyPro !== prevSelectedQtyPro)
+      setPrevSelectedQtyPro(selectedQtyPro);
+    if (selectedFmProductCode !== prevSelectedFmProductCode)
+      setPrevSelectedFmProductCode(selectedFmProductCode);
     setCurrentPage(0);
   }
 
@@ -223,32 +262,87 @@ export function DataTable({
             </div>
 
             {/* Date Filter */}
-            {dateFilterOptions && dateFilterOptions.length > 0 && onDateFilterChange && (
+            {dateFilterOptions &&
+              dateFilterOptions.length > 0 &&
+              onDateFilterChange && (
+                <select
+                  value={selectedDate || ""}
+                  onChange={(e) => onDateFilterChange(e.target.value || null)}
+                  className="h-9 px-3 text-sm border border-gray-300 rounded-lg bg-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none shrink-0"
+                >
+                  <option value="">วันที่ทั้งหมด</option>
+                  {dateFilterOptions.map((date) => (
+                    <option key={date} value={date}>
+                      {date}
+                    </option>
+                  ))}
+                </select>
+              )}
+
+            {/* Store Filter */}
+            {storeFilterOptions &&
+              storeFilterOptions.length > 0 &&
+              onStoreFilterChange && (
+                <select
+                  value={selectedStore || ""}
+                  onChange={(e) => onStoreFilterChange(e.target.value || null)}
+                  className="h-9 px-3 text-sm border border-gray-300 rounded-lg bg-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none max-w-40 truncate shrink-0"
+                >
+                  <option value="">สาขาทั้งหมด</option>
+                  {storeFilterOptions.map((store) => (
+                    <option key={store} value={store}>
+                      {store}
+                    </option>
+                  ))}
+                </select>
+              )}
+
+            {/* FMProductCode Filter */}
+            {fmProductCodeFilterOptions.length > 0 &&
+              onFmProductCodeFilterChange && (
+                <select
+                  value={selectedFmProductCode || ""}
+                  onChange={(e) =>
+                    onFmProductCodeFilterChange(e.target.value || null)
+                  }
+                  className="h-9 px-3 text-sm border border-gray-300 rounded-lg bg-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none max-w-44 truncate shrink-0"
+                >
+                  <option value="">FMProductCode ทั้งหมด</option>
+                  {fmProductCodeFilterOptions.map((v) => (
+                    <option key={v} value={v}>
+                      {v}
+                    </option>
+                  ))}
+                </select>
+              )}
+
+            {/* QtyBuy1 Filter */}
+            {qtyBuy1FilterOptions.length > 0 && onQtyBuy1FilterChange && (
               <select
-                value={selectedDate || ""}
-                onChange={(e) => onDateFilterChange(e.target.value || null)}
+                value={selectedQtyBuy1 || ""}
+                onChange={(e) => onQtyBuy1FilterChange(e.target.value || null)}
                 className="h-9 px-3 text-sm border border-gray-300 rounded-lg bg-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none shrink-0"
               >
-                <option value="">วันที่ทั้งหมด</option>
-                {dateFilterOptions.map((date) => (
-                  <option key={date} value={date}>
-                    {date}
+                <option value="">QtyBuy1 ทั้งหมด</option>
+                {qtyBuy1FilterOptions.map((v) => (
+                  <option key={v} value={v}>
+                    Buy1 = {v}
                   </option>
                 ))}
               </select>
             )}
 
-            {/* Store Filter */}
-            {storeFilterOptions && storeFilterOptions.length > 0 && onStoreFilterChange && (
+            {/* QtyPro Filter */}
+            {qtyProFilterOptions.length > 0 && onQtyProFilterChange && (
               <select
-                value={selectedStore || ""}
-                onChange={(e) => onStoreFilterChange(e.target.value || null)}
-                className="h-9 px-3 text-sm border border-gray-300 rounded-lg bg-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none max-w-40 truncate shrink-0"
+                value={selectedQtyPro || ""}
+                onChange={(e) => onQtyProFilterChange(e.target.value || null)}
+                className="h-9 px-3 text-sm border border-gray-300 rounded-lg bg-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none shrink-0"
               >
-                <option value="">สาขาทั้งหมด</option>
-                {storeFilterOptions.map((store) => (
-                  <option key={store} value={store}>
-                    {store}
+                <option value="">QtyPro ทั้งหมด</option>
+                {qtyProFilterOptions.map((v) => (
+                  <option key={v} value={v}>
+                    Pro = {v}
                   </option>
                 ))}
               </select>
@@ -453,14 +547,26 @@ export function DataTable({
                     );
 
                     let displaySuffix: React.ReactNode = undefined;
+                    let displayValueOverride: string | undefined;
                     // Add VAT-inclusive total as a suffix for Total Cost Exclusive VAT column
                     if (
                       header.toLowerCase().includes("total cost") &&
                       header.toLowerCase().includes("exclusive")
                     ) {
                       const exVat = Number(row[header]) || 0;
+                      if (
+                        Number.isFinite(exVat) &&
+                        String(row[header] ?? "") !== ""
+                      ) {
+                        displayValueOverride = exVat.toLocaleString(undefined, {
+                          minimumFractionDigits: 2,
+                          maximumFractionDigits: 2,
+                        });
+                      }
                       if (exVat > 0 || exVat < 0) {
-                        const vatHeader = headers.find((h) => h.toLowerCase() === "vat %");
+                        const vatHeader = headers.find(
+                          (h) => h.toLowerCase() === "vat %",
+                        );
                         const vatPercentStr = vatHeader
                           ? String(row[vatHeader] || "7")
                           : "7";
@@ -470,10 +576,12 @@ export function DataTable({
                         const incVat = exVat * (1 + vatRate / 100);
                         displaySuffix = (
                           <span className="text-blue-500 font-medium ml-1">
-                            ({incVat.toLocaleString(undefined, {
+                            (
+                            {incVat.toLocaleString(undefined, {
                               minimumFractionDigits: 2,
                               maximumFractionDigits: 2,
-                            })})
+                            })}
+                            )
                           </span>
                         );
                       }
@@ -489,6 +597,7 @@ export function DataTable({
                       >
                         <EditableCell
                           value={row[header] ?? null}
+                          displayValue={displayValueOverride}
                           displaySuffix={displaySuffix}
                           onSave={(value) =>
                             onCellUpdate(originalIndex, header, value)

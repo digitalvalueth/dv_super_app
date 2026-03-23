@@ -172,32 +172,11 @@ export default function CameraScreen() {
       }
 
       if (exifResult.reason === "no_exif" || exifResult.reason === "no_date") {
-        // Image has no EXIF — likely screenshot or downloaded image
-        let proceed = false;
-        await new Promise<void>((resolve) => {
-          Alert.alert(
-            "ไม่พบข้อมูลภาพ",
-            "รูปนี้ไม่มีข้อมูลวันเวลาถ่าย (อาจเป็น screenshot หรือรูปที่ดาวน์โหลด)\nแนะนำให้ถ่ายรูปสดจากกล้อง ต้องการใช้รูปนี้ต่อไปหรือไม่?",
-            [
-              {
-                text: "ถ่ายใหม่",
-                style: "cancel",
-                onPress: () => {
-                  proceed = false;
-                  resolve();
-                },
-              },
-              {
-                text: "ใช้ต่อไป",
-                onPress: () => {
-                  proceed = true;
-                  resolve();
-                },
-              },
-            ],
-          );
-        });
-        if (!proceed) return;
+        Alert.alert(
+          "ไม่อนุญาตให้ใช้ภาพนี้",
+          "รูปนี้ไม่มีข้อมูลวันเวลาถ่าย (อาจเป็น screenshot หรือรูปที่ดาวน์โหลด)\nกรุณาถ่ายรูปใหม่โดยตรงจากกล้องเท่านั้น",
+        );
+        return;
       }
 
       // Get watermark metadata (use pre-fetched location if available)

@@ -135,6 +135,14 @@ export default function CheckInResultScreen() {
               </Text>
             </View>
           )}
+          {checkInData?.isEarly && !isCheckIn && (
+            <View style={styles.earlyBadge}>
+              <Ionicons name="alert-circle-outline" size={16} color="#EA580C" />
+              <Text style={styles.earlyText}>
+                ออกก่อนเวลา {checkInData.earlyMinutes} นาที
+              </Text>
+            </View>
+          )}
         </View>
 
         {/* Time Display */}
@@ -323,6 +331,21 @@ const styles = StyleSheet.create({
   },
   lateText: {
     color: "#F59E0B",
+    fontSize: 14,
+    fontWeight: "600",
+  },
+  earlyBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginTop: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    backgroundColor: "#FFF7ED",
+    borderRadius: 16,
+    gap: 4,
+  },
+  earlyText: {
+    color: "#EA580C",
     fontSize: 14,
     fontWeight: "600",
   },
