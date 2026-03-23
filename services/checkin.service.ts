@@ -10,6 +10,7 @@ import {
   limit,
   orderBy,
   query,
+  serverTimestamp,
   Timestamp,
   where,
 } from "firebase/firestore";
@@ -36,6 +37,26 @@ export const checkIfLate = (
     return { isLate: true, lateMinutes };
   }
   return { isLate: false, lateMinutes: 0 };
+};
+
+/**
+ * Check if the current time is early based on work end time
+ */
+export const checkIfEarly = (
+  checkOutTime: Date,
+  workEndTime: string,
+): { isEarly: boolean; earlyMinutes: number } => {
+  const [hour, minute] = workEndTime.split(":").map(Number);
+  const workEnd = new Date(checkOutTime);
+  workEnd.setHours(hour, minute, 0, 0);
+
+  if (checkOutTime < workEnd) {
+    const earlyMinutes = Math.floor(
+      (workEnd.getTime() - checkOutTime.getTime()) / 60000,
+    );
+    return { isEarly: true, earlyMinutes };
+  }
+  return { isEarly: false, earlyMinutes: 0 };
 };
 
 /**
@@ -150,12 +171,23 @@ export const createCheckIn = async (
 
     const checkInsRef = collection(db, "checkIns");
 
+    // Check for early check-out
+    let earlyInfo = { isEarly: false, earlyMinutes: 0 };
+    if (data.type === "check-out") {
+      const workEndTime = settings?.workEndTime;
+      if (workEndTime) {
+        earlyInfo = checkIfEarly(new Date(), workEndTime);
+      }
+    }
+
     const newCheckIn = {
       ...data,
       isLate: lateInfo.isLate,
       lateMinutes: lateInfo.lateMinutes,
-      createdAt: Timestamp.now(),
-      updatedAt: Timestamp.now(),
+      isEarly: earlyInfo.isEarly,
+      earlyMinutes: earlyInfo.earlyMinutes,
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
     };
 
     const docRef = await addDoc(checkInsRef, newCheckIn);

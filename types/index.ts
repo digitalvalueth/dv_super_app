@@ -364,6 +364,8 @@ export interface CheckIn {
   // ข้อมูลเวลา
   isLate?: boolean;
   lateMinutes?: number;
+  isEarly?: boolean;
+  earlyMinutes?: number;
   remarks?: string;
 
   createdAt: Timestamp;

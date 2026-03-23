@@ -211,32 +211,11 @@ export default function ProductDetailsScreen() {
           exifResult.reason === "no_exif" ||
           exifResult.reason === "no_date"
         ) {
-          // Prompt user to confirm
-          let proceed = false;
-          await new Promise<void>((resolve) => {
-            Alert.alert(
-              "ไม่พบข้อมูลภาพ",
-              "รูปนี้ไม่มีข้อมูลวันเวลาถ่าย (อาจเป็น screenshot หรือรูปที่ดาวน์โหลด)\nต้องการใช้รูปนี้ต่อไปหรือไม่?",
-              [
-                {
-                  text: "ถ่ายใหม่",
-                  style: "cancel",
-                  onPress: () => {
-                    proceed = false;
-                    resolve();
-                  },
-                },
-                {
-                  text: "ใช้ต่อไป",
-                  onPress: () => {
-                    proceed = true;
-                    resolve();
-                  },
-                },
-              ],
-            );
-          });
-          if (!proceed) return;
+          Alert.alert(
+            "ไม่อนุญาตให้ใช้ภาพนี้",
+            "รูปนี้ไม่มีข้อมูลวันเวลาถ่าย (อาจเป็น screenshot หรือรูปที่ดาวน์โหลด)\nกรุณาถ่ายรูปใหม่โดยตรงจากกล้องเท่านั้น",
+          );
+          return;
         }
         let base64Data = asset.base64;
 

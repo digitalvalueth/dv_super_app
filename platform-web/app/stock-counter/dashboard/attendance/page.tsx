@@ -114,6 +114,8 @@ export default function AttendancePage() {
           watermarkData: data.watermarkData,
           isLate: data.isLate,
           lateMinutes: data.lateMinutes,
+          isEarly: data.isEarly,
+          earlyMinutes: data.earlyMinutes,
           remarks: data.remarks,
           createdAt: data.createdAt?.toDate(),
           updatedAt: data.updatedAt?.toDate(),
@@ -202,6 +204,7 @@ export default function AttendancePage() {
           "เวลา",
           "สถานะ",
           "สายกี่นาที",
+          "ออกก่อนกี่นาที",
           "ตำแหน่ง",
           "พิกัด",
           "หมายเหตุ",
@@ -230,8 +233,21 @@ export default function AttendancePage() {
             c.type === "check-in" ? "เข้างาน" : "เลิกงาน",
             c.createdAt ? format(c.createdAt, "dd/MM/yyyy") : "",
             c.createdAt ? format(c.createdAt, "HH:mm:ss") : "",
-            c.type === "check-in" ? (c.isLate ? "สาย" : "ตรงเวลา") : "-",
-            c.isLate && c.lateMinutes ? c.lateMinutes : "",
+            c.type === "check-in"
+              ? c.isLate
+                ? "สาย"
+                : "ตรงเวลา"
+              : c.type === "check-out"
+                ? c.isEarly
+                  ? "ออกก่อนเวลา"
+                  : "ปกติ"
+                : "-",
+            c.type === "check-in" && c.isLate && c.lateMinutes
+              ? c.lateMinutes
+              : "",
+            c.type === "check-out" && c.isEarly && c.earlyMinutes
+              ? c.earlyMinutes
+              : "",
             location,
             coords,
             c.remarks || "",
@@ -503,6 +519,19 @@ export default function AttendancePage() {
                             : "ตรงเวลา"}
                         </span>
                       )}
+                      {checkIn.type === "check-out" && (
+                        <span
+                          className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                            checkIn.isEarly
+                              ? "bg-orange-100 text-orange-800 dark:bg-orange-900/30 dark:text-orange-400"
+                              : "bg-sky-100 text-sky-800 dark:bg-sky-900/30 dark:text-sky-400"
+                          }`}
+                        >
+                          {checkIn.isEarly
+                            ? `ออกก่อน ${checkIn.earlyMinutes} นาที`
+                            : "ปกติ"}
+                        </span>
+                      )}
                     </td>
                     <td className="px-6 py-4 text-center">
                       <button
@@ -630,6 +659,25 @@ export default function AttendancePage() {
                       {selectedCheckIn.isLate
                         ? `มาสาย ${selectedCheckIn.lateMinutes} นาที`
                         : "ตรงเวลา"}
+                    </p>
+                  </div>
+                )}
+
+                {selectedCheckIn.type === "check-out" && (
+                  <div className="p-4 bg-gray-50 dark:bg-gray-700/50 rounded-xl col-span-2">
+                    <p className="text-sm text-gray-500 dark:text-gray-400 mb-1">
+                      สถานะ
+                    </p>
+                    <p
+                      className={`font-medium ${
+                        selectedCheckIn.isEarly
+                          ? "text-orange-600 dark:text-orange-400"
+                          : "text-sky-600 dark:text-sky-400"
+                      }`}
+                    >
+                      {selectedCheckIn.isEarly
+                        ? `ออกก่อนเวลา ${selectedCheckIn.earlyMinutes} นาที`
+                        : "เลิกงานตามเวลา"}
                     </p>
                   </div>
                 )}

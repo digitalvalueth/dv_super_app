@@ -77,6 +77,7 @@ import {
 import { validateData } from "@/lib/watson/validators";
 import { useAuthStore } from "@/stores/auth.store";
 import { ValidationResult } from "@/types/watson/invoice";
+import type { PricePeriod } from "@/types/watson/pricelist";
 import {
   Building2,
   Calendar,
@@ -407,6 +408,11 @@ export default function WatsonExcelValidatorPage() {
   // Custom filters
   const [dateFilter, setDateFilter] = useState<string | null>(null);
   const [storeFilter, setStoreFilter] = useState<string | null>(null);
+  const [qtyBuy1Filter, setQtyBuy1Filter] = useState<string | null>(null);
+  const [qtyProFilter, setQtyProFilter] = useState<string | null>(null);
+  const [fmProductCodeFilter, setFmProductCodeFilter] = useState<string | null>(
+    null,
+  );
 
   // Calc Log modal state
   const [calcLogOpen, setCalcLogOpen] = useState(false);
@@ -1028,24 +1034,79 @@ export default function WatsonExcelValidatorPage() {
     );
   }, [allEnrichedData, displayHeaders]);
 
-  // Apply date/store filters
+  const qtyBuy1FilterOptions = useMemo(() => {
+    const vals = new Set<string>();
+    allEnrichedData.forEach((row) => {
+      const v = row["QtyBuy1"];
+      if (v != null && String(v).trim() !== "") vals.add(String(v).trim());
+    });
+    return Array.from(vals).sort((a, b) => Number(a) - Number(b));
+  }, [allEnrichedData]);
+
+  const qtyProFilterOptions = useMemo(() => {
+    const vals = new Set<string>();
+    allEnrichedData.forEach((row) => {
+      const v = row["QtyPro"];
+      if (v != null && String(v).trim() !== "") vals.add(String(v).trim());
+    });
+    return Array.from(vals).sort((a, b) => Number(a) - Number(b));
+  }, [allEnrichedData]);
+
+  const fmProductCodeFilterOptions = useMemo(() => {
+    const vals = new Set<string>();
+    const fmHeader = displayHeaders.find(
+      (h) => h.toLowerCase() === "fmproductcode",
+    );
+    if (fmHeader) {
+      allEnrichedData.forEach((row) => {
+        const v = row[fmHeader];
+        if (v != null && String(v).trim() !== "") vals.add(String(v).trim());
+      });
+    }
+    return Array.from(vals).sort((a, b) =>
+      a.localeCompare(b, "th-TH", { numeric: true }),
+    );
+  }, [allEnrichedData, displayHeaders]);
+
+  // Apply date/store/qty/fmproductcode filters
   const finalDisplayData = useMemo(() => {
     let result = displayData;
     const dateHeader = displayHeaders.find((h) => h.toLowerCase() === "date");
     const storeHeader = displayHeaders.find((h) => h.toLowerCase() === "store");
+    const fmHeader = displayHeaders.find(
+      (h) => h.toLowerCase() === "fmproductcode",
+    );
 
-    if (dateFilter && dateHeader) {
+    if (dateFilter && dateHeader)
       result = result.filter(
         (row) => String(row[dateHeader] || "").trim() === dateFilter,
       );
-    }
-    if (storeFilter && storeHeader) {
+    if (storeFilter && storeHeader)
       result = result.filter(
         (row) => String(row[storeHeader] || "").trim() === storeFilter,
       );
-    }
+    if (qtyBuy1Filter)
+      result = result.filter(
+        (row) => String(row["QtyBuy1"] ?? "").trim() === qtyBuy1Filter,
+      );
+    if (qtyProFilter)
+      result = result.filter(
+        (row) => String(row["QtyPro"] ?? "").trim() === qtyProFilter,
+      );
+    if (fmProductCodeFilter && fmHeader)
+      result = result.filter(
+        (row) => String(row[fmHeader] || "").trim() === fmProductCodeFilter,
+      );
     return result;
-  }, [displayData, dateFilter, storeFilter, displayHeaders]);
+  }, [
+    displayData,
+    dateFilter,
+    storeFilter,
+    qtyBuy1Filter,
+    qtyProFilter,
+    fmProductCodeFilter,
+    displayHeaders,
+  ]);
 
   // Calculate summary
   const footerSummary = useMemo(() => {
@@ -1659,6 +1720,37 @@ export default function WatsonExcelValidatorPage() {
     });
   }, []);
 
+  const handleBulkPromoOverride = useCallback(
+    (
+      overrides: {
+        ridx: number;
+        qtyBuy1: number;
+        qtyPro: number;
+        buy1Tier: PricePeriod;
+        proTier: PricePeriod;
+      }[],
+    ) => {
+      setQtyOverrides((prev) => {
+        const next = new Map(prev);
+        overrides.forEach(({ ridx, qtyBuy1, qtyPro, buy1Tier, proTier }) => {
+          const row = displayData[ridx] as Record<string, unknown> | undefined;
+          if (!row) return;
+          const originalIdx = row._originalIdx as number;
+          const proInvoice = proTier.invoice62IncV ?? proTier.priceExtVat;
+          next.set(originalIdx, {
+            ...(next.get(originalIdx) ?? {}),
+            qtyBuy1: String(qtyBuy1),
+            qtyPro: String(qtyPro),
+            priceProInvoice: proInvoice.toFixed(2),
+            priceProCom: buy1Tier.priceIncVat.toFixed(2),
+          });
+        });
+        return next;
+      });
+    },
+    [displayData],
+  );
+
   const handleValidate = useCallback(async () => {
     setIsGlobalLoading(true);
     try {
@@ -2037,7 +2129,7 @@ export default function WatsonExcelValidatorPage() {
     [data, headers, setData, logAutoFix],
   );
 
-  const WATSON_VERSION = "v6.02.0.10";
+  const WATSON_VERSION = "v6.02.0.11";
 
   const handleExportFixed = useCallback(() => {
     if (showPriceColumns) {
@@ -2384,27 +2476,203 @@ export default function WatsonExcelValidatorPage() {
       <div>
         {/* Upload Section */}
         {data.length === 0 && (
-          <div className="w-full h-full">
-            <div className="grid grid-cols-12 gap-6 h-full">
-              {/* Left: File Uploader */}
-              <div className="col-span-12 lg:col-span-8 space-y-4">
-                <FileUploader
-                  onFileSelect={uploadFile}
-                  isLoading={isLoading}
-                  fileName={fileName}
-                  onReset={handleReset}
-                />
-                {error && (
-                  <Alert variant="destructive">
-                    <AlertDescription>{error}</AlertDescription>
-                  </Alert>
+          <div className="w-full">
+            <div className="grid grid-cols-12 gap-6 items-start">
+              {/* Left Column */}
+              <div className="col-span-12 lg:col-span-8 flex flex-col gap-6">
+                {/* File Uploader */}
+                <div className="w-full space-y-4">
+                  <FileUploader
+                    onFileSelect={uploadFile}
+                    isLoading={isLoading}
+                    fileName={fileName}
+                    onReset={handleReset}
+                  />
+                  {error && (
+                    <Alert variant="destructive">
+                      <AlertDescription>{error}</AlertDescription>
+                    </Alert>
+                  )}
+                </div>
+
+                {/* Confirmed Exports Section */}
+                {(isLoadingConfirmedExports ||
+                  confirmedExports.length > 0 ||
+                  confirmedExportsTotal > 0) && (
+                  <div className="w-full">
+                    <Card className="border-green-200">
+                      <CardHeader className="pb-3">
+                        <div className="flex items-center justify-between">
+                          <CardTitle className="text-sm font-medium text-green-700 flex items-center gap-2">
+                            <CheckCircle className="h-4 w-4" />
+                            Export ทั้งหมด
+                            {confirmedExportsTotal > 0 && (
+                              <span className="text-xs font-normal text-green-600 bg-green-100 px-2 py-0.5 rounded-full">
+                                {confirmedExportsTotal} รายการ
+                              </span>
+                            )}
+                          </CardTitle>
+                        </div>
+                      </CardHeader>
+                      <CardContent className="pt-0 px-0">
+                        {isLoadingConfirmedExports ? (
+                          <div className="px-6 space-y-2">
+                            {[1, 2, 3].map((i) => (
+                              <div key={i} className="flex gap-4 py-2">
+                                <Skeleton className="h-4 w-1/4" />
+                                <Skeleton className="h-4 w-1/6" />
+                                <Skeleton className="h-4 w-12" />
+                                <Skeleton className="h-4 w-1/6" />
+                                <Skeleton className="h-4 w-1/5" />
+                              </div>
+                            ))}
+                          </div>
+                        ) : (
+                          <>
+                            {/* Table header */}
+                            <div className="grid grid-cols-[2fr_1.2fr_3rem_1.2fr_1.4fr_1fr] gap-x-4 px-6 py-2 bg-gray-50 border-y border-gray-100 text-xs font-medium text-gray-500 uppercase tracking-wide">
+                              <span>ชื่อไฟล์</span>
+                              <span>Supplier</span>
+                              <span className="text-right">แถว</span>
+                              <span>ยืนยันโดย</span>
+                              <span>วันที่ยืนยัน</span>
+                              <span>Export ID</span>
+                            </div>
+                            {/* Rows */}
+                            <div className="divide-y divide-gray-50">
+                              {confirmedExports.map((exp) => (
+                                <div
+                                  key={exp.id}
+                                  className={`grid grid-cols-[2fr_1.2fr_3rem_1.2fr_1.4fr_1fr] gap-x-4 px-6 py-2.5 transition-colors cursor-pointer ${
+                                    exp.status === "cancelled"
+                                      ? "bg-red-50 hover:bg-red-100 opacity-75"
+                                      : "hover:bg-green-50"
+                                  }`}
+                                  onClick={() =>
+                                    setExportSuccessModal({
+                                      open: true,
+                                      exportId: exp.id,
+                                      supplierCode: exp.supplierCode,
+                                      rowCount: exp.rowCount,
+                                      reportDate: exp.exportedAt,
+                                      initialStatus:
+                                        exp.status === "cancelled"
+                                          ? "cancelled"
+                                          : "confirmed",
+                                    })
+                                  }
+                                >
+                                  <span
+                                    className="text-sm text-gray-800 truncate font-medium flex items-center gap-1.5"
+                                    title={exp.fileName || exp.id}
+                                  >
+                                    {exp.fileName || (
+                                      <span className="text-gray-400 italic">
+                                        (ไม่ระบุ)
+                                      </span>
+                                    )}
+                                    {exp.status === "cancelled" && (
+                                      <span className="text-[10px] font-semibold text-red-600 bg-red-100 px-1.5 py-0.5 rounded shrink-0">
+                                        ยกเลิกแล้ว
+                                      </span>
+                                    )}
+                                  </span>
+                                  <span className="text-sm text-gray-600 truncate">
+                                    {exp.supplierCode}
+                                  </span>
+                                  <span className="text-sm text-gray-600 text-right">
+                                    {exp.rowCount.toLocaleString()}
+                                  </span>
+                                  <span className="text-sm text-gray-600 truncate">
+                                    {exp.confirmedBy || (
+                                      <span className="text-gray-400">—</span>
+                                    )}
+                                  </span>
+                                  <span className="text-xs text-gray-500">
+                                    {exp.confirmedAt
+                                      ? new Date(
+                                          exp.confirmedAt,
+                                        ).toLocaleDateString("th-TH", {
+                                          day: "numeric",
+                                          month: "short",
+                                          year: "2-digit",
+                                          hour: "2-digit",
+                                          minute: "2-digit",
+                                        })
+                                      : "—"}
+                                  </span>
+                                  <span
+                                    className={`font-mono text-[10px] px-1.5 py-0.5 rounded self-center justify-self-start truncate ${
+                                      exp.status === "cancelled"
+                                        ? "text-red-700 bg-red-50 border border-red-200"
+                                        : "text-green-700 bg-green-50 border border-green-100"
+                                    }`}
+                                  >
+                                    {exp.id.substring(0, 8)}
+                                  </span>
+                                </div>
+                              ))}
+                            </div>
+                            {/* Pagination */}
+                            {confirmedExportsTotal > CONFIRMED_PAGE_SIZE && (
+                              <div className="flex items-center justify-between px-6 pt-3 pb-1 border-t border-gray-100">
+                                <span className="text-xs text-gray-500">
+                                  {confirmedExportsPage * CONFIRMED_PAGE_SIZE +
+                                    1}
+                                  –
+                                  {Math.min(
+                                    (confirmedExportsPage + 1) *
+                                      CONFIRMED_PAGE_SIZE,
+                                    confirmedExportsTotal,
+                                  )}{" "}
+                                  จาก {confirmedExportsTotal} รายการ
+                                </span>
+                                <div className="flex gap-1">
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    className="h-7 w-7 p-0"
+                                    disabled={confirmedExportsPage === 0}
+                                    onClick={() => {
+                                      const p = confirmedExportsPage - 1;
+                                      setConfirmedExportsPage(p);
+                                      fetchConfirmedExports(p);
+                                    }}
+                                  >
+                                    <ChevronLeft className="h-4 w-4" />
+                                  </Button>
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    className="h-7 w-7 p-0"
+                                    disabled={
+                                      (confirmedExportsPage + 1) *
+                                        CONFIRMED_PAGE_SIZE >=
+                                      confirmedExportsTotal
+                                    }
+                                    onClick={() => {
+                                      const p = confirmedExportsPage + 1;
+                                      setConfirmedExportsPage(p);
+                                      fetchConfirmedExports(p);
+                                    }}
+                                  >
+                                    <ChevronRight className="h-4 w-4" />
+                                  </Button>
+                                </div>
+                              </div>
+                            )}
+                          </>
+                        )}
+                      </CardContent>
+                    </Card>
+                  </div>
                 )}
               </div>
 
-              {/* Right: Recent Files */}
-              <div className="col-span-12 lg:col-span-4 h-full">
-                <Card className="border-gray-200 h-fit">
-                  <CardHeader className="pb-2">
+              {/* Right Column: Recent Files */}
+              <div className="col-span-12 lg:col-span-4 lg:h-[calc(100vh-13rem)]">
+                <Card className="border-gray-200 flex flex-col h-full lg:min-h-105">
+                  <CardHeader className="pb-2 shrink-0">
                     <CardTitle className="text-sm font-medium text-gray-600 flex items-center justify-between gap-2">
                       <span className="flex items-center gap-2">
                         <Calendar className="h-4 w-4" />
@@ -2423,7 +2691,7 @@ export default function WatsonExcelValidatorPage() {
                       </button>
                     </CardTitle>
                   </CardHeader>
-                  <CardContent className="pt-0">
+                  <CardContent className="pt-0 flex-1 min-h-0 flex flex-col">
                     {isLoadingHistory ? (
                       // Skeleton loading
                       <div className="space-y-3">
@@ -2439,7 +2707,7 @@ export default function WatsonExcelValidatorPage() {
                         ))}
                       </div>
                     ) : filteredInvoiceHistory.length > 0 ? (
-                      <div className="space-y-2">
+                      <div className="space-y-2 flex-1 overflow-y-auto pr-1">
                         {filteredInvoiceHistory.map((record) => (
                           <div
                             key={record.id}
@@ -2592,177 +2860,6 @@ export default function WatsonExcelValidatorPage() {
                 </Card>
               </div>
             </div>
-
-            {/* Confirmed Exports Section */}
-            {(isLoadingConfirmedExports ||
-              confirmedExports.length > 0 ||
-              confirmedExportsTotal > 0) && (
-              <div className="mt-6">
-                <Card className="border-green-200">
-                  <CardHeader className="pb-3">
-                    <div className="flex items-center justify-between">
-                      <CardTitle className="text-sm font-medium text-green-700 flex items-center gap-2">
-                        <CheckCircle className="h-4 w-4" />
-                        Export ทั้งหมด
-                        {confirmedExportsTotal > 0 && (
-                          <span className="text-xs font-normal text-green-600 bg-green-100 px-2 py-0.5 rounded-full">
-                            {confirmedExportsTotal} รายการ
-                          </span>
-                        )}
-                      </CardTitle>
-                    </div>
-                  </CardHeader>
-                  <CardContent className="pt-0 px-0">
-                    {isLoadingConfirmedExports ? (
-                      <div className="px-6 space-y-2">
-                        {[1, 2, 3].map((i) => (
-                          <div key={i} className="flex gap-4 py-2">
-                            <Skeleton className="h-4 w-1/4" />
-                            <Skeleton className="h-4 w-1/6" />
-                            <Skeleton className="h-4 w-12" />
-                            <Skeleton className="h-4 w-1/6" />
-                            <Skeleton className="h-4 w-1/5" />
-                          </div>
-                        ))}
-                      </div>
-                    ) : (
-                      <>
-                        {/* Table header */}
-                        <div className="grid grid-cols-[2fr_1.2fr_3rem_1.2fr_1.4fr_1fr] gap-x-4 px-6 py-2 bg-gray-50 border-y border-gray-100 text-xs font-medium text-gray-500 uppercase tracking-wide">
-                          <span>ชื่อไฟล์</span>
-                          <span>Supplier</span>
-                          <span className="text-right">แถว</span>
-                          <span>ยืนยันโดย</span>
-                          <span>วันที่ยืนยัน</span>
-                          <span>Export ID</span>
-                        </div>
-                        {/* Rows */}
-                        <div className="divide-y divide-gray-50">
-                          {confirmedExports.map((exp) => (
-                            <div
-                              key={exp.id}
-                              className={`grid grid-cols-[2fr_1.2fr_3rem_1.2fr_1.4fr_1fr] gap-x-4 px-6 py-2.5 transition-colors cursor-pointer ${
-                                exp.status === "cancelled"
-                                  ? "bg-red-50 hover:bg-red-100 opacity-75"
-                                  : "hover:bg-green-50"
-                              }`}
-                              onClick={() =>
-                                setExportSuccessModal({
-                                  open: true,
-                                  exportId: exp.id,
-                                  supplierCode: exp.supplierCode,
-                                  rowCount: exp.rowCount,
-                                  reportDate: exp.exportedAt,
-                                  initialStatus:
-                                    exp.status === "cancelled"
-                                      ? "cancelled"
-                                      : "confirmed",
-                                })
-                              }
-                            >
-                              <span
-                                className="text-sm text-gray-800 truncate font-medium flex items-center gap-1.5"
-                                title={exp.fileName || exp.id}
-                              >
-                                {exp.fileName || (
-                                  <span className="text-gray-400 italic">
-                                    (ไม่ระบุ)
-                                  </span>
-                                )}
-                                {exp.status === "cancelled" && (
-                                  <span className="text-[10px] font-semibold text-red-600 bg-red-100 px-1.5 py-0.5 rounded shrink-0">
-                                    ยกเลิกแล้ว
-                                  </span>
-                                )}
-                              </span>
-                              <span className="text-sm text-gray-600 truncate">
-                                {exp.supplierCode}
-                              </span>
-                              <span className="text-sm text-gray-600 text-right">
-                                {exp.rowCount.toLocaleString()}
-                              </span>
-                              <span className="text-sm text-gray-600 truncate">
-                                {exp.confirmedBy || (
-                                  <span className="text-gray-400">—</span>
-                                )}
-                              </span>
-                              <span className="text-xs text-gray-500">
-                                {exp.confirmedAt
-                                  ? new Date(
-                                      exp.confirmedAt,
-                                    ).toLocaleDateString("th-TH", {
-                                      day: "numeric",
-                                      month: "short",
-                                      year: "2-digit",
-                                      hour: "2-digit",
-                                      minute: "2-digit",
-                                    })
-                                  : "—"}
-                              </span>
-                              <span
-                                className={`font-mono text-[10px] px-1.5 py-0.5 rounded self-center truncate ${
-                                  exp.status === "cancelled"
-                                    ? "text-red-700 bg-red-50 border border-red-200"
-                                    : "text-green-700 bg-green-50 border border-green-100"
-                                }`}
-                              >
-                                {exp.id.substring(0, 8)}
-                              </span>
-                            </div>
-                          ))}
-                        </div>
-                        {/* Pagination */}
-                        {confirmedExportsTotal > CONFIRMED_PAGE_SIZE && (
-                          <div className="flex items-center justify-between px-6 pt-3 pb-1 border-t border-gray-100">
-                            <span className="text-xs text-gray-500">
-                              {confirmedExportsPage * CONFIRMED_PAGE_SIZE + 1}–
-                              {Math.min(
-                                (confirmedExportsPage + 1) *
-                                  CONFIRMED_PAGE_SIZE,
-                                confirmedExportsTotal,
-                              )}{" "}
-                              จาก {confirmedExportsTotal} รายการ
-                            </span>
-                            <div className="flex gap-1">
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                className="h-7 w-7 p-0"
-                                disabled={confirmedExportsPage === 0}
-                                onClick={() => {
-                                  const p = confirmedExportsPage - 1;
-                                  setConfirmedExportsPage(p);
-                                  fetchConfirmedExports(p);
-                                }}
-                              >
-                                <ChevronLeft className="h-4 w-4" />
-                              </Button>
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                className="h-7 w-7 p-0"
-                                disabled={
-                                  (confirmedExportsPage + 1) *
-                                    CONFIRMED_PAGE_SIZE >=
-                                  confirmedExportsTotal
-                                }
-                                onClick={() => {
-                                  const p = confirmedExportsPage + 1;
-                                  setConfirmedExportsPage(p);
-                                  fetchConfirmedExports(p);
-                                }}
-                              >
-                                <ChevronRight className="h-4 w-4" />
-                              </Button>
-                            </div>
-                          </div>
-                        )}
-                      </>
-                    )}
-                  </CardContent>
-                </Card>
-              </div>
-            )}
           </div>
         )}
 
@@ -3354,6 +3451,8 @@ export default function WatsonExcelValidatorPage() {
                               acceptedItemCodes={bulkAcceptedItemCodes}
                               onBulkFix={handleBulkFix}
                               onClose={() => setShowBulkFixPanel(false)}
+                              priceHistory={itemPriceHistory}
+                              onApplyBulkPromo={handleBulkPromoOverride}
                             />
                           </div>
                         )}
@@ -3474,6 +3573,19 @@ export default function WatsonExcelValidatorPage() {
                       selectedStore={storeFilter}
                       onDateFilterChange={setDateFilter}
                       onStoreFilterChange={setStoreFilter}
+                      qtyBuy1FilterOptions={
+                        showPriceColumns ? qtyBuy1FilterOptions : []
+                      }
+                      qtyProFilterOptions={
+                        showPriceColumns ? qtyProFilterOptions : []
+                      }
+                      fmProductCodeFilterOptions={fmProductCodeFilterOptions}
+                      selectedQtyBuy1={qtyBuy1Filter}
+                      selectedQtyPro={qtyProFilter}
+                      selectedFmProductCode={fmProductCodeFilter}
+                      onQtyBuy1FilterChange={setQtyBuy1Filter}
+                      onQtyProFilterChange={setQtyProFilter}
+                      onFmProductCodeFilterChange={setFmProductCodeFilter}
                     />
                   </CardContent>
                 </Card>

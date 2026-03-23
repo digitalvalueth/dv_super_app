@@ -1,8 +1,26 @@
 "use client";
 
-import { useState, useMemo, useEffect, useCallback } from "react";
+import { Badge } from "@/components/watson/ui/badge";
+import { Button } from "@/components/watson/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/watson/ui/dialog";
+import { ScrollArea } from "@/components/watson/ui/scroll-area";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/watson/ui/tooltip";
+import type { ItemPriceHistory, PricePeriod } from "@/types/watson/pricelist";
 import {
   AlertTriangle,
+  Calculator,
+  Check,
   CheckCircle2,
   ChevronDown,
   ChevronUp,
@@ -10,29 +28,14 @@ import {
   Eye,
   Loader2,
   Percent,
+  SkipForward,
+  Tag,
   TrendingDown,
   TrendingUp,
   Wand2,
   X,
-  Check,
-  SkipForward,
-  Calculator,
 } from "lucide-react";
-import { Button } from "@/components/watson/ui/button";
-import { Badge } from "@/components/watson/ui/badge";
-import { ScrollArea } from "@/components/watson/ui/scroll-area";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-  TooltipProvider,
-} from "@/components/watson/ui/tooltip";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/watson/ui/dialog";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 export interface PatternAnalysis {
   itemCode: string;
@@ -111,6 +114,18 @@ interface BulkFixSuggestionPanelProps {
   onBulkFix: (action: BulkFixAction) => void;
   /** Callback to close the panel */
   onClose?: () => void;
+  /** Price history for looking up available promotions per item */
+  priceHistory?: ItemPriceHistory[];
+  /** Callback when user forces a promo tier on rows — each override carries separate buy1 and pro tiers */
+  onApplyBulkPromo?: (
+    overrides: {
+      ridx: number;
+      qtyBuy1: number;
+      qtyPro: number;
+      buy1Tier: PricePeriod;
+      proTier: PricePeriod;
+    }[],
+  ) => void;
 }
 
 /**
@@ -343,8 +358,44 @@ export function BulkFixSuggestionPanel({
   acceptedItemCodes,
   onBulkFix,
   onClose,
+  priceHistory,
+  onApplyBulkPromo,
 }: BulkFixSuggestionPanelProps) {
   const [expandedItem, setExpandedItem] = useState<string | null>(null);
+  const [selectedPromoPerItem, setSelectedPromoPerItem] = useState<
+    Map<string, string>
+  >(new Map());
+  // undefined entry = all rows selected; Set entry = only those indices selected
+  const [selectedRowsPerItem, setSelectedRowsPerItem] = useState<
+    Map<string, Set<number>>
+  >(new Map());
+  // per-row qty overrides: key = ridx, value = { qtyBuy1, qtyPro }
+  const [rowQtyEdits, setRowQtyEdits] = useState<
+    Map<number, { qtyBuy1: number; qtyPro: number }>
+  >(new Map());
+  // per-row tier overrides for Buy1 and Pro portions separately: key = ridx, value = tier key string
+  const [rowBuy1TierSelects, setRowBuy1TierSelects] = useState<
+    Map<number, string>
+  >(new Map());
+  const [rowProTierSelects, setRowProTierSelects] = useState<
+    Map<number, string>
+  >(new Map());
+  // confirm dialog state
+  const [confirmState, setConfirmState] = useState<{
+    pattern: PatternAnalysis;
+    defaultTier: PricePeriod;
+    overrides: {
+      ridx: number;
+      qtyBuy1: number;
+      qtyPro: number;
+      buy1Tier: PricePeriod;
+      proTier: PricePeriod;
+      date: string;
+      rawAmt: number;
+      stdQty: number;
+    }[];
+  } | null>(null);
+  const [isApplying, setIsApplying] = useState(false);
   const [viewingPattern, setViewingPattern] = useState<PatternAnalysis | null>(
     null,
   );
@@ -369,7 +420,12 @@ export function BulkFixSuggestionPanel({
     [headers],
   );
   const invoiceDateHeader = useMemo(
-    () => headers.find((h) => h.toLowerCase().includes("invoice date")),
+    () =>
+      headers.find(
+        (h) =>
+          h.toLowerCase().includes("invoice date") ||
+          h.toLowerCase() === "date",
+      ),
     [headers],
   );
 
@@ -861,6 +917,795 @@ export function BulkFixSuggestionPanel({
                               </div>
                             )}
 
+                          {/* Bulk Promo Override */}
+                          {priceHistory &&
+                            onApplyBulkPromo &&
+                            (() => {
+                              const itemHistory = priceHistory.find(
+                                (h) => h.itemCode === pattern.itemCode,
+                              );
+                              const allPeriods = itemHistory?.periods ?? [];
+                              const seen = new Set<string>();
+                              const uniqueTiers = allPeriods
+                                .filter((p) => {
+                                  const k = `${Number(p.priceExtVat).toFixed(4)}|${p.remark ?? ""}`;
+                                  if (seen.has(k)) return false;
+                                  seen.add(k);
+                                  return true;
+                                })
+                                .sort((a, b) => b.priceExtVat - a.priceExtVat);
+                              if (uniqueTiers.length < 2) return null;
+                              const selectedKey = selectedPromoPerItem.get(
+                                pattern.itemCode,
+                              );
+                              return (
+                                <div className="bg-purple-50 border border-purple-200 rounded p-2 text-xs">
+                                  <p className="font-medium text-purple-700 mb-2 flex items-center gap-1">
+                                    <Tag className="h-3.5 w-3.5" />
+                                    เลือกโปร
+                                  </p>
+                                  {/* Row selector */}
+                                  {(() => {
+                                    const selRows = selectedRowsPerItem.get(
+                                      pattern.itemCode,
+                                    );
+                                    const allChecked =
+                                      !selRows ||
+                                      selRows.size ===
+                                        pattern.rowIndices.length;
+                                    const noneChecked =
+                                      selRows !== undefined &&
+                                      selRows.size === 0;
+                                    const toggleAll = () =>
+                                      setSelectedRowsPerItem((prev) => {
+                                        const next = new Map(prev);
+                                        if (allChecked) {
+                                          // currently all selected → uncheck all
+                                          next.set(pattern.itemCode, new Set());
+                                        } else {
+                                          // partial or none → check all
+                                          next.set(
+                                            pattern.itemCode,
+                                            new Set(pattern.rowIndices),
+                                          );
+                                        }
+                                        return next;
+                                      });
+                                    const toggleRow = (ridx: number) =>
+                                      setSelectedRowsPerItem((prev) => {
+                                        const next = new Map(prev);
+                                        const current = new Set(
+                                          next.get(pattern.itemCode) ??
+                                            pattern.rowIndices,
+                                        );
+                                        if (current.has(ridx))
+                                          current.delete(ridx);
+                                        else current.add(ridx);
+                                        next.set(pattern.itemCode, current);
+                                        return next;
+                                      });
+                                    return (
+                                      <div className="mb-2">
+                                        <div className="flex items-center justify-between mb-1">
+                                          <label className="flex items-center gap-1 cursor-pointer font-medium text-purple-700">
+                                            <input
+                                              type="checkbox"
+                                              checked={allChecked}
+                                              ref={(el) => {
+                                                if (el)
+                                                  el.indeterminate =
+                                                    !allChecked && !noneChecked;
+                                              }}
+                                              onChange={toggleAll}
+                                              className="accent-purple-600"
+                                            />
+                                            เลือกแถวที่จะปรับ
+                                          </label>
+                                          <span className="text-purple-500">
+                                            {selRows
+                                              ? selRows.size
+                                              : pattern.rowIndices.length}
+                                            /{pattern.rowIndices.length} แถว
+                                          </span>
+                                        </div>
+                                        <div className="max-h-64 overflow-y-auto border border-purple-100 rounded bg-white divide-y divide-purple-50">
+                                          {pattern.rowIndices.map((ridx) => {
+                                            const row = enrichedData[ridx] as
+                                              | Record<string, unknown>
+                                              | undefined;
+                                            const isChecked =
+                                              !selRows || selRows.has(ridx);
+                                            const date =
+                                              invoiceDateHeader && row
+                                                ? String(
+                                                    row[invoiceDateHeader] ??
+                                                      "-",
+                                                  )
+                                                : "-";
+                                            const rawAmt =
+                                              rawAmtHeader && row
+                                                ? Math.abs(
+                                                    Number(row[rawAmtHeader]) ||
+                                                      0,
+                                                  )
+                                                : 0;
+                                            const diff = row
+                                              ? String(row["Diff"] ?? "-")
+                                              : "-";
+                                            const diffBad = diff.includes("⚠");
+                                            const stdQty =
+                                              qtyHeader && row
+                                                ? Math.abs(
+                                                    Number(row[qtyHeader]) || 0,
+                                                  )
+                                                : 0;
+                                            const origBuy1 = row
+                                              ? Number(row["QtyBuy1"] ?? 0)
+                                              : 0;
+                                            const origPro = row
+                                              ? Number(row["QtyPro"] ?? 0)
+                                              : 0;
+                                            const edited =
+                                              rowQtyEdits.get(ridx);
+                                            const editBuy1 =
+                                              edited?.qtyBuy1 ?? origBuy1;
+                                            const editPro =
+                                              edited?.qtyPro ?? origPro;
+                                            const actualRowNum = row
+                                              ? Number(
+                                                  (
+                                                    row as Record<
+                                                      string,
+                                                      unknown
+                                                    >
+                                                  )["_originalIdx"] ?? 0,
+                                                ) + 1
+                                              : ridx + 1;
+                                            return (
+                                              <div
+                                                key={ridx}
+                                                className={`px-2 py-2 transition-colors ${isChecked ? "bg-white" : "bg-gray-50 opacity-50"}`}
+                                              >
+                                                <div className="flex items-center gap-2">
+                                                  <input
+                                                    type="checkbox"
+                                                    checked={isChecked}
+                                                    onChange={() =>
+                                                      toggleRow(ridx)
+                                                    }
+                                                    className="accent-purple-600 shrink-0 w-3.5 h-3.5"
+                                                  />
+                                                  <span className="text-xs font-mono text-gray-400 shrink-0 w-12">
+                                                    แถว {actualRowNum}
+                                                  </span>
+                                                  <span className="text-xs text-gray-600 shrink-0 w-20">
+                                                    {date}
+                                                  </span>
+                                                  <span className="text-xs text-gray-500 shrink-0">
+                                                    รวม×{stdQty}
+                                                  </span>
+                                                  <span className="text-xs font-mono text-gray-700 shrink-0 ml-auto">
+                                                    ฿{rawAmt.toFixed(2)}
+                                                  </span>
+                                                  <span
+                                                    className={`text-xs font-mono shrink-0 w-16 text-right ${diffBad ? "text-red-500" : "text-green-600"}`}
+                                                  >
+                                                    {diff}
+                                                  </span>
+                                                </div>
+                                                {isChecked &&
+                                                  (() => {
+                                                    // helpers scoped to this row
+                                                    const txDate = (() => {
+                                                      try {
+                                                        const d = new Date(
+                                                          date,
+                                                        );
+                                                        return isNaN(
+                                                          d.getTime(),
+                                                        )
+                                                          ? null
+                                                          : d;
+                                                      } catch {
+                                                        return null;
+                                                      }
+                                                    })();
+                                                    const fmtShort = (
+                                                      d: Date | null,
+                                                    ) =>
+                                                      d
+                                                        ? d.toLocaleDateString(
+                                                            "th-TH",
+                                                            {
+                                                              day: "numeric",
+                                                              month: "short",
+                                                              year: "2-digit",
+                                                            },
+                                                          )
+                                                        : "ปัจจุบัน";
+                                                    const outOfRange = (
+                                                      t: PricePeriod,
+                                                    ) => {
+                                                      if (!txDate) return false;
+                                                      const tooEarly =
+                                                        txDate < t.startDate;
+                                                      const tooLate =
+                                                        t.endDate !== null &&
+                                                        txDate > t.endDate;
+                                                      return (
+                                                        tooEarly || tooLate
+                                                      );
+                                                    };
+                                                    const resolveTier = (
+                                                      selects: Map<
+                                                        number,
+                                                        string
+                                                      >,
+                                                    ) => {
+                                                      const key =
+                                                        selects.get(ridx) ??
+                                                        selectedKey;
+                                                      return key
+                                                        ? (uniqueTiers.find(
+                                                            (t) =>
+                                                              `${Number(t.priceExtVat).toFixed(4)}|${t.remark ?? ""}` ===
+                                                              key,
+                                                          ) ?? null)
+                                                        : null;
+                                                    };
+
+                                                    const makeTierBtns = (
+                                                      selects: Map<
+                                                        number,
+                                                        string
+                                                      >,
+                                                      setSelects: React.Dispatch<
+                                                        React.SetStateAction<
+                                                          Map<number, string>
+                                                        >
+                                                      >,
+                                                      color:
+                                                        | "purple"
+                                                        | "indigo",
+                                                    ) =>
+                                                      uniqueTiers.map((t) => {
+                                                        const tKey = `${Number(t.priceExtVat).toFixed(4)}|${t.remark ?? ""}`;
+                                                        const rowKey =
+                                                          selects.get(ridx);
+                                                        const isActive =
+                                                          rowKey === tKey;
+                                                        const isDefault =
+                                                          !rowKey &&
+                                                          tKey === selectedKey;
+                                                        const oor =
+                                                          outOfRange(t);
+                                                        const activeCls =
+                                                          color === "purple"
+                                                            ? "bg-purple-600 text-white border-purple-600"
+                                                            : "bg-indigo-600 text-white border-indigo-600";
+                                                        const defaultCls =
+                                                          color === "purple"
+                                                            ? "bg-purple-100 text-purple-700 border-purple-300"
+                                                            : "bg-indigo-100 text-indigo-700 border-indigo-300";
+                                                        return (
+                                                          <button
+                                                            key={tKey}
+                                                            title={`฿${t.priceIncVat.toFixed(2)} IncV\n${fmtShort(t.startDate)} → ${fmtShort(t.endDate)}${oor ? "\n⚠ transaction อยู่นอกช่วงโปรนี้" : ""}`}
+                                                            className={`text-[10px] px-1.5 py-0.5 rounded border transition-colors flex flex-col items-start leading-tight max-w-28 ${
+                                                              isActive
+                                                                ? activeCls
+                                                                : isDefault
+                                                                  ? defaultCls
+                                                                  : "bg-white text-gray-400 border-gray-200 hover:border-gray-400 hover:text-gray-600"
+                                                            } ${oor && (isActive || isDefault) ? "ring-1 ring-orange-400" : ""}`}
+                                                            onClick={() =>
+                                                              setSelects(
+                                                                (prev) => {
+                                                                  const next =
+                                                                    new Map(
+                                                                      prev,
+                                                                    );
+                                                                  if (isActive)
+                                                                    next.delete(
+                                                                      ridx,
+                                                                    );
+                                                                  else
+                                                                    next.set(
+                                                                      ridx,
+                                                                      tKey,
+                                                                    );
+                                                                  return next;
+                                                                },
+                                                              )
+                                                            }
+                                                          >
+                                                            <span className="truncate w-full">
+                                                              {t.remark ??
+                                                                "std"}{" "}
+                                                              {isActive
+                                                                ? "●"
+                                                                : isDefault
+                                                                  ? "✓"
+                                                                  : ""}
+                                                              {oor ? " ⚠" : ""}
+                                                            </span>
+                                                            <span
+                                                              className={`font-mono ${isActive || isDefault ? "opacity-80" : "opacity-60"}`}
+                                                            >
+                                                              ฿
+                                                              {t.priceExtVat.toFixed(
+                                                                2,
+                                                              )}
+                                                            </span>
+                                                          </button>
+                                                        );
+                                                      });
+
+                                                    const buy1Tier =
+                                                      resolveTier(
+                                                        rowBuy1TierSelects,
+                                                      );
+                                                    const proTier =
+                                                      resolveTier(
+                                                        rowProTierSelects,
+                                                      );
+                                                    const buy1Oor = buy1Tier
+                                                      ? outOfRange(buy1Tier)
+                                                      : false;
+                                                    const proOor = proTier
+                                                      ? outOfRange(proTier)
+                                                      : false;
+
+                                                    return (
+                                                      <>
+                                                        {/* Buy1 row: stepper + tier picker */}
+                                                        <div className="flex items-center gap-1.5 mt-1.5 ml-5 pl-1 flex-wrap">
+                                                          <span className="text-[11px] text-purple-600 font-medium shrink-0 w-8">
+                                                            Buy1:
+                                                          </span>
+                                                          <button
+                                                            className="w-5 h-5 rounded bg-purple-100 text-purple-700 text-xs font-bold hover:bg-purple-200 flex items-center justify-center"
+                                                            onClick={() =>
+                                                              setRowQtyEdits(
+                                                                (p) => {
+                                                                  const n =
+                                                                    new Map(p);
+                                                                  const cur =
+                                                                    n.get(
+                                                                      ridx,
+                                                                    ) ?? {
+                                                                      qtyBuy1:
+                                                                        origBuy1,
+                                                                      qtyPro:
+                                                                        origPro,
+                                                                    };
+                                                                  const b =
+                                                                    Math.max(
+                                                                      0,
+                                                                      cur.qtyBuy1 -
+                                                                        1,
+                                                                    );
+                                                                  n.set(ridx, {
+                                                                    qtyBuy1: b,
+                                                                    qtyPro:
+                                                                      stdQty -
+                                                                      b,
+                                                                  });
+                                                                  return n;
+                                                                },
+                                                              )
+                                                            }
+                                                          >
+                                                            -
+                                                          </button>
+                                                          <span className="text-xs font-mono w-5 text-center font-semibold">
+                                                            {editBuy1}
+                                                          </span>
+                                                          <button
+                                                            className="w-5 h-5 rounded bg-purple-100 text-purple-700 text-xs font-bold hover:bg-purple-200 flex items-center justify-center"
+                                                            onClick={() =>
+                                                              setRowQtyEdits(
+                                                                (p) => {
+                                                                  const n =
+                                                                    new Map(p);
+                                                                  const cur =
+                                                                    n.get(
+                                                                      ridx,
+                                                                    ) ?? {
+                                                                      qtyBuy1:
+                                                                        origBuy1,
+                                                                      qtyPro:
+                                                                        origPro,
+                                                                    };
+                                                                  const b =
+                                                                    Math.min(
+                                                                      stdQty,
+                                                                      cur.qtyBuy1 +
+                                                                        1,
+                                                                    );
+                                                                  n.set(ridx, {
+                                                                    qtyBuy1: b,
+                                                                    qtyPro:
+                                                                      stdQty -
+                                                                      b,
+                                                                  });
+                                                                  return n;
+                                                                },
+                                                              )
+                                                            }
+                                                          >
+                                                            +
+                                                          </button>
+                                                          <span className="text-[10px] text-gray-400 shrink-0 ml-1">
+                                                            ราคา:
+                                                          </span>
+                                                          {makeTierBtns(
+                                                            rowBuy1TierSelects,
+                                                            setRowBuy1TierSelects,
+                                                            "purple",
+                                                          )}
+                                                        </div>
+                                                        {buy1Tier && (
+                                                          <div
+                                                            className={`ml-14 mt-0.5 text-[10px] flex items-center gap-1 ${buy1Oor ? "text-orange-600 font-medium" : "text-gray-400"}`}
+                                                          >
+                                                            {buy1Oor && (
+                                                              <span>⚠</span>
+                                                            )}
+                                                            <span>
+                                                              {fmtShort(
+                                                                buy1Tier.startDate,
+                                                              )}{" "}
+                                                              →{" "}
+                                                              {fmtShort(
+                                                                buy1Tier.endDate,
+                                                              )}
+                                                            </span>
+                                                            {buy1Oor && (
+                                                              <span>
+                                                                — transaction (
+                                                                {date})
+                                                                อยู่นอกช่วงโปรนี้
+                                                              </span>
+                                                            )}
+                                                          </div>
+                                                        )}
+                                                        {/* Pro row: stepper + tier picker */}
+                                                        <div className="flex items-center gap-1.5 mt-1 ml-5 pl-1 flex-wrap">
+                                                          <span className="text-[11px] text-indigo-600 font-medium shrink-0 w-8">
+                                                            Pro:
+                                                          </span>
+                                                          <button
+                                                            className="w-5 h-5 rounded bg-indigo-100 text-indigo-700 text-xs font-bold hover:bg-indigo-200 flex items-center justify-center"
+                                                            onClick={() =>
+                                                              setRowQtyEdits(
+                                                                (p) => {
+                                                                  const n =
+                                                                    new Map(p);
+                                                                  const cur =
+                                                                    n.get(
+                                                                      ridx,
+                                                                    ) ?? {
+                                                                      qtyBuy1:
+                                                                        origBuy1,
+                                                                      qtyPro:
+                                                                        origPro,
+                                                                    };
+                                                                  const pro =
+                                                                    Math.max(
+                                                                      0,
+                                                                      cur.qtyPro -
+                                                                        1,
+                                                                    );
+                                                                  n.set(ridx, {
+                                                                    qtyBuy1:
+                                                                      stdQty -
+                                                                      pro,
+                                                                    qtyPro: pro,
+                                                                  });
+                                                                  return n;
+                                                                },
+                                                              )
+                                                            }
+                                                          >
+                                                            -
+                                                          </button>
+                                                          <span className="text-xs font-mono w-5 text-center font-semibold">
+                                                            {editPro}
+                                                          </span>
+                                                          <button
+                                                            className="w-5 h-5 rounded bg-indigo-100 text-indigo-700 text-xs font-bold hover:bg-indigo-200 flex items-center justify-center"
+                                                            onClick={() =>
+                                                              setRowQtyEdits(
+                                                                (p) => {
+                                                                  const n =
+                                                                    new Map(p);
+                                                                  const cur =
+                                                                    n.get(
+                                                                      ridx,
+                                                                    ) ?? {
+                                                                      qtyBuy1:
+                                                                        origBuy1,
+                                                                      qtyPro:
+                                                                        origPro,
+                                                                    };
+                                                                  const pro =
+                                                                    Math.min(
+                                                                      stdQty,
+                                                                      cur.qtyPro +
+                                                                        1,
+                                                                    );
+                                                                  n.set(ridx, {
+                                                                    qtyBuy1:
+                                                                      stdQty -
+                                                                      pro,
+                                                                    qtyPro: pro,
+                                                                  });
+                                                                  return n;
+                                                                },
+                                                              )
+                                                            }
+                                                          >
+                                                            +
+                                                          </button>
+                                                          <span className="text-[10px] text-gray-400 shrink-0 ml-1">
+                                                            ราคา:
+                                                          </span>
+                                                          {makeTierBtns(
+                                                            rowProTierSelects,
+                                                            setRowProTierSelects,
+                                                            "indigo",
+                                                          )}
+                                                          {editBuy1 +
+                                                            editPro !==
+                                                            stdQty && (
+                                                            <span className="text-[10px] text-red-500 ml-1">
+                                                              รวม ≠ {stdQty}
+                                                            </span>
+                                                          )}
+                                                        </div>
+                                                        {proTier && (
+                                                          <div
+                                                            className={`ml-14 mt-0.5 text-[10px] flex items-center gap-1 ${proOor ? "text-orange-600 font-medium" : "text-gray-400"}`}
+                                                          >
+                                                            {proOor && (
+                                                              <span>⚠</span>
+                                                            )}
+                                                            <span>
+                                                              {fmtShort(
+                                                                proTier.startDate,
+                                                              )}{" "}
+                                                              →{" "}
+                                                              {fmtShort(
+                                                                proTier.endDate,
+                                                              )}
+                                                            </span>
+                                                            {proOor && (
+                                                              <span>
+                                                                — transaction (
+                                                                {date})
+                                                                อยู่นอกช่วงโปรนี้
+                                                              </span>
+                                                            )}
+                                                          </div>
+                                                        )}
+                                                      </>
+                                                    );
+                                                  })()}
+                                              </div>
+                                            );
+                                          })}
+                                        </div>
+                                      </div>
+                                    );
+                                  })()}
+                                  <div className="space-y-1">
+                                    {uniqueTiers.map((tier) => {
+                                      const key = `${Number(tier.priceExtVat).toFixed(4)}|${tier.remark ?? ""}`;
+                                      const isSelected = selectedKey === key;
+                                      return (
+                                        <button
+                                          key={key}
+                                          className={`w-full text-left px-2 py-1.5 rounded border flex items-center justify-between transition-colors ${
+                                            isSelected
+                                              ? "bg-purple-600 text-white border-purple-600"
+                                              : "bg-white border-purple-200 text-gray-700 hover:border-purple-400"
+                                          }`}
+                                          onClick={() =>
+                                            setSelectedPromoPerItem((prev) => {
+                                              const next = new Map(prev);
+                                              if (isSelected)
+                                                next.delete(pattern.itemCode);
+                                              else
+                                                next.set(pattern.itemCode, key);
+                                              return next;
+                                            })
+                                          }
+                                        >
+                                          <span className="flex flex-col gap-0.5">
+                                            <span>
+                                              {tier.remark ?? "Std (ราคาปกติ)"}
+                                            </span>
+                                            <span
+                                              className={`text-[10px] ${isSelected ? "text-purple-100" : "text-gray-400"}`}
+                                            >
+                                              {tier.startDate.toLocaleDateString(
+                                                "th-TH",
+                                                {
+                                                  day: "numeric",
+                                                  month: "short",
+                                                  year: "2-digit",
+                                                },
+                                              )}
+                                              {" → "}
+                                              {tier.endDate
+                                                ? tier.endDate.toLocaleDateString(
+                                                    "th-TH",
+                                                    {
+                                                      day: "numeric",
+                                                      month: "short",
+                                                      year: "2-digit",
+                                                    },
+                                                  )
+                                                : "ปัจจุบัน"}
+                                            </span>
+                                          </span>
+                                          <span className="font-mono ml-2 shrink-0 text-right">
+                                            <span className="block">
+                                              ฿{tier.priceIncVat.toFixed(2)}
+                                            </span>
+                                            <span
+                                              className={`block text-[10px] ${isSelected ? "text-purple-200" : "text-gray-400"}`}
+                                            >
+                                              ExcV ฿
+                                              {tier.priceExtVat.toFixed(2)}
+                                            </span>
+                                          </span>
+                                        </button>
+                                      );
+                                    })}
+                                  </div>
+                                  {selectedKey &&
+                                    (() => {
+                                      const selRows = selectedRowsPerItem.get(
+                                        pattern.itemCode,
+                                      );
+                                      const rowsToApply =
+                                        selRows && selRows.size > 0
+                                          ? pattern.rowIndices.filter((r) =>
+                                              selRows.has(r),
+                                            )
+                                          : pattern.rowIndices;
+                                      const defaultTier = uniqueTiers.find(
+                                        (t) =>
+                                          `${Number(t.priceExtVat).toFixed(4)}|${t.remark ?? ""}` ===
+                                          selectedKey,
+                                      );
+                                      const hasInvalidQty = rowsToApply.some(
+                                        (ridx) => {
+                                          const row = enrichedData[ridx] as
+                                            | Record<string, unknown>
+                                            | undefined;
+                                          const stdQty =
+                                            qtyHeader && row
+                                              ? Math.abs(
+                                                  Number(row[qtyHeader]) || 0,
+                                                )
+                                              : 0;
+                                          const edit = rowQtyEdits.get(ridx);
+                                          const b1 =
+                                            edit?.qtyBuy1 ??
+                                            Number(row?.["QtyBuy1"] ?? 0);
+                                          const pro =
+                                            edit?.qtyPro ??
+                                            Number(row?.["QtyPro"] ?? 0);
+                                          return b1 + pro !== stdQty;
+                                        },
+                                      );
+                                      return (
+                                        <Button
+                                          size="sm"
+                                          disabled={
+                                            rowsToApply.length === 0 ||
+                                            hasInvalidQty
+                                          }
+                                          className="w-full mt-2 h-8 bg-purple-600 hover:bg-purple-700 text-xs disabled:opacity-50"
+                                          onClick={() => {
+                                            if (!defaultTier) return;
+                                            const overrides = rowsToApply.map(
+                                              (ridx) => {
+                                                const row = enrichedData[
+                                                  ridx
+                                                ] as
+                                                  | Record<string, unknown>
+                                                  | undefined;
+                                                const stdQty =
+                                                  qtyHeader && row
+                                                    ? Math.abs(
+                                                        Number(
+                                                          row[qtyHeader],
+                                                        ) || 0,
+                                                      )
+                                                    : 0;
+                                                const edit =
+                                                  rowQtyEdits.get(ridx);
+                                                const b1 =
+                                                  edit?.qtyBuy1 ??
+                                                  Number(row?.["QtyBuy1"] ?? 0);
+                                                const pro =
+                                                  edit?.qtyPro ??
+                                                  Number(row?.["QtyPro"] ?? 0);
+                                                const date =
+                                                  invoiceDateHeader && row
+                                                    ? String(
+                                                        row[
+                                                          invoiceDateHeader
+                                                        ] ?? "-",
+                                                      )
+                                                    : "-";
+                                                const rawAmt =
+                                                  rawAmtHeader && row
+                                                    ? Math.abs(
+                                                        Number(
+                                                          row[rawAmtHeader],
+                                                        ) || 0,
+                                                      )
+                                                    : 0;
+                                                // resolve effective tiers per portion: row override → item-level default
+                                                const resolveTier = (
+                                                  key: string | undefined,
+                                                ) =>
+                                                  key
+                                                    ? (uniqueTiers.find(
+                                                        (t) =>
+                                                          `${Number(t.priceExtVat).toFixed(4)}|${t.remark ?? ""}` ===
+                                                          key,
+                                                      ) ?? defaultTier)
+                                                    : defaultTier;
+                                                const effectiveBuy1Tier =
+                                                  resolveTier(
+                                                    rowBuy1TierSelects.get(
+                                                      ridx,
+                                                    ),
+                                                  );
+                                                const effectiveProTier =
+                                                  resolveTier(
+                                                    rowProTierSelects.get(ridx),
+                                                  );
+                                                return {
+                                                  ridx,
+                                                  qtyBuy1: b1,
+                                                  qtyPro: pro,
+                                                  buy1Tier: effectiveBuy1Tier,
+                                                  proTier: effectiveProTier,
+                                                  date,
+                                                  rawAmt,
+                                                  stdQty,
+                                                };
+                                              },
+                                            );
+                                            setConfirmState({
+                                              pattern,
+                                              defaultTier,
+                                              overrides,
+                                            });
+                                          }}
+                                        >
+                                          <Check className="h-3 w-3 mr-1" />
+                                          สรุปการเปลี่ยนแปลง{" "}
+                                          {rowsToApply.length} แถว
+                                          {hasInvalidQty && (
+                                            <span className="ml-1 text-red-200">
+                                              ⚠ qty ไม่ตรง
+                                            </span>
+                                          )}
+                                        </Button>
+                                      );
+                                    })()}
+                                </div>
+                              );
+                            })()}
+
                           {/* Action buttons - always show */}
                           <div className="flex gap-2 pt-2">
                             <Button
@@ -1261,6 +2106,289 @@ export function BulkFixSuggestionPanel({
               </Button>
             )}
           </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Confirm bulk promo apply dialog */}
+      <Dialog
+        open={confirmState !== null}
+        onOpenChange={(open) => {
+          if (!open && !isApplying) setConfirmState(null);
+        }}
+      >
+        <DialogContent className="max-w-2xl max-h-[90vh] flex flex-col">
+          <DialogHeader>
+            <DialogTitle className="text-purple-700 flex items-center gap-2">
+              <Tag className="h-5 w-5" />
+              ยืนยันการใช้โปรโมชัน
+            </DialogTitle>
+            <DialogDescription>
+              ตรวจสอบรายละเอียดก่อนยืนยัน — ระบบจะคำนวณ Calc Amt / Diff /
+              Confidence ใหม่
+            </DialogDescription>
+          </DialogHeader>
+
+          {confirmState &&
+            (() => {
+              const { pattern, defaultTier, overrides } = confirmState;
+              const fmtDate = (d: string | undefined) => {
+                if (!d) return "-";
+                try {
+                  return new Date(d).toLocaleDateString("th-TH", {
+                    day: "2-digit",
+                    month: "short",
+                    year: "2-digit",
+                  });
+                } catch {
+                  return d;
+                }
+              };
+              const totalB1 = overrides.reduce((s, o) => s + o.qtyBuy1, 0);
+              const totalPro = overrides.reduce((s, o) => s + o.qtyPro, 0);
+              const hasMultipleTiers =
+                new Set(
+                  overrides.map(
+                    (o) => `${o.tier.priceExtVat}|${o.tier.remark ?? ""}`,
+                  ),
+                ).size > 1;
+              return (
+                <>
+                  {/* Tier summary */}
+                  <div className="bg-purple-50 border border-purple-200 rounded-lg p-3 text-sm">
+                    <div className="font-semibold text-purple-800 mb-1">
+                      {pattern.itemCode} — {pattern.itemName ?? ""}
+                    </div>
+                    {hasMultipleTiers ? (
+                      <p className="text-purple-600 text-xs">
+                        ⚠ แต่ละแถวใช้โปรต่างกัน — ดูรายละเอียดในตารางด้านล่าง
+                      </p>
+                    ) : (
+                      <div className="flex flex-wrap gap-4 text-purple-700">
+                        <span>
+                          โปร:{" "}
+                          <strong>{defaultTier.remark ?? "(ไม่มีชื่อ)"}</strong>
+                        </span>
+                        <span>
+                          ราคา (รวม VAT):{" "}
+                          <strong>
+                            {Number(
+                              defaultTier.priceIncVat ??
+                                defaultTier.priceExtVat,
+                            ).toFixed(2)}
+                          </strong>
+                        </span>
+                        <span>
+                          ราคา (ไม่รวม VAT):{" "}
+                          <strong>
+                            {Number(defaultTier.priceExtVat).toFixed(2)}
+                          </strong>
+                        </span>
+                        {defaultTier.startDate && (
+                          <span>
+                            ช่วงเวลา: {fmtDate(defaultTier.startDate)} –{" "}
+                            {fmtDate(defaultTier.endDate ?? "")}
+                          </span>
+                        )}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Rows table */}
+                  <div className="flex-1 overflow-y-auto border border-gray-200 rounded-lg mt-2">
+                    <table className="w-full text-xs">
+                      <thead className="bg-gray-50 sticky top-0">
+                        <tr>
+                          <th className="px-3 py-2 text-left font-medium text-gray-600">
+                            แถว
+                          </th>
+                          <th className="px-3 py-2 text-left font-medium text-gray-600">
+                            วันที่
+                          </th>
+                          <th className="px-3 py-2 text-center font-medium text-gray-500">
+                            รวม
+                          </th>
+                          <th className="px-3 py-2 text-left font-medium text-purple-600">
+                            Buy1 qty × ราคา
+                          </th>
+                          <th className="px-3 py-2 text-left font-medium text-indigo-600">
+                            Pro qty × ราคา
+                          </th>
+                          <th className="px-3 py-2 text-right font-medium text-gray-600">
+                            Calc ExcV
+                          </th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-100">
+                        {overrides.map((o) => {
+                          const rowData = enrichedData[o.ridx] as
+                            | Record<string, unknown>
+                            | undefined;
+                          const actualRowNum = rowData
+                            ? Number(rowData["_originalIdx"] ?? 0) + 1
+                            : o.ridx + 1;
+                          const buy1PriceExcV = Number(o.buy1Tier.priceExtVat);
+                          const proPriceExcV = Number(o.proTier.priceExtVat);
+                          const calcAmt =
+                            o.qtyBuy1 > 0
+                              ? (o.rawAmt - o.qtyPro * proPriceExcV) / o.qtyBuy1
+                              : 0;
+                          const buy1Diff =
+                            `${o.buy1Tier.priceExtVat}|${o.buy1Tier.remark ?? ""}` !==
+                            `${defaultTier.priceExtVat}|${defaultTier.remark ?? ""}`;
+                          const proDiff =
+                            `${o.proTier.priceExtVat}|${o.proTier.remark ?? ""}` !==
+                            `${defaultTier.priceExtVat}|${defaultTier.remark ?? ""}`;
+                          return (
+                            <tr key={o.ridx} className="hover:bg-gray-50">
+                              <td className="px-3 py-2 font-mono text-gray-700">
+                                แถว {actualRowNum}
+                              </td>
+                              <td className="px-3 py-2 text-gray-600">
+                                {fmtDate(o.date)}
+                              </td>
+                              <td className="px-3 py-2 text-center text-gray-500 text-[11px]">
+                                {o.stdQty}
+                              </td>
+                              <td className="px-3 py-2">
+                                <span
+                                  className={`text-xs font-semibold ${buy1Diff ? "text-orange-600" : "text-purple-700"}`}
+                                >
+                                  {o.qtyBuy1} × ฿{buy1PriceExcV.toFixed(2)}
+                                </span>
+                                <span className="block text-[10px] text-gray-400">
+                                  {o.buy1Tier.remark ?? "std"}
+                                  {buy1Diff ? " ●" : ""}
+                                </span>
+                              </td>
+                              <td className="px-3 py-2">
+                                <span
+                                  className={`text-xs font-semibold ${proDiff ? "text-orange-600" : "text-indigo-700"}`}
+                                >
+                                  {o.qtyPro} × ฿{proPriceExcV.toFixed(2)}
+                                </span>
+                                <span className="block text-[10px] text-gray-400">
+                                  {o.proTier.remark ?? "std"}
+                                  {proDiff ? " ●" : ""}
+                                </span>
+                              </td>
+                              <td className="px-3 py-2 text-right text-gray-700">
+                                {calcAmt.toFixed(2)}
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                      <tfoot className="bg-purple-50">
+                        <tr>
+                          <td
+                            colSpan={3}
+                            className="px-3 py-2 text-xs font-medium text-purple-700"
+                          >
+                            รวม {overrides.length} แถว
+                          </td>
+                          <td className="px-3 py-2 text-purple-700 font-bold text-xs">
+                            {totalB1} pcs
+                          </td>
+                          <td className="px-3 py-2 text-indigo-700 font-bold text-xs">
+                            {totalPro} pcs
+                          </td>
+                          <td className="px-3 py-2" />
+                        </tr>
+                      </tfoot>
+                    </table>
+                  </div>
+
+                  {/* Action buttons */}
+                  <div className="flex justify-end gap-2 pt-3 border-t">
+                    <Button
+                      variant="outline"
+                      disabled={isApplying}
+                      onClick={() => setConfirmState(null)}
+                    >
+                      ยกเลิก
+                    </Button>
+                    <Button
+                      disabled={isApplying}
+                      className="bg-purple-600 hover:bg-purple-700 min-w-30"
+                      onClick={async () => {
+                        if (!onApplyBulkPromo) return;
+                        setIsApplying(true);
+                        try {
+                          await onApplyBulkPromo(
+                            overrides.map((o) => ({
+                              ridx: o.ridx,
+                              qtyBuy1: o.qtyBuy1,
+                              qtyPro: o.qtyPro,
+                              buy1Tier: o.buy1Tier,
+                              proTier: o.proTier,
+                            })),
+                          );
+                          // Clear row state for this pattern
+                          setRowQtyEdits((prev) => {
+                            const next = new Map(prev);
+                            overrides.forEach((o) => next.delete(o.ridx));
+                            return next;
+                          });
+                          setRowBuy1TierSelects((prev) => {
+                            const next = new Map(prev);
+                            overrides.forEach((o) => next.delete(o.ridx));
+                            return next;
+                          });
+                          setRowProTierSelects((prev) => {
+                            const next = new Map(prev);
+                            overrides.forEach((o) => next.delete(o.ridx));
+                            return next;
+                          });
+                          setSelectedPromoPerItem((prev) => {
+                            const next = new Map(prev);
+                            next.delete(pattern.itemCode);
+                            return next;
+                          });
+                          setSelectedRowsPerItem((prev) => {
+                            const next = new Map(prev);
+                            next.delete(pattern.itemCode);
+                            return next;
+                          });
+                          setConfirmState(null);
+                        } finally {
+                          setIsApplying(false);
+                        }
+                      }}
+                    >
+                      {isApplying ? (
+                        <>
+                          <svg
+                            className="animate-spin h-4 w-4 mr-2"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                          >
+                            <circle
+                              className="opacity-25"
+                              cx="12"
+                              cy="12"
+                              r="10"
+                              stroke="currentColor"
+                              strokeWidth="4"
+                            />
+                            <path
+                              className="opacity-75"
+                              fill="currentColor"
+                              d="M4 12a8 8 0 018-8v8H4z"
+                            />
+                          </svg>
+                          กำลังบันทึก...
+                        </>
+                      ) : (
+                        <>
+                          <Check className="h-4 w-4 mr-1" />
+                          ยืนยัน {overrides.length} แถว
+                        </>
+                      )}
+                    </Button>
+                  </div>
+                </>
+              );
+            })()}
         </DialogContent>
       </Dialog>
     </TooltipProvider>
