@@ -313,6 +313,8 @@ export interface CheckIn {
   isLate?: boolean;
   isSupplemental?: boolean; // รูปเพิ่มเติม ไม่นับรวมกับจำนวนหลัก
   lateMinutes?: number;
+  isEarly?: boolean;
+  earlyMinutes?: number;
   remarks?: string;
 
   createdAt?: Date;

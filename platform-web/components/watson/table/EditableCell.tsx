@@ -1,12 +1,13 @@
 "use client";
 
-import { useState, useRef, useEffect, useMemo } from "react";
-import { Input } from "@/components/watson/ui/input";
 import { Button } from "@/components/watson/ui/button";
+import { Input } from "@/components/watson/ui/input";
 import { Check, X } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 interface EditableCellProps {
   value: string | number | null;
+  displayValue?: string;
   onSave: (newValue: string) => void;
   isError?: boolean;
   isWarning?: boolean;
@@ -17,6 +18,7 @@ interface EditableCellProps {
 
 export function EditableCell({
   value,
+  displayValue,
   onSave,
   isError = false,
   isWarning = false,
@@ -29,8 +31,12 @@ export function EditableCell({
   const inputRef = useRef<HTMLInputElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
-  // Display value from props
-  const displayValue = useMemo(() => String(value ?? ""), [value]);
+  // Keep raw value for edit/save; optional displayValue is UI-only formatting.
+  const rawValue = useMemo(() => String(value ?? ""), [value]);
+  const shownValue = useMemo(
+    () => displayValue ?? rawValue,
+    [displayValue, rawValue],
+  );
 
   useEffect(() => {
     if (isEditing && inputRef.current) {
@@ -41,19 +47,19 @@ export function EditableCell({
 
   const handleDoubleClick = () => {
     if (disabled) return;
-    setEditValue(displayValue);
+    setEditValue(rawValue);
     setIsEditing(true);
   };
 
   const handleSave = () => {
     setIsEditing(false);
-    if (editValue !== displayValue) {
+    if (editValue !== rawValue) {
       onSave(editValue);
     }
   };
 
   const handleCancel = () => {
-    setEditValue(displayValue);
+    setEditValue(rawValue);
     setIsEditing(false);
   };
 
@@ -113,8 +119,8 @@ export function EditableCell({
       className={`cursor-pointer p-1 min-h-8 rounded transition-colors ${bgColor} flex items-center gap-1 ${className}`}
       title="ดับเบิลคลิกเพื่อแก้ไข"
     >
-      <span className="truncate">{displayValue}</span>
-      {displaySuffix && <span className="flex-shrink-0">{displaySuffix}</span>}
+      <span className="truncate">{shownValue}</span>
+      {displaySuffix && <span className="shrink-0">{displaySuffix}</span>}
     </div>
   );
 }

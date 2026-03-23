@@ -1,11 +1,15 @@
 import { trackAppUsage } from "@/services/app-usage.service";
-import { getTodayCheckIn } from "@/services/checkin.service";
+import {
+  getAttendanceSettings,
+  getTodayCheckIn,
+} from "@/services/checkin.service";
 import { useAuthStore } from "@/stores/auth.store";
 import { useCheckInStore } from "@/stores/checkin.store";
 import { useTheme } from "@/stores/theme.store";
 import { Ionicons } from "@expo/vector-icons";
+import * as Notifications from "expo-notifications";
 import { router } from "expo-router";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   RefreshControl,
@@ -30,6 +34,10 @@ export default function CheckInIndex() {
   } = useCheckInStore();
 
   const [refreshing, setRefreshing] = useState(false);
+  const [workStartTime, setWorkStartTime] = useState("10:00");
+  const [workEndTime, setWorkEndTime] = useState("18:00");
+  const [nowTime, setNowTime] = useState(new Date());
+  const lastReminderKeyRef = useRef<string | null>(null);
 
   const loadTodayStatus = useCallback(async () => {
     if (!user?.uid) return;
@@ -45,17 +53,45 @@ export default function CheckInIndex() {
 
       setTodayCheckIn(checkIn);
       setTodayCheckOut(checkOut);
+
+      if (user.companyId) {
+        const settings = await getAttendanceSettings(
+          user.companyId,
+          user.branchId,
+        );
+        if (settings?.workStartTime) {
+          setWorkStartTime(settings.workStartTime);
+        }
+        if (settings?.workEndTime) {
+          setWorkEndTime(settings.workEndTime);
+        }
+      }
     } catch (error) {
       console.error("Error loading today status:", error);
     } finally {
       setLoading(false);
     }
-  }, [user?.uid, setTodayCheckIn, setTodayCheckOut, setLoading]);
+  }, [
+    user?.uid,
+    user?.companyId,
+    user?.branchId,
+    setTodayCheckIn,
+    setTodayCheckOut,
+    setLoading,
+  ]);
 
   useEffect(() => {
     trackAppUsage("check-in", user?.uid);
     loadTodayStatus();
   }, [loadTodayStatus, user?.uid]);
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setNowTime(new Date());
+    }, 30000);
+
+    return () => clearInterval(interval);
+  }, []);
 
   const handleRefresh = useCallback(async () => {
     setRefreshing(true);
@@ -104,6 +140,65 @@ export default function CheckInIndex() {
 
   const hasCheckedIn = !!todayCheckIn;
   const hasCheckedOut = !!todayCheckOut;
+
+  const getWorkEndDate = useCallback(() => {
+    const [hour, minute] = workEndTime.split(":").map(Number);
+    const endDate = new Date(nowTime);
+    endDate.setHours(hour, minute, 0, 0);
+    return endDate;
+  }, [workEndTime, nowTime]);
+
+  const minutesToCheckout = Math.ceil(
+    (getWorkEndDate().getTime() - nowTime.getTime()) / 60000,
+  );
+
+  const shouldShowCountdown = hasCheckedIn && !hasCheckedOut;
+
+  useEffect(() => {
+    const scheduleCheckoutReminder = async () => {
+      if (!shouldShowCountdown || !user?.uid) return;
+
+      const workEndDate = getWorkEndDate();
+      const reminderDate = new Date(workEndDate.getTime() - 15 * 60000);
+      const dateKey = nowTime.toISOString().split("T")[0];
+      const reminderKey = `${user.uid}-${dateKey}-${workEndTime}`;
+
+      if (lastReminderKeyRef.current === reminderKey) {
+        return;
+      }
+      lastReminderKeyRef.current = reminderKey;
+
+      try {
+        if (reminderDate > new Date()) {
+          await Notifications.scheduleNotificationAsync({
+            content: {
+              title: "ใกล้ถึงเวลาเลิกงาน",
+              body: "เหลืออีกประมาณ 15 นาที ก่อนถึงเวลาเลิกงาน",
+              data: { type: "checkout-reminder" },
+              sound: "default",
+            },
+            trigger: reminderDate as any,
+          });
+        }
+
+        if (workEndDate > new Date()) {
+          await Notifications.scheduleNotificationAsync({
+            content: {
+              title: "ถึงเวลาเลิกงานแล้ว",
+              body: "คุณสามารถลงเวลาเลิกงานได้แล้ว",
+              data: { type: "checkout-reminder" },
+              sound: "default",
+            },
+            trigger: workEndDate as any,
+          });
+        }
+      } catch (error) {
+        console.error("Error scheduling checkout reminders:", error);
+      }
+    };
+
+    scheduleCheckoutReminder();
+  }, [getWorkEndDate, nowTime, shouldShowCountdown, user?.uid, workEndTime]);
 
   return (
     <SafeAreaView
@@ -306,6 +401,58 @@ export default function CheckInIndex() {
         </View>
 
         {/* Action Buttons */}
+        {shouldShowCountdown && (
+          <View
+            style={[
+              styles.countdownCard,
+              {
+                backgroundColor:
+                  minutesToCheckout > 0
+                    ? isDark
+                      ? "#1F2937"
+                      : "#EFF6FF"
+                    : isDark
+                      ? "#3F1D1D"
+                      : "#FEF2F2",
+                borderColor:
+                  minutesToCheckout > 0
+                    ? isDark
+                      ? "#374151"
+                      : "#BFDBFE"
+                    : isDark
+                      ? "#7F1D1D"
+                      : "#FECACA",
+              },
+            ]}
+          >
+            <Ionicons
+              name={minutesToCheckout > 0 ? "time-outline" : "alarm-outline"}
+              size={22}
+              color={minutesToCheckout > 0 ? "#2563EB" : "#DC2626"}
+            />
+            <View style={styles.countdownContent}>
+              <Text
+                style={[
+                  styles.countdownTitle,
+                  { color: minutesToCheckout > 0 ? "#1E40AF" : "#991B1B" },
+                ]}
+              >
+                {minutesToCheckout > 0
+                  ? `เหลืออีก ${minutesToCheckout} นาที ถึงเวลาเลิกงาน`
+                  : "ถึงเวลาเลิกงานแล้ว"}
+              </Text>
+              <Text
+                style={[
+                  styles.countdownSubtitle,
+                  { color: minutesToCheckout > 0 ? "#3B82F6" : "#DC2626" },
+                ]}
+              >
+                เวลาเลิกงานตั้งไว้ {workEndTime} น.
+              </Text>
+            </View>
+          </View>
+        )}
+
         <View style={styles.actionContainer}>
           {/* Check-in Button */}
           <TouchableOpacity
@@ -396,7 +543,8 @@ export default function CheckInIndex() {
               เวลาทำงาน
             </Text>
             <Text style={[styles.infoText, { color: "#3B82F6" }]}>
-              เข้างานก่อน 10:00 น. • ถ่ายรูปยืนยันพร้อมบูธ
+              เข้างานก่อน {workStartTime} น. • เลิกงาน {workEndTime} น. •
+              ถ่ายรูปยืนยันพร้อมบูธ
             </Text>
           </View>
         </View>
@@ -518,6 +666,26 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: "#F59E0B",
     marginTop: 2,
+  },
+  countdownCard: {
+    flexDirection: "row",
+    alignItems: "center",
+    borderRadius: 12,
+    padding: 14,
+    borderWidth: 1,
+    gap: 10,
+    marginBottom: 16,
+  },
+  countdownContent: {
+    flex: 1,
+  },
+  countdownTitle: {
+    fontSize: 14,
+    fontWeight: "600",
+    marginBottom: 2,
+  },
+  countdownSubtitle: {
+    fontSize: 12,
   },
   actionContainer: {
     flexDirection: "row",

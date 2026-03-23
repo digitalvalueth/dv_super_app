@@ -205,7 +205,8 @@ export function usePriceListData() {
       // Prevents duplicate rows from the source Excel from showing as multiple tiers
       const seenPeriodKeys = new Set<string>();
       const dedupedPeriods = periods.filter((p) => {
-        const key = `${p.priceExtVat}|${toDateOnly(p.startDate)}|${p.endDate ? toDateOnly(p.endDate) : -1}`;
+        // ใช้ toFixed(4) เพื่อป้องกันค่าทศนิยมเหลื่อมกันเล็กน้อย (floating-point precision issues) ทำให้เกิดการซ้ำ
+        const key = `${Number(p.priceExtVat).toFixed(4)}|${toDateOnly(p.startDate)}|${p.endDate ? toDateOnly(p.endDate) : -1}`;
         if (seenPeriodKeys.has(key)) return false;
         seenPeriodKeys.add(key);
         return true;
@@ -273,12 +274,14 @@ export function usePriceListData() {
 
       const existingMap = new Map<string, PriceListItem>();
       priceListRaw.forEach((item) => {
-        const key = `${item.itemCode}|${item.priceStartDate}|${item.priceExtVat}`;
+        const startDateStr = item.priceStartDate.split("T")[0];
+        const key = `${item.itemCode}|${startDateStr}|${Number(item.priceExtVat).toFixed(4)}`;
         existingMap.set(key, item);
       });
 
       newItems.forEach((newItem) => {
-        const key = `${newItem.itemCode}|${newItem.priceStartDate}|${newItem.priceExtVat}`;
+        const startDateStr = newItem.priceStartDate.split("T")[0];
+        const key = `${newItem.itemCode}|${startDateStr}|${Number(newItem.priceExtVat).toFixed(4)}`;
         if (existingMap.has(key)) {
           // Update existing
           existingMap.set(key, newItem);

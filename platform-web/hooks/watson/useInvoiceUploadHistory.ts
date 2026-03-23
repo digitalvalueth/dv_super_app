@@ -341,7 +341,7 @@ export function useInvoiceUploadHistory(): InvoiceUploadHistoryReturn {
         return tempId;
       }
     },
-    [updateLocalHistory],
+    [updateLocalHistory, userData?.companyId, userData?.companyName],
   );
 
   const updateRecord = useCallback(
@@ -483,7 +483,13 @@ export function useInvoiceUploadHistory(): InvoiceUploadHistoryReturn {
 
   // Derived history summary (omit heavy data)
   const history = historyItems.map(
-    ({ headers, data, bulkAcceptedItemCodes, qtyOverrides, ...rest }) => rest,
+    ({
+      headers: _headers,
+      data: _data,
+      bulkAcceptedItemCodes: _bulkAcceptedItemCodes,
+      qtyOverrides: _qtyOverrides,
+      ...rest
+    }) => rest,
   );
 
   return {
