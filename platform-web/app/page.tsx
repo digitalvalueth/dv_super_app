@@ -19,6 +19,7 @@ import {
   RefreshCw,
   Settings,
 } from "lucide-react";
+import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 
@@ -291,9 +292,11 @@ export default function ModuleSelectorPage() {
             {/* User info */}
             <div className="hidden sm:flex items-center gap-2 bg-white/5 rounded-full px-3 py-1.5 border border-white/10">
               {userData.photoURL ? (
-                <img
+                <Image
                   src={userData.photoURL}
                   alt=""
+                  width={24}
+                  height={24}
                   className="w-6 h-6 rounded-full"
                 />
               ) : (

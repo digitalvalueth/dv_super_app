@@ -12,7 +12,7 @@ interface ModuleCardProps {
 export function ModuleCard({ module, accessible }: ModuleCardProps) {
   const router = useRouter();
   const isComingSoon = module.status === "coming_soon";
-  const isLocked = !accessible && !isComingSoon;
+  const _isLocked = !accessible && !isComingSoon;
 
   const handleClick = () => {
     if (accessible && module.status === "active") {

@@ -2148,7 +2148,8 @@ export function BulkFixSuggestionPanel({
               const hasMultipleTiers =
                 new Set(
                   overrides.map(
-                    (o) => `${o.tier.priceExtVat}|${o.tier.remark ?? ""}`,
+                    (o) =>
+                      `${o.buy1Tier.priceExtVat}|${o.buy1Tier.remark ?? ""}|${o.proTier.priceExtVat}|${o.proTier.remark ?? ""}`,
                   ),
                 ).size > 1;
               return (
@@ -2185,8 +2186,9 @@ export function BulkFixSuggestionPanel({
                         </span>
                         {defaultTier.startDate && (
                           <span>
-                            ช่วงเวลา: {fmtDate(defaultTier.startDate)} –{" "}
-                            {fmtDate(defaultTier.endDate ?? "")}
+                            ช่วงเวลา:{" "}
+                            {fmtDate(defaultTier.startDate.toISOString())} –{" "}
+                            {fmtDate(defaultTier.endDate?.toISOString())}
                           </span>
                         )}
                       </div>

@@ -70,7 +70,7 @@ export async function POST(request: NextRequest) {
           { status: 403 },
         );
       }
-    } catch (error) {
+    } catch {
       return NextResponse.json(
         { error: "User not found in Firebase Auth" },
         { status: 404 },

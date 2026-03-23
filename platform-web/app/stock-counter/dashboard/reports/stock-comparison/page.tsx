@@ -195,7 +195,6 @@ export default function StockComparisonPage() {
     >();
 
     sessionsSnapshot.forEach((doc) => {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const data = doc.data() as any;
       const productId = data.productId;
       const existing = productCountMap.get(productId);

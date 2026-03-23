@@ -179,7 +179,7 @@ export default function UsersPage() {
   });
 
   // กรอง branches ตาม company ที่เลือก
-  const filteredBranches = branches.filter(
+  const _filteredBranches = branches.filter(
     (branch) => filterCompany === "all" || branch.companyId === filterCompany,
   );
 

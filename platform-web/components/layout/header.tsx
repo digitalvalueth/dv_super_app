@@ -21,7 +21,7 @@ const roleLabels: Record<string, string> = {
 export function Header() {
   const router = useRouter();
   const { userData, logout } = useAuthStore();
-  const pathname = usePathname();
+  const _pathname = usePathname();
   const theme = useThemeStore((state) => state.theme);
   const toggleTheme = useThemeStore((state) => state.toggleTheme);
   const [showDropdown, setShowDropdown] = useState(false);

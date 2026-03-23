@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
 /**
  * External API Service for Admin Web
  * สำหรับเชื่อมต่อกับ API ภายนอก (ERP/POS) เพื่อดึงข้อมูลสต็อกมาเปรียบเทียบ
