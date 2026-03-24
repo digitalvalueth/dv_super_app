@@ -155,13 +155,21 @@ export const getAttendanceSettings = async (
 export const createCheckIn = async (
   data: Omit<
     CheckIn,
-    "id" | "createdAt" | "updatedAt" | "isLate" | "lateMinutes"
+    | "id"
+    | "createdAt"
+    | "updatedAt"
+    | "isLate"
+    | "lateMinutes"
+    | "isEarly"
+    | "earlyMinutes"
   >,
 ): Promise<string> => {
   try {
     // Get attendance settings to determine work start time
     const settings = await getAttendanceSettings(data.companyId, data.branchId);
-    const workStartTime = settings?.workStartTime || DEFAULT_WORK_START_TIME;
+    // Use selectedShift if provided, otherwise fall back to settings workStartTime
+    const workStartTime =
+      data.selectedShift || settings?.workStartTime || DEFAULT_WORK_START_TIME;
 
     // Calculate if late (only for check-in, not check-out)
     let lateInfo = { isLate: false, lateMinutes: 0 };

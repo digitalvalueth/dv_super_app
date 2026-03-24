@@ -1168,78 +1168,82 @@ export function BulkFixSuggestionPanel({
                                                         | "purple"
                                                         | "indigo",
                                                     ) =>
-                                                      uniqueTiers.map((t) => {
-                                                        const tKey = `${Number(t.priceExtVat).toFixed(4)}|${t.remark ?? ""}`;
-                                                        const rowKey =
-                                                          selects.get(ridx);
-                                                        const isActive =
-                                                          rowKey === tKey;
-                                                        const isDefault =
-                                                          !rowKey &&
-                                                          tKey === selectedKey;
-                                                        const oor =
-                                                          outOfRange(t);
-                                                        const activeCls =
-                                                          color === "purple"
-                                                            ? "bg-purple-600 text-white border-purple-600"
-                                                            : "bg-indigo-600 text-white border-indigo-600";
-                                                        const defaultCls =
-                                                          color === "purple"
-                                                            ? "bg-purple-100 text-purple-700 border-purple-300"
-                                                            : "bg-indigo-100 text-indigo-700 border-indigo-300";
-                                                        return (
-                                                          <button
-                                                            key={tKey}
-                                                            title={`฿${t.priceIncVat.toFixed(2)} IncV\n${fmtShort(t.startDate)} → ${fmtShort(t.endDate)}${oor ? "\n⚠ transaction อยู่นอกช่วงโปรนี้" : ""}`}
-                                                            className={`text-[10px] px-1.5 py-0.5 rounded border transition-colors flex flex-col items-start leading-tight max-w-28 ${
-                                                              isActive
-                                                                ? activeCls
-                                                                : isDefault
-                                                                  ? defaultCls
-                                                                  : "bg-white text-gray-400 border-gray-200 hover:border-gray-400 hover:text-gray-600"
-                                                            } ${oor && (isActive || isDefault) ? "ring-1 ring-orange-400" : ""}`}
-                                                            onClick={() =>
-                                                              setSelects(
-                                                                (prev) => {
-                                                                  const next =
-                                                                    new Map(
-                                                                      prev,
-                                                                    );
-                                                                  if (isActive)
-                                                                    next.delete(
-                                                                      ridx,
-                                                                    );
-                                                                  else
-                                                                    next.set(
-                                                                      ridx,
-                                                                      tKey,
-                                                                    );
-                                                                  return next;
-                                                                },
-                                                              )
-                                                            }
-                                                          >
-                                                            <span className="truncate w-full">
-                                                              {t.remark ??
-                                                                "std"}{" "}
-                                                              {isActive
-                                                                ? "●"
-                                                                : isDefault
-                                                                  ? "✓"
-                                                                  : ""}
-                                                              {oor ? " ⚠" : ""}
-                                                            </span>
-                                                            <span
-                                                              className={`font-mono ${isActive || isDefault ? "opacity-80" : "opacity-60"}`}
+                                                      uniqueTiers
+                                                        .filter(
+                                                          (t) => !outOfRange(t),
+                                                        )
+                                                        .map((t) => {
+                                                          const tKey = `${Number(t.priceExtVat).toFixed(4)}|${t.remark ?? ""}`;
+                                                          const rowKey =
+                                                            selects.get(ridx);
+                                                          const isActive =
+                                                            rowKey === tKey;
+                                                          const isDefault =
+                                                            !rowKey &&
+                                                            tKey ===
+                                                              selectedKey;
+                                                          const activeCls =
+                                                            color === "purple"
+                                                              ? "bg-purple-600 text-white border-purple-600"
+                                                              : "bg-indigo-600 text-white border-indigo-600";
+                                                          const defaultCls =
+                                                            color === "purple"
+                                                              ? "bg-purple-100 text-purple-700 border-purple-300"
+                                                              : "bg-indigo-100 text-indigo-700 border-indigo-300";
+                                                          return (
+                                                            <button
+                                                              key={tKey}
+                                                              title={`฿${t.priceIncVat.toFixed(2)} IncV\n${fmtShort(t.startDate)} → ${fmtShort(t.endDate)}`}
+                                                              className={`text-[10px] px-1.5 py-0.5 rounded border transition-colors flex flex-col items-start leading-tight max-w-28 ${
+                                                                isActive
+                                                                  ? activeCls
+                                                                  : isDefault
+                                                                    ? defaultCls
+                                                                    : "bg-white text-gray-400 border-gray-200 hover:border-gray-400 hover:text-gray-600"
+                                                              }`}
+                                                              onClick={() =>
+                                                                setSelects(
+                                                                  (prev) => {
+                                                                    const next =
+                                                                      new Map(
+                                                                        prev,
+                                                                      );
+                                                                    if (
+                                                                      isActive
+                                                                    )
+                                                                      next.delete(
+                                                                        ridx,
+                                                                      );
+                                                                    else
+                                                                      next.set(
+                                                                        ridx,
+                                                                        tKey,
+                                                                      );
+                                                                    return next;
+                                                                  },
+                                                                )
+                                                              }
                                                             >
-                                                              ฿
-                                                              {t.priceExtVat.toFixed(
-                                                                2,
-                                                              )}
-                                                            </span>
-                                                          </button>
-                                                        );
-                                                      });
+                                                              <span className="truncate w-full">
+                                                                {t.remark ??
+                                                                  "std"}{" "}
+                                                                {isActive
+                                                                  ? "●"
+                                                                  : isDefault
+                                                                    ? "✓"
+                                                                    : ""}
+                                                              </span>
+                                                              <span
+                                                                className={`font-mono ${isActive || isDefault ? "opacity-80" : "opacity-60"}`}
+                                                              >
+                                                                ฿
+                                                                {t.priceIncVat.toFixed(
+                                                                  2,
+                                                                )}
+                                                              </span>
+                                                            </button>
+                                                          );
+                                                        });
 
                                                     const buy1Tier =
                                                       resolveTier(
@@ -1345,31 +1349,20 @@ export function BulkFixSuggestionPanel({
                                                             "purple",
                                                           )}
                                                         </div>
-                                                        {buy1Tier && (
-                                                          <div
-                                                            className={`ml-14 mt-0.5 text-[10px] flex items-center gap-1 ${buy1Oor ? "text-orange-600 font-medium" : "text-gray-400"}`}
-                                                          >
-                                                            {buy1Oor && (
-                                                              <span>⚠</span>
-                                                            )}
-                                                            <span>
-                                                              {fmtShort(
-                                                                buy1Tier.startDate,
-                                                              )}{" "}
-                                                              →{" "}
-                                                              {fmtShort(
-                                                                buy1Tier.endDate,
-                                                              )}
-                                                            </span>
-                                                            {buy1Oor && (
+                                                        {buy1Tier &&
+                                                          !buy1Oor && (
+                                                            <div className="ml-14 mt-0.5 text-[10px] flex items-center gap-1 text-gray-400">
                                                               <span>
-                                                                — transaction (
-                                                                {date})
-                                                                อยู่นอกช่วงโปรนี้
+                                                                {fmtShort(
+                                                                  buy1Tier.startDate,
+                                                                )}{" "}
+                                                                →{" "}
+                                                                {fmtShort(
+                                                                  buy1Tier.endDate,
+                                                                )}
                                                               </span>
-                                                            )}
-                                                          </div>
-                                                        )}
+                                                            </div>
+                                                          )}
                                                         {/* Pro row: stepper + tier picker */}
                                                         <div className="flex items-center gap-1.5 mt-1 ml-5 pl-1 flex-wrap">
                                                           <span className="text-[11px] text-indigo-600 font-medium shrink-0 w-8">
@@ -1464,13 +1457,8 @@ export function BulkFixSuggestionPanel({
                                                             </span>
                                                           )}
                                                         </div>
-                                                        {proTier && (
-                                                          <div
-                                                            className={`ml-14 mt-0.5 text-[10px] flex items-center gap-1 ${proOor ? "text-orange-600 font-medium" : "text-gray-400"}`}
-                                                          >
-                                                            {proOor && (
-                                                              <span>⚠</span>
-                                                            )}
+                                                        {proTier && !proOor && (
+                                                          <div className="ml-14 mt-0.5 text-[10px] flex items-center gap-1 text-gray-400">
                                                             <span>
                                                               {fmtShort(
                                                                 proTier.startDate,
@@ -1480,13 +1468,6 @@ export function BulkFixSuggestionPanel({
                                                                 proTier.endDate,
                                                               )}
                                                             </span>
-                                                            {proOor && (
-                                                              <span>
-                                                                — transaction (
-                                                                {date})
-                                                                อยู่นอกช่วงโปรนี้
-                                                              </span>
-                                                            )}
                                                           </div>
                                                         )}
                                                       </>
@@ -1500,72 +1481,111 @@ export function BulkFixSuggestionPanel({
                                     );
                                   })()}
                                   <div className="space-y-1">
-                                    {uniqueTiers.map((tier) => {
-                                      const key = `${Number(tier.priceExtVat).toFixed(4)}|${tier.remark ?? ""}`;
-                                      const isSelected = selectedKey === key;
-                                      return (
-                                        <button
-                                          key={key}
-                                          className={`w-full text-left px-2 py-1.5 rounded border flex items-center justify-between transition-colors ${
-                                            isSelected
-                                              ? "bg-purple-600 text-white border-purple-600"
-                                              : "bg-white border-purple-200 text-gray-700 hover:border-purple-400"
-                                          }`}
-                                          onClick={() =>
-                                            setSelectedPromoPerItem((prev) => {
-                                              const next = new Map(prev);
-                                              if (isSelected)
-                                                next.delete(pattern.itemCode);
-                                              else
-                                                next.set(pattern.itemCode, key);
-                                              return next;
-                                            })
+                                    {uniqueTiers
+                                      .filter((tier) =>
+                                        // only show tiers where at least one transaction row falls within the period
+                                        pattern.rowIndices.some((ridx) => {
+                                          const r = enrichedData[ridx] as
+                                            | Record<string, unknown>
+                                            | undefined;
+                                          const ds =
+                                            invoiceDateHeader && r
+                                              ? String(
+                                                  r[invoiceDateHeader] ?? "",
+                                                )
+                                              : "";
+                                          try {
+                                            const d = new Date(ds);
+                                            if (isNaN(d.getTime())) return true;
+                                            return (
+                                              d >= tier.startDate &&
+                                              (tier.endDate === null ||
+                                                d <= tier.endDate)
+                                            );
+                                          } catch {
+                                            return true;
                                           }
-                                        >
-                                          <span className="flex flex-col gap-0.5">
-                                            <span>
-                                              {tier.remark ?? "Std (ราคาปกติ)"}
-                                            </span>
-                                            <span
-                                              className={`text-[10px] ${isSelected ? "text-purple-100" : "text-gray-400"}`}
-                                            >
-                                              {tier.startDate.toLocaleDateString(
-                                                "th-TH",
-                                                {
-                                                  day: "numeric",
-                                                  month: "short",
-                                                  year: "2-digit",
+                                        }),
+                                      )
+                                      .map((tier) => {
+                                        const key = `${Number(tier.priceExtVat).toFixed(4)}|${tier.remark ?? ""}`;
+                                        const isSelected = selectedKey === key;
+                                        return (
+                                          <button
+                                            key={key}
+                                            className={`w-full text-left px-2 py-1.5 rounded border flex items-center justify-between transition-colors ${
+                                              isSelected
+                                                ? "bg-purple-600 text-white border-purple-600"
+                                                : "bg-white border-purple-200 text-gray-700 hover:border-purple-400"
+                                            }`}
+                                            onClick={() =>
+                                              setSelectedPromoPerItem(
+                                                (prev) => {
+                                                  const next = new Map(prev);
+                                                  if (isSelected)
+                                                    next.delete(
+                                                      pattern.itemCode,
+                                                    );
+                                                  else
+                                                    next.set(
+                                                      pattern.itemCode,
+                                                      key,
+                                                    );
+                                                  return next;
                                                 },
-                                              )}
-                                              {" → "}
-                                              {tier.endDate
-                                                ? tier.endDate.toLocaleDateString(
-                                                    "th-TH",
-                                                    {
-                                                      day: "numeric",
-                                                      month: "short",
-                                                      year: "2-digit",
-                                                    },
-                                                  )
-                                                : "ปัจจุบัน"}
+                                              )
+                                            }
+                                          >
+                                            <span className="flex flex-col gap-0.5">
+                                              <span>
+                                                {tier.remark ??
+                                                  "Std (ราคาปกติ)"}
+                                              </span>
+                                              <span
+                                                className={`text-[10px] ${isSelected ? "text-purple-100" : "text-gray-400"}`}
+                                              >
+                                                {tier.startDate.toLocaleDateString(
+                                                  "th-TH",
+                                                  {
+                                                    day: "numeric",
+                                                    month: "short",
+                                                    year: "2-digit",
+                                                  },
+                                                )}
+                                                {" → "}
+                                                {tier.endDate
+                                                  ? tier.endDate.toLocaleDateString(
+                                                      "th-TH",
+                                                      {
+                                                        day: "numeric",
+                                                        month: "short",
+                                                        year: "2-digit",
+                                                      },
+                                                    )
+                                                  : "ปัจจุบัน"}
+                                              </span>
                                             </span>
-                                          </span>
-                                          <span className="font-mono ml-2 shrink-0 text-right">
-                                            <span className="block">
-                                              ฿{tier.priceIncVat.toFixed(2)}
+                                            <span className="font-mono ml-2 shrink-0 text-right">
+                                              <span className="block">
+                                                ฿{tier.priceIncVat.toFixed(2)}
+                                              </span>
+                                              <span
+                                                className={`block text-[10px] ${isSelected ? "text-purple-200" : "text-gray-400"}`}
+                                              >
+                                                ExcV ฿
+                                                {tier.priceExtVat.toFixed(2)}
+                                              </span>
                                             </span>
-                                            <span
-                                              className={`block text-[10px] ${isSelected ? "text-purple-200" : "text-gray-400"}`}
-                                            >
-                                              ExcV ฿
-                                              {tier.priceExtVat.toFixed(2)}
-                                            </span>
-                                          </span>
-                                        </button>
-                                      );
-                                    })}
+                                          </button>
+                                        );
+                                      })}
                                   </div>
-                                  {selectedKey &&
+                                  {(selectedKey ||
+                                    pattern.rowIndices.some(
+                                      (r) =>
+                                        rowBuy1TierSelects.has(r) ||
+                                        rowProTierSelects.has(r),
+                                    )) &&
                                     (() => {
                                       const selRows = selectedRowsPerItem.get(
                                         pattern.itemCode,
@@ -1576,11 +1596,15 @@ export function BulkFixSuggestionPanel({
                                               selRows.has(r),
                                             )
                                           : pattern.rowIndices;
-                                      const defaultTier = uniqueTiers.find(
-                                        (t) =>
-                                          `${Number(t.priceExtVat).toFixed(4)}|${t.remark ?? ""}` ===
-                                          selectedKey,
-                                      );
+                                      // defaultTier: from item-level selectedKey, or fall back to first unique tier
+                                      const defaultTier =
+                                        (selectedKey
+                                          ? uniqueTiers.find(
+                                              (t) =>
+                                                `${Number(t.priceExtVat).toFixed(4)}|${t.remark ?? ""}` ===
+                                                selectedKey,
+                                            )
+                                          : undefined) ?? uniqueTiers[0];
                                       const hasInvalidQty = rowsToApply.some(
                                         (ridx) => {
                                           const row = enrichedData[ridx] as

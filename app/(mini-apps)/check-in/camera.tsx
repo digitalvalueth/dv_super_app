@@ -1,6 +1,10 @@
 import { useAuthStore } from "@/stores/auth.store";
 import { useTheme } from "@/stores/theme.store";
-import { createWatermarkMetadata, getCurrentLocation } from "@/utils/watermark";
+import {
+  createWatermarkMetadata,
+  getCurrentLocation,
+  getServerTimestamp,
+} from "@/utils/watermark";
 import { Ionicons } from "@expo/vector-icons";
 import { CameraView, useCameraPermissions } from "expo-camera";
 import * as ImagePicker from "expo-image-picker";
@@ -24,10 +28,12 @@ export default function CheckInCameraScreen() {
   const user = useAuthStore((state) => state.user);
   const params = useLocalSearchParams<{
     type?: string; // "check-in" or "check-out"
+    selectedShift?: string;
   }>();
 
   const checkInType = (params.type as "check-in" | "check-out") || "check-in";
   const isCheckIn = checkInType === "check-in";
+  const selectedShift = params.selectedShift;
 
   const [permission, requestPermission] = useCameraPermissions();
   const [facing, setFacing] = useState<"back" | "front">("back");
@@ -35,15 +41,21 @@ export default function CheckInCameraScreen() {
   const [isCapturing, setIsCapturing] = useState(false);
   const cameraRef = useRef<CameraView>(null);
 
-  // Pre-fetch location when camera mounts so it's ready when user taps capture
+  // Pre-fetch location & server time when camera mounts so it's ready when user taps capture
   const [prefetchedLocation, setPrefetchedLocation] = useState<{
     address: string;
     coordinates: { latitude: number; longitude: number };
   } | null>(null);
+  const [prefetchedServerTime, setPrefetchedServerTime] = useState<Date | null>(
+    null,
+  );
 
   useEffect(() => {
     getCurrentLocation()
       .then(setPrefetchedLocation)
+      .catch(() => {});
+    getServerTimestamp()
+      .then(setPrefetchedServerTime)
       .catch(() => {});
   }, []);
 
@@ -70,6 +82,7 @@ export default function CheckInCameraScreen() {
         undefined,
         undefined,
         prefetchedLocation ?? undefined,
+        prefetchedServerTime ?? undefined,
       );
 
       // Take photo — URI only (no base64/exif overhead = much faster)
@@ -93,6 +106,7 @@ export default function CheckInCameraScreen() {
           imageBase64: "",
           watermarkData: JSON.stringify(watermarkData),
           type: checkInType,
+          selectedShift: selectedShift || "",
         },
       });
     } catch (error) {
@@ -101,7 +115,14 @@ export default function CheckInCameraScreen() {
     } finally {
       setIsCapturing(false);
     }
-  }, [isCapturing, user, checkInType, prefetchedLocation]);
+  }, [
+    isCapturing,
+    user,
+    checkInType,
+    prefetchedLocation,
+    prefetchedServerTime,
+    selectedShift,
+  ]);
 
   const handlePickImage = useCallback(async () => {
     try {
@@ -128,6 +149,7 @@ export default function CheckInCameraScreen() {
         undefined,
         undefined,
         prefetchedLocation ?? undefined,
+        prefetchedServerTime ?? undefined,
       );
 
       // Navigate to preview
@@ -138,13 +160,20 @@ export default function CheckInCameraScreen() {
           imageBase64: asset.base64 || "",
           watermarkData: JSON.stringify(watermarkData),
           type: checkInType,
+          selectedShift: selectedShift || "",
         },
       });
     } catch (error) {
       console.error("Error picking image:", error);
       Alert.alert("เกิดข้อผิดพลาด", "ไม่สามารถเลือกรูปภาพได้");
     }
-  }, [user, checkInType, prefetchedLocation]);
+  }, [
+    user,
+    checkInType,
+    prefetchedLocation,
+    prefetchedServerTime,
+    selectedShift,
+  ]);
 
   const toggleFlash = () => {
     setFlash((prev) => (prev === "off" ? "on" : "off"));

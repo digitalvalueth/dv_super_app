@@ -146,8 +146,10 @@ export default function CountingSummaryPage() {
         half: gracePeriod.half,
         month: gracePeriod.month,
         year: gracePeriod.year,
-        startDate: gracePeriod.startDate?.toDate().toISOString().slice(0, 10) ?? "",
-        endDate: gracePeriod.endDate?.toDate().toISOString().slice(0, 10) ?? graceEnd,
+        startDate:
+          gracePeriod.startDate?.toDate().toISOString().slice(0, 10) ?? "",
+        endDate:
+          gracePeriod.endDate?.toDate().toISOString().slice(0, 10) ?? graceEnd,
       });
       setShowGraceModal(true);
     } catch (e) {
@@ -254,7 +256,7 @@ export default function CountingSummaryPage() {
     }
   };
 
-  const handleExport = (mode: "all" | "branch" | "employee") => {
+  const handleExport = async (mode: "all" | "branch" | "employee") => {
     setExporting(true);
     setShowExportMenu(false);
     try {
@@ -263,6 +265,34 @@ export default function CountingSummaryPage() {
         (s) => s.status === "completed",
       );
 
+      // Fetch products for UOM data (unitType, unitsPerBox, linkedProductId)
+      type UomEntry = {
+        unitType: string;
+        unitsPerBox: number;
+        linkedProductId: string;
+        productName: string;
+      };
+      const productUomMap = new Map<string, UomEntry>();
+      const companyId = userData?.companyId;
+      if (companyId) {
+        const productsSnap = await getDocs(
+          query(
+            collection(db, "products"),
+            where("companyId", "==", companyId),
+          ),
+        );
+        productsSnap.forEach((docSnap) => {
+          const d = docSnap.data() as any;
+          const key = d.productId || docSnap.id;
+          productUomMap.set(key, {
+            unitType: d.unitType || "piece",
+            unitsPerBox: d.unitsPerBox || 1,
+            linkedProductId: d.linkedProductId || "",
+            productName: d.productName || "",
+          });
+        });
+      }
+
       const buildRows = (data: CountingSession[]) => [
         [
           "พนักงาน",
@@ -270,7 +300,9 @@ export default function CountingSummaryPage() {
           "สาขา",
           "สินค้า",
           "Barcode",
+          "หน่วย",
           "จำนวนที่นับได้",
+          "換算เป็นชิ้น",
           "AI Count",
           "วันที่เสร็จสิ้น",
           "ตำแหน่งที่อยู่",
@@ -290,13 +322,20 @@ export default function CountingSummaryPage() {
           } catch {
             /* not watermark JSON */
           }
+          const uom = productUomMap.get(s.productSKU || "");
+          const unitType = uom?.unitType || "piece";
+          const count = s.finalCount ?? s.aiCount ?? 0;
+          const convertedCount =
+            unitType === "box" ? count * (uom?.unitsPerBox || 1) : count;
           return [
             s.userName || "",
             s.userEmail || "",
             s.branchName || "",
             s.productName || "",
             s.productSKU || "",
-            s.finalCount ?? s.aiCount ?? 0,
+            unitType === "box" ? "กล่อง" : "ชิ้น",
+            count,
+            convertedCount,
             s.aiCount ?? 0,
             s.createdAt ? format(s.createdAt, "dd/MM/yyyy HH:mm") : "",
             location,
@@ -334,6 +373,77 @@ export default function CountingSummaryPage() {
             XLSX.utils.book_append_sheet(wb, ws, name.slice(0, 31));
           }
         });
+      }
+
+      // UOM Combined Summary sheet: merge box × unitsPerBox with piece sessions
+      const summaryMap = new Map<
+        string,
+        {
+          productName: string;
+          pieceCount: number;
+          boxCount: number;
+          unitsPerBox: number;
+        }
+      >();
+
+      completedSessions.forEach((s) => {
+        const uom = productUomMap.get(s.productSKU || "");
+        const count = s.finalCount ?? s.aiCount ?? 0;
+        if (!uom || uom.unitType === "piece") {
+          // Piece product — group by its own productSKU
+          const key = s.productSKU || s.productId || "";
+          if (!summaryMap.has(key)) {
+            summaryMap.set(key, {
+              productName: s.productName || key,
+              pieceCount: 0,
+              boxCount: 0,
+              unitsPerBox: 1,
+            });
+          }
+          summaryMap.get(key)!.pieceCount += count;
+        } else if (uom.unitType === "box" && uom.linkedProductId) {
+          // Box product — accumulate under the linked piece product key
+          const key = uom.linkedProductId;
+          if (!summaryMap.has(key)) {
+            const linkedEntry = productUomMap.get(key);
+            summaryMap.set(key, {
+              productName: linkedEntry?.productName || key,
+              pieceCount: 0,
+              boxCount: 0,
+              unitsPerBox: uom.unitsPerBox || 1,
+            });
+          }
+          const entry = summaryMap.get(key)!;
+          entry.boxCount += count;
+          // Keep the largest unitsPerBox seen (in case of rounding)
+          if ((uom.unitsPerBox || 1) > entry.unitsPerBox) {
+            entry.unitsPerBox = uom.unitsPerBox || 1;
+          }
+        }
+      });
+
+      if (summaryMap.size > 0) {
+        const summaryRows: (string | number)[][] = [
+          [
+            "สินค้า (ชิ้น)",
+            "นับได้ (ชิ้น)",
+            "นับได้ (กล่อง)",
+            "換算กล่องเป็นชิ้น",
+            "รวมทั้งหมด (ชิ้น)",
+          ],
+          ...Array.from(summaryMap.values()).map((v) => {
+            const boxAsPieces = v.boxCount * v.unitsPerBox;
+            return [
+              v.productName,
+              v.pieceCount,
+              v.boxCount,
+              boxAsPieces,
+              v.pieceCount + boxAsPieces,
+            ];
+          }),
+        ];
+        const summaryWs = XLSX.utils.aoa_to_sheet(summaryRows);
+        XLSX.utils.book_append_sheet(wb, summaryWs, "สรุปรวม UOM");
       }
 
       XLSX.writeFile(

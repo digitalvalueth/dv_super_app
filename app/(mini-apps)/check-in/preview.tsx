@@ -21,18 +21,19 @@ import { SafeAreaView } from "react-native-safe-area-context";
 export default function CheckInPreviewScreen() {
   const { colors, isDark } = useTheme();
   const { user } = useAuthStore();
-  const { setTodayCheckIn, setTodayCheckOut, setSubmitting, submitting } =
-    useCheckInStore();
+  const { setSubmitting } = useCheckInStore();
 
   const params = useLocalSearchParams<{
     imageUri: string;
     imageBase64: string;
     watermarkData: string;
     type: string; // "check-in" or "check-out"
+    selectedShift?: string;
   }>();
 
   const checkInType = (params.type as "check-in" | "check-out") || "check-in";
   const isCheckIn = checkInType === "check-in";
+  const selectedShift = params.selectedShift || undefined;
 
   const [isProcessing, setIsProcessing] = useState(false);
 
@@ -75,6 +76,7 @@ export default function CheckInPreviewScreen() {
         branchName: user.branchName || "",
         type: checkInType,
         imageUrl: imageUrl,
+        selectedShift: selectedShift,
         watermarkData: {
           timestamp: watermarkData?.timestamp
             ? formatTimestamp(new Date(watermarkData.timestamp))
@@ -103,7 +105,15 @@ export default function CheckInPreviewScreen() {
       setIsProcessing(false);
       setSubmitting(false);
     }
-  }, [user, params, watermarkData, checkInType, isProcessing, setSubmitting]);
+  }, [
+    user,
+    params,
+    watermarkData,
+    checkInType,
+    isProcessing,
+    selectedShift,
+    setSubmitting,
+  ]);
 
   return (
     <SafeAreaView
