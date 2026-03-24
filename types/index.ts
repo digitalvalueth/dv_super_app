@@ -104,6 +104,11 @@ export interface Product {
   series?: string; // Series ของสินค้า
   imageUrl?: string;
 
+  // Unit of Measure (UOM)
+  unitType?: "piece" | "box"; // ชิ้น หรือ กล่อง (default: piece)
+  unitsPerBox?: number; // จำนวนชิ้นต่อกล่อง (เฉพาะ unitType=box)
+  linkedProductId?: string; // productId ของสินค้าชิ้นที่กล่องนี้บรรจุ (เฉพาะ unitType=box)
+
   // Employee-added product tracking
   status?: ProductStatus; // สถานะสินค้า
   isUserCreated?: boolean; // พนักงานเพิ่มหรือไม่
@@ -361,6 +366,9 @@ export interface CheckIn {
     deviceName?: string;
   };
 
+  // ช่วงเวลา/กะที่เลือก
+  selectedShift?: string; // "10:00"
+
   // ข้อมูลเวลา
   isLate?: boolean;
   lateMinutes?: number;
@@ -378,6 +386,7 @@ export interface AttendanceSettings {
   branchId?: string; // ถ้าไม่มี = ใช้ทั้งบริษัท
   workStartTime: string; // "10:00"
   workEndTime?: string; // "18:00"
+  workShifts?: string[]; // ["10:00", "11:00", "12:00"] หลายกะ
   lateThresholdMinutes?: number; // default 0
   requirePhoto: boolean;
   requireLocation: boolean;

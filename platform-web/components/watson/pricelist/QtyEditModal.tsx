@@ -92,8 +92,10 @@ export function QtyEditModal({
     const buy1Invoice = qtyBuy1 * stdPriceExtVat;
     const proInvoice = qtyPro * proPriceExtVat;
     // Invoice 62% IncV totals — per-unit × qty
-    const buy1Invoice62 = qtyBuy1 * (stdInvoice62IncV || stdPriceExtVat);
-    const proInvoice62 = qtyPro * (proInvoice62IncV || proPriceExtVat);
+    const buy1Invoice62 =
+      qtyBuy1 * (stdInvoice62IncV || stdPriceIncVat || stdPriceExtVat);
+    const proInvoice62 =
+      qtyPro * (proInvoice62IncV || proPriceIncVat || proPriceExtVat);
     // Comm (ค่าคอมพนักงาน) totals
     const buy1Com = qtyBuy1 * stdPriceIncVat;
     const proCom = qtyPro * proPriceIncVat;
@@ -353,7 +355,7 @@ export function QtyEditModal({
                       {(Math.round(preview.proInvoice * 10000) / 10000).toFixed(
                         2,
                       )}
-                      {proInvoice62IncV > 0 && (
+                      {(proInvoice62IncV > 0 || proPriceIncVat > 0) && (
                         <span className="text-indigo-500 ml-2">
                           IncV: ฿{preview.proInvoice62.toFixed(2)}
                         </span>

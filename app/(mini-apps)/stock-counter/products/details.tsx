@@ -8,7 +8,6 @@ import { useTheme } from "@/stores/theme.store";
 import { CountingSession } from "@/types";
 import { createWatermarkMetadata, validateImageExif } from "@/utils/watermark";
 import { Ionicons } from "@expo/vector-icons";
-import * as FileSystem from "expo-file-system";
 import { Image } from "expo-image";
 import * as ImagePicker from "expo-image-picker";
 import * as Location from "expo-location";
@@ -26,9 +25,6 @@ import {
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-
-// Base64 encoding type
-const BASE64_ENCODING = "base64" as const;
 
 // Fix Firebase Storage URL encoding
 const fixFirebaseStorageUrl = (url: string): string => {
@@ -181,7 +177,7 @@ export default function ProductDetailsScreen() {
         mediaTypes: "images",
         allowsEditing: false,
         quality: 0.8,
-        base64: true, // Important: Request base64 encoding
+        base64: false, // Skip base64 — preview.tsx reads lazily when AI analyzes
         exif: true, // Required for metadata validation
       });
 
@@ -217,20 +213,6 @@ export default function ProductDetailsScreen() {
           );
           return;
         }
-        let base64Data = asset.base64;
-
-        // If base64 is not included, read it manually
-        if (!base64Data && asset.uri) {
-          const fileInfo = await FileSystem.readAsStringAsync(asset.uri, {
-            encoding: BASE64_ENCODING,
-          });
-          base64Data = fileInfo;
-        }
-
-        if (!base64Data) {
-          Alert.alert("เกิดข้อผิดพลาด", "ไม่สามารถอ่านรูปภาพได้");
-          return;
-        }
 
         // Get watermark metadata — reuse pre-fetched location to avoid extra GPS call
         const locationOverride = location
@@ -261,7 +243,7 @@ export default function ProductDetailsScreen() {
           pathname: "/(mini-apps)/stock-counter/preview",
           params: {
             imageUri: asset.uri,
-            imageBase64: base64Data,
+            imageBase64: "", // Loaded lazily in preview.tsx when AI analysis runs
             watermarkData: JSON.stringify(watermarkData),
             productId,
             productName,

@@ -1,5 +1,7 @@
+import { functions } from "@/config/firebase";
 import * as Device from "expo-device";
 import * as Location from "expo-location";
+import { httpsCallable } from "firebase/functions";
 
 export interface WatermarkData {
   employeeName: string;
@@ -157,6 +159,24 @@ export const generateWatermarkLines = (data: WatermarkData): string[] => {
 };
 
 /**
+ * Fetch authoritative server time. Returns Date of server time.
+ * Falls back to device time if network is unavailable.
+ */
+export const getServerTimestamp = async (): Promise<Date> => {
+  try {
+    const fn = httpsCallable<object, { timestamp: number }>(
+      functions,
+      "getServerTime",
+    );
+    const result = await fn({});
+    return new Date(result.data.timestamp);
+  } catch {
+    // Fallback to device time if Cloud Function unreachable
+    return new Date();
+  }
+};
+
+/**
  * Create watermark metadata object
  * Pass locationOverride to skip re-fetching location (faster)
  */
@@ -170,6 +190,7 @@ export const createWatermarkMetadata = async (
     address: string;
     coordinates: { latitude: number; longitude: number };
   },
+  serverTime?: Date,
 ): Promise<WatermarkData> => {
   const { deviceName, deviceModel } = getDeviceInfo();
   const { address, coordinates } =
@@ -183,7 +204,7 @@ export const createWatermarkMetadata = async (
     deviceModel,
     location: address,
     coordinates,
-    timestamp: new Date(),
+    timestamp: serverTime ?? new Date(),
     productName,
     productBarcode,
   };

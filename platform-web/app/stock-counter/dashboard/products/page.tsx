@@ -69,6 +69,9 @@ export default function ProductsPage() {
     beforeCount: 0,
     companyId: "",
     branchId: "",
+    unitType: "piece" as "piece" | "box",
+    unitsPerBox: 1,
+    linkedProductId: "",
   });
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
@@ -128,6 +131,9 @@ export default function ProductsPage() {
           // Support both imageUrl and imageURL for backward compatibility
           imageUrl: data.imageUrl || data.imageURL,
           sellerCode: data.sellerCode || null,
+          unitType: data.unitType || "piece",
+          unitsPerBox: data.unitsPerBox || undefined,
+          linkedProductId: data.linkedProductId || undefined,
           createdAt: data.createdAt?.toDate(),
           updatedAt: data.updatedAt?.toDate(),
         });
@@ -250,6 +256,11 @@ export default function ProductsPage() {
         companyId: targetCompanyId,
         branchId: formData.branchId || null,
         imageUrl: imageUrl,
+        unitType: formData.unitType || "piece",
+        unitsPerBox:
+          formData.unitType === "box" ? formData.unitsPerBox || 1 : null,
+        linkedProductId:
+          formData.unitType === "box" ? formData.linkedProductId || null : null,
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
       });
@@ -279,6 +290,9 @@ export default function ProductsPage() {
       beforeCount: product.beforeCount || 0,
       companyId: product.companyId || "",
       branchId: product.branchId || "",
+      unitType: (product.unitType as "piece" | "box") || "piece",
+      unitsPerBox: product.unitsPerBox || 1,
+      linkedProductId: product.linkedProductId || "",
     });
     setImagePreview(product.imageUrl || null);
     setImageFile(null);
@@ -329,6 +343,11 @@ export default function ProductsPage() {
         beforeCount: formData.beforeCount || 0,
         branchId: formData.branchId || null,
         imageUrl: imageUrl,
+        unitType: formData.unitType || "piece",
+        unitsPerBox:
+          formData.unitType === "box" ? formData.unitsPerBox || 1 : null,
+        linkedProductId:
+          formData.unitType === "box" ? formData.linkedProductId || null : null,
         updatedAt: serverTimestamp(),
       });
 
@@ -372,6 +391,9 @@ export default function ProductsPage() {
       beforeCount: 0,
       companyId: companies[0]?.id || "",
       branchId: "",
+      unitType: "piece",
+      unitsPerBox: 1,
+      linkedProductId: "",
     });
     setImageFile(null);
     setImagePreview(null);
@@ -786,6 +808,7 @@ export default function ProductsPage() {
           onImageSelect={handleImageSelect}
           onRemoveImage={handleRemoveImage}
           uploadingImage={uploadingImage}
+          allProducts={products}
         />
       )}
 
@@ -810,6 +833,7 @@ export default function ProductsPage() {
           onImageSelect={handleImageSelect}
           onRemoveImage={handleRemoveImage}
           uploadingImage={uploadingImage}
+          allProducts={products}
         />
       )}
 
@@ -893,6 +917,9 @@ interface ProductModalProps {
     beforeCount: number;
     companyId: string;
     branchId: string;
+    unitType: "piece" | "box";
+    unitsPerBox: number;
+    linkedProductId: string;
   };
   setFormData: React.Dispatch<
     React.SetStateAction<ProductModalProps["formData"]>
@@ -908,6 +935,7 @@ interface ProductModalProps {
   onImageSelect: (e: React.ChangeEvent<HTMLInputElement>) => void;
   onRemoveImage: () => void;
   uploadingImage: boolean;
+  allProducts: Product[]; // for linkedProductId dropdown
 }
 
 function ProductModal({
@@ -925,14 +953,48 @@ function ProductModal({
   onImageSelect,
   onRemoveImage,
   uploadingImage,
+  allProducts,
 }: ProductModalProps) {
+  const [linkedSearch, setLinkedSearch] = useState("");
+  const [showLinkedDropdown, setShowLinkedDropdown] = useState(false);
+
+  // Sync search field when editing an existing product
+  useEffect(() => {
+    if (formData.linkedProductId) {
+      const matched = allProducts.find(
+        (p) => p.productId === formData.linkedProductId,
+      );
+      setLinkedSearch(
+        matched
+          ? `${matched.name} (${matched.productId})`
+          : formData.linkedProductId,
+      );
+    } else {
+      setLinkedSearch("");
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [formData.linkedProductId, allProducts.length]);
+
+  const pieceProducts = allProducts.filter(
+    (p) => !p.unitType || p.unitType === "piece",
+  );
+  const filteredLinkedProducts = linkedSearch
+    ? pieceProducts.filter(
+        (p) =>
+          p.name.toLowerCase().includes(linkedSearch.toLowerCase()) ||
+          (p.productId || "")
+            .toLowerCase()
+            .includes(linkedSearch.toLowerCase()),
+      )
+    : pieceProducts;
+
   const filteredBranches = branches.filter(
     (b) => !formData.companyId || b.companyId === formData.companyId,
   );
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white dark:bg-gray-800 rounded-xl max-w-lg w-full p-6 max-h-[90vh] overflow-y-auto">
+      <div className="bg-white dark:bg-gray-800 rounded-xl max-w-2xl w-full p-6 max-h-[90vh] overflow-y-auto">
         <h2 className="text-xl font-semibold text-gray-900 dark:text-white mb-4">
           {title}
         </h2>
@@ -1068,49 +1130,49 @@ function ProductModal({
             />
           </div>
 
-          <div>
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-              บาร์โค้ด
-            </label>
-            <input
-              type="text"
-              value={formData.barcode}
-              onChange={(e) =>
-                setFormData({ ...formData, barcode: e.target.value })
-              }
-              placeholder="8859109897033"
-              className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-            />
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-              Seller Code
-            </label>
-            <input
-              type="text"
-              value={formData.sellerCode}
-              onChange={(e) =>
-                setFormData({ ...formData, sellerCode: e.target.value })
-              }
-              placeholder="เช่น 302016"
-              className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-            />
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-              Series
-            </label>
-            <input
-              type="text"
-              value={formData.series}
-              onChange={(e) =>
-                setFormData({ ...formData, series: e.target.value })
-              }
-              placeholder="เช่น Series A, Series B"
-              className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-            />
+          <div className="grid grid-cols-3 gap-3">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                บาร์โค้ด
+              </label>
+              <input
+                type="text"
+                value={formData.barcode}
+                onChange={(e) =>
+                  setFormData({ ...formData, barcode: e.target.value })
+                }
+                placeholder="8859109897033"
+                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                Seller Code
+              </label>
+              <input
+                type="text"
+                value={formData.sellerCode}
+                onChange={(e) =>
+                  setFormData({ ...formData, sellerCode: e.target.value })
+                }
+                placeholder="เช่น 302016"
+                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                Series
+              </label>
+              <input
+                type="text"
+                value={formData.series}
+                onChange={(e) =>
+                  setFormData({ ...formData, series: e.target.value })
+                }
+                placeholder="เช่น A, B"
+                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm"
+              />
+            </div>
           </div>
 
           <div className="grid grid-cols-2 gap-4">
@@ -1149,6 +1211,142 @@ function ProductModal({
                 ))}
               </select>
             </div>
+          </div>
+
+          {/* UOM Section */}
+          <div className="border-t border-gray-200 dark:border-gray-600 pt-4">
+            <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3">
+              หน่วยสินค้า (UOM)
+            </label>
+            <div className="flex gap-3 mb-3">
+              <button
+                type="button"
+                onClick={() =>
+                  setFormData({
+                    ...formData,
+                    unitType: "piece",
+                    linkedProductId: "",
+                    unitsPerBox: 1,
+                  })
+                }
+                className={`flex-1 py-2 px-4 rounded-lg border-2 text-sm font-medium transition-colors ${
+                  formData.unitType === "piece"
+                    ? "border-blue-500 bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300"
+                    : "border-gray-300 dark:border-gray-600 text-gray-600 dark:text-gray-400 hover:border-gray-400"
+                }`}
+              >
+                📦 ชิ้น (Piece)
+              </button>
+              <button
+                type="button"
+                onClick={() => setFormData({ ...formData, unitType: "box" })}
+                className={`flex-1 py-2 px-4 rounded-lg border-2 text-sm font-medium transition-colors ${
+                  formData.unitType === "box"
+                    ? "border-orange-500 bg-orange-50 dark:bg-orange-900/30 text-orange-700 dark:text-orange-300"
+                    : "border-gray-300 dark:border-gray-600 text-gray-600 dark:text-gray-400 hover:border-gray-400"
+                }`}
+              >
+                🗃️ กล่อง (Box)
+              </button>
+            </div>
+
+            {formData.unitType === "box" && (
+              <div className="space-y-3 bg-orange-50 dark:bg-orange-900/20 rounded-lg p-3">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                    จำนวนชิ้นต่อกล่อง
+                  </label>
+                  <input
+                    type="number"
+                    min={1}
+                    value={formData.unitsPerBox}
+                    onChange={(e) =>
+                      setFormData({
+                        ...formData,
+                        unitsPerBox: parseInt(e.target.value) || 1,
+                      })
+                    }
+                    className="w-full px-4 py-2 border border-orange-300 dark:border-orange-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                    placeholder="เช่น 10, 20, 24"
+                  />
+                </div>
+                <div className="relative">
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                    เชื่อมกับสินค้า (ชิ้น)
+                  </label>
+                  <input
+                    type="text"
+                    value={linkedSearch}
+                    onChange={(e) => {
+                      setLinkedSearch(e.target.value);
+                      setShowLinkedDropdown(true);
+                      // Clear selection if user edits manually
+                      setFormData({ ...formData, linkedProductId: "" });
+                    }}
+                    onFocus={() => setShowLinkedDropdown(true)}
+                    onBlur={() =>
+                      setTimeout(() => setShowLinkedDropdown(false), 150)
+                    }
+                    placeholder="ค้นหาชื่อสินค้า หรือ Barcode..."
+                    className="w-full px-4 py-2 border border-orange-300 dark:border-orange-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400"
+                  />
+                  {formData.linkedProductId && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setFormData({ ...formData, linkedProductId: "" });
+                        setLinkedSearch("");
+                      }}
+                      className="absolute right-3 top-[2.1rem] text-gray-400 hover:text-gray-600"
+                    >
+                      ✕
+                    </button>
+                  )}
+                  {showLinkedDropdown && filteredLinkedProducts.length > 0 && (
+                    <div className="absolute z-50 mt-1 w-full max-h-52 overflow-y-auto bg-white dark:bg-gray-700 border border-orange-300 dark:border-orange-600 rounded-lg shadow-lg">
+                      <div
+                        className="px-4 py-2 text-sm text-gray-500 dark:text-gray-400 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-600"
+                        onMouseDown={() => {
+                          setFormData({ ...formData, linkedProductId: "" });
+                          setLinkedSearch("");
+                          setShowLinkedDropdown(false);
+                        }}
+                      >
+                        -- ไม่ระบุ --
+                      </div>
+                      {filteredLinkedProducts.map((p) => (
+                        <div
+                          key={p.id}
+                          onMouseDown={() => {
+                            setFormData({
+                              ...formData,
+                              linkedProductId: p.productId,
+                            });
+                            setLinkedSearch(`${p.name} (${p.productId})`);
+                            setShowLinkedDropdown(false);
+                          }}
+                          className={`px-4 py-2 cursor-pointer hover:bg-orange-50 dark:hover:bg-orange-900/30 ${
+                            formData.linkedProductId === p.productId
+                              ? "bg-orange-100 dark:bg-orange-900/50 font-medium"
+                              : ""
+                          }`}
+                        >
+                          <div className="text-sm text-gray-900 dark:text-white">
+                            {p.name}
+                          </div>
+                          <div className="text-xs text-gray-500 dark:text-gray-400">
+                            {p.productId}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  <p className="text-xs text-orange-600 dark:text-orange-400 mt-1">
+                    กล่องนี้จะถูกรวมกับสินค้าชิ้นที่เลือกตอน export รายงาน
+                  </p>
+                </div>
+              </div>
+            )}
           </div>
         </div>
 

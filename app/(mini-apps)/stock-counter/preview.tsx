@@ -75,6 +75,8 @@ export default function PreviewScreen() {
   const [detectedBarcodes, setDetectedBarcodes] = useState<string[]>([]);
   const [needsRecount, setNeedsRecount] = useState<boolean>(false);
   const [processingTime, setProcessingTime] = useState<number | null>(null);
+  const [aiModelUsed, setAiModelUsed] = useState<string>("");
+  const [aiConfidence, setAiConfidence] = useState<number>(0);
   const [sessionId, setSessionId] = useState<string | null>(
     params.existingSessionId || null,
   );
@@ -395,10 +397,11 @@ export default function PreviewScreen() {
       }
 
       // 1. วิเคราะห์รูปด้วย AI พร้อม barcode validation
-      // ใช้ nativeScannedBarcode ถ้ามี (แม่นยำกว่า) มิฉะนั้นใช้ productBarcode จากระบบ
+      // ใช้ productBarcode จากระบบเป็นหลัก (barcode ที่ลงทะเบียนในฐานข้อมูล)
+      // nativeScannedBarcode อาจเป็น barcode ของผู้ผลิตต่างประเทศ ≠ barcode ในระบบ
       // AI จะตรวจบาร์โค้ดในรูปเสมอ — ป้องกัน fraud (สแกนสินค้าถูก แต่ถ่ายรูปสินค้าผิด)
       const effectiveExpectedBarcode =
-        params.nativeScannedBarcode || params.productBarcode || undefined;
+        params.productBarcode || params.nativeScannedBarcode || undefined;
 
       const result: BarcodeCountResult = await countBarcodesInImage(
         base64ForAI,
@@ -411,6 +414,8 @@ export default function PreviewScreen() {
       setDetectedBarcodes(result.detectedBarcodes);
       setNeedsRecount(result.needsRecount ?? false);
       setProcessingTime(result.processingTime);
+      setAiModelUsed(result.modelUsed);
+      setAiConfidence(result.confidence);
 
       // needsRecount = AI detected correct barcode but gave inconsistent count=0 (hallucination)
       if (result.needsRecount) {
@@ -446,7 +451,7 @@ export default function PreviewScreen() {
           currentCountQty: countToSave,
           variance: variance,
           aiCount: countToSave,
-          aiConfidence: 0.95,
+          aiConfidence: result.confidence,
           manualCount: countToSave,
           finalCount: countToSave,
           discrepancy: Math.abs(variance),
@@ -471,6 +476,9 @@ export default function PreviewScreen() {
     params.beforeQty,
     params.imageUri,
     params.isSupplementMode,
+    params.nativeScannedBarcode,
+    params.productBarcode,
+    params.productName,
   ]);
 
   const handleRetake = () => {
@@ -543,6 +551,8 @@ export default function PreviewScreen() {
         userReportedCount: disputeCount.trim() || "",
         disputeRemark: disputeRemark.trim() || "",
         isSupplemental: params.isSupplemental || "",
+        aiModelUsed: aiModelUsed || "",
+        aiConfidence: aiConfidence.toString(),
       },
     });
   };
@@ -1001,19 +1011,25 @@ export default function PreviewScreen() {
               styles.confirmButton,
               {
                 backgroundColor:
-                  barcodeMatch === false && !!params.productBarcode
+                  barcodeMatch === false &&
+                  !!params.productBarcode &&
+                  !(showDisputeForm && disputeCount.trim().length > 0)
                     ? "#dc2626"
                     : colors.primary,
               },
               (barcodeCount === null ||
-                (barcodeMatch === false && !!params.productBarcode)) && {
+                (barcodeMatch === false &&
+                  !!params.productBarcode &&
+                  !(showDisputeForm && disputeCount.trim().length > 0))) && {
                 opacity: 0.5,
               },
             ]}
             onPress={handleConfirm}
             disabled={
               barcodeCount === null ||
-              (barcodeMatch === false && !!params.productBarcode)
+              (barcodeMatch === false &&
+                !!params.productBarcode &&
+                !(showDisputeForm && disputeCount.trim().length > 0))
             }
           >
             <Ionicons name="checkmark" size={20} color="#fff" />
