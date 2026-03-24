@@ -46,6 +46,8 @@ export interface BarcodeCountResult {
   matchedBarcode: string; // the barcode that matched (if any)
   processingTime: number;
   needsRecount?: boolean; // true when barcode found in image but AI gave inconsistent count
+  modelUsed: string; // actual Gemini model name used
+  confidence: number; // 0-1 heuristic based on result quality
 }
 
 /**
@@ -70,8 +72,9 @@ export const countBarcodesInImage = async (
     const apiKey = await getGeminiApiKey();
     const genAI = new GoogleGenerativeAI(apiKey);
 
+    const MODEL_NAME = "gemini-3-flash-preview";
     const model = genAI.getGenerativeModel(
-      { model: "gemini-3-flash-preview" },
+      { model: MODEL_NAME },
       { apiVersion: "v1beta" },
     );
 
@@ -324,6 +327,18 @@ Return ONLY valid JSON:
         ).catch(() => {});
       }
 
+      // Heuristic confidence based on result quality:
+      // - exact match = 1.0, fuzzy override = 0.75, no match but barcodes found = 0.5, nothing = 0.3
+      const confidence = !expectedBarcode
+        ? 0.9
+        : aiMatch && !fuzzyOverride
+          ? 1.0
+          : fuzzyOverride
+            ? 0.75
+            : detectedBarcodes.length > 0
+              ? 0.5
+              : 0.3;
+
       return {
         count: finalCount,
         detectedBarcodes,
@@ -331,6 +346,8 @@ Return ONLY valid JSON:
         matchedBarcode,
         processingTime,
         needsRecount,
+        modelUsed: MODEL_NAME,
+        confidence,
       };
     } catch (parseErr) {
       // Log failure (async, non-blocking)
@@ -357,6 +374,8 @@ Return ONLY valid JSON:
         barcodeMatch: false,
         matchedBarcode: "",
         processingTime,
+        modelUsed: MODEL_NAME,
+        confidence: 0,
       };
     }
   } catch (error) {

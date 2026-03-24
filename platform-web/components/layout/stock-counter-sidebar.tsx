@@ -139,6 +139,12 @@ const navGroups: NavGroup[] = [
         icon: Clock,
       },
       {
+        name: "ตั้งค่าเวลาทำงาน",
+        href: "/stock-counter/dashboard/attendance/settings",
+        icon: Settings,
+        hideForSupervisor: true,
+      },
+      {
         name: "แจ้งเตือนขาดงาน",
         href: "/stock-counter/dashboard/alerts",
         icon: AlertTriangle,

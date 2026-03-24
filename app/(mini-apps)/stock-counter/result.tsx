@@ -41,13 +41,11 @@ export default function ResultScreen() {
     userReportedCount?: string;
     disputeRemark?: string;
     isSupplemental?: string; // "รูปเพิ่มเติม" ไม่นับรวมกับจำนวนหลัก
+    aiModelUsed?: string;
+    aiConfidence?: string;
   }>();
 
   const isSupplemental = params.isSupplemental === "true";
-
-  // Block save when barcode mismatch
-  const isBarcodeMatch = params.barcodeMatchStatus !== "mismatch";
-  const canSave = isBarcodeMatch && !isSaving;
 
   const barcodeCount = parseInt(params.barcodeCount || "0", 10);
   const processingTime = parseInt(params.processingTime || "0", 10);
@@ -58,6 +56,10 @@ export default function ResultScreen() {
     : null;
   const disputeRemark = params.disputeRemark?.trim() || null;
   const hasDispute = userReportedCount !== null || !!disputeRemark;
+
+  // Block save when barcode mismatch — unless user filed a dispute
+  const isBarcodeMatch = params.barcodeMatchStatus !== "mismatch";
+  const canSave = (isBarcodeMatch || hasDispute) && !isSaving;
 
   const watermarkData: WatermarkData | null = useMemo(() => {
     try {
@@ -117,11 +119,15 @@ export default function ResultScreen() {
           );
         }
 
+        const saveMsg = isSupplemental
+          ? `แนบรูปเพิ่มเติม ${barcodeCount} รายการเรียบร้อยแล้ว`
+          : hasDispute && userReportedCount !== null
+            ? `บันทึกสำเร็จ\nAI นับได้: ${barcodeCount} | คุณรายงาน: ${userReportedCount} รายการ\n(บันทึกไว้ให้ผู้ดูแลตรวจสอบ)`
+            : `ยืนยันผลการนับ ${barcodeCount} รายการเรียบร้อยแล้ว`;
+
         Alert.alert(
           isSupplemental ? "แนบรูปเพิ่มเติมสำเร็จ" : "ยืนยันสำเร็จ",
-          isSupplemental
-            ? `แนบรูปเพิ่มเติม ${barcodeCount} รายการเรียบร้อยแล้ว`
-            : `ยืนยันผลการนับ ${barcodeCount} รายการเรียบร้อยแล้ว`,
+          saveMsg,
           [
             {
               text: "ตกลง",
@@ -156,8 +162,8 @@ export default function ResultScreen() {
         currentCountQty: barcodeCount,
         variance: variance,
         imageUrl: imageUrl,
-        aiConfidence: 0.95,
-        aiModel: "gemini-2.5-flash",
+        aiConfidence: params.aiConfidence ? parseFloat(params.aiConfidence) : 0,
+        aiModel: params.aiModelUsed || "gemini-3-flash-preview",
         processingTime: processingTime,
         deviceInfo: watermarkData?.deviceModel || "",
         appVersion: "1.0.0",
@@ -277,7 +283,9 @@ export default function ResultScreen() {
                 marginTop: 4,
               }}
             >
-              ไม่สามารถบันทึกได้ กรุณาถ่ายรูปสินค้าที่ถูกต้องใหม่
+              {hasDispute
+                ? "กรอกจำนวนจริงแล้ว — สามารถบันทึกได้"
+                : "ไม่สามารถบันทึกได้ กรุณาถ่ายรูปสินค้าที่ถูกต้องใหม่"}
             </Text>
           </View>
         )}
@@ -495,14 +503,20 @@ export default function ResultScreen() {
           style={[
             styles.actionButton,
             styles.saveButton,
-            { backgroundColor: !canSave ? "#9ca3af" : "#10b981" },
+            {
+              backgroundColor: !canSave
+                ? "#9ca3af"
+                : !isBarcodeMatch && hasDispute
+                  ? "#f59e0b"
+                  : "#10b981",
+            },
           ]}
           onPress={handleSave}
           disabled={!canSave}
         >
           {isSaving ? (
             <ActivityIndicator size="small" color="#fff" />
-          ) : !isBarcodeMatch ? (
+          ) : !isBarcodeMatch && !hasDispute ? (
             <Ionicons name="close-circle-outline" size={20} color="#fff" />
           ) : (
             <Ionicons name="save-outline" size={20} color="#fff" />
@@ -510,7 +524,7 @@ export default function ResultScreen() {
           <Text style={[styles.actionButtonText, { color: "#fff" }]}>
             {isSaving
               ? "กำลังบันทึก..."
-              : !isBarcodeMatch
+              : !isBarcodeMatch && !hasDispute
                 ? "บาร์โค้ดไม่ตรง — กรุณาถ่ายใหม่"
                 : "บันทึกผล"}
           </Text>

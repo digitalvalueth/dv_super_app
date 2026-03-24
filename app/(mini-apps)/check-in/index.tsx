@@ -12,6 +12,8 @@ import { router } from "expo-router";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
+  Alert,
+  Modal,
   RefreshControl,
   ScrollView,
   StyleSheet,
@@ -36,6 +38,9 @@ export default function CheckInIndex() {
   const [refreshing, setRefreshing] = useState(false);
   const [workStartTime, setWorkStartTime] = useState("10:00");
   const [workEndTime, setWorkEndTime] = useState("18:00");
+  const [workShifts, setWorkShifts] = useState<string[]>([]);
+  const [selectedShift, setSelectedShift] = useState<string | null>(null);
+  const [showShiftPicker, setShowShiftPicker] = useState(false);
   const [nowTime, setNowTime] = useState(new Date());
   const lastReminderKeyRef = useRef<string | null>(null);
 
@@ -64,6 +69,10 @@ export default function CheckInIndex() {
         }
         if (settings?.workEndTime) {
           setWorkEndTime(settings.workEndTime);
+        }
+        if (settings?.workShifts && settings.workShifts.length > 0) {
+          setWorkShifts(settings.workShifts);
+          setSelectedShift(settings.workShifts[0]);
         }
       }
     } catch (error) {
@@ -100,13 +109,53 @@ export default function CheckInIndex() {
   }, [loadTodayStatus]);
 
   const handleCheckIn = () => {
-    router.push({
-      pathname: "/(mini-apps)/check-in/camera",
-      params: { type: "check-in" },
-    });
+    if (workShifts.length > 1) {
+      setShowShiftPicker(true);
+    } else {
+      goToCameraWithShift(workShifts[0] || workStartTime);
+    }
   };
 
+  const goToCameraWithShift = (shift: string) => {
+    setShowShiftPicker(false);
+    router.push({
+      pathname: "/(mini-apps)/check-in/camera",
+      params: { type: "check-in", selectedShift: shift },
+    });
+  };
   const handleCheckOut = () => {
+    // If checking out before the scheduled end time, confirm first
+    const now = new Date();
+    const endDate = getWorkEndDate();
+    const earlyMs = endDate.getTime() - now.getTime();
+    if (earlyMs > 0) {
+      const totalMinutes = Math.ceil(earlyMs / 60000);
+      const hours = Math.floor(totalMinutes / 60);
+      const minutes = totalMinutes % 60;
+      const timeLabel =
+        hours > 0 && minutes > 0
+          ? `${hours} ชั่วโมง ${minutes} นาที`
+          : hours > 0
+            ? `${hours} ชั่วโมง`
+            : `${minutes} นาที`;
+      Alert.alert(
+        "ออกก่อนเวลา",
+        `คุณกำลังจะออกก่อนเวลาเลิกงาน ${timeLabel}\n(เวลาเลิกงาน ${effectiveWorkEndTime} น.)\n\nยืนยันการลงเวลาเลิกงาน?`,
+        [
+          { text: "ยกเลิก", style: "cancel" },
+          {
+            text: "ยืนยัน",
+            style: "destructive",
+            onPress: () =>
+              router.push({
+                pathname: "/(mini-apps)/check-in/camera",
+                params: { type: "check-out" },
+              }),
+          },
+        ],
+      );
+      return;
+    }
     router.push({
       pathname: "/(mini-apps)/check-in/camera",
       params: { type: "check-out" },
@@ -141,12 +190,32 @@ export default function CheckInIndex() {
   const hasCheckedIn = !!todayCheckIn;
   const hasCheckedOut = !!todayCheckOut;
 
+  // After check-in, use the stored selectedShift from Firestore record
+  const activeShift = hasCheckedIn
+    ? todayCheckIn?.selectedShift || workStartTime
+    : selectedShift || workShifts[0] || workStartTime;
+
+  const shiftDurationMinutes = (() => {
+    const [sh, sm] = workStartTime.split(":").map(Number);
+    const [eh, em] = workEndTime.split(":").map(Number);
+    return eh * 60 + em - (sh * 60 + sm);
+  })();
+
+  const effectiveWorkEndTime = (() => {
+    if (workShifts.length <= 1) return workEndTime;
+    const [h, m] = activeShift.split(":").map(Number);
+    const total = h * 60 + m + shiftDurationMinutes;
+    const eh = Math.floor(total / 60) % 24;
+    const em = total % 60;
+    return `${String(eh).padStart(2, "0")}:${String(em).padStart(2, "0")}`;
+  })();
+
   const getWorkEndDate = useCallback(() => {
-    const [hour, minute] = workEndTime.split(":").map(Number);
+    const [hour, minute] = effectiveWorkEndTime.split(":").map(Number);
     const endDate = new Date(nowTime);
     endDate.setHours(hour, minute, 0, 0);
     return endDate;
-  }, [workEndTime, nowTime]);
+  }, [effectiveWorkEndTime, nowTime]);
 
   const minutesToCheckout = Math.ceil(
     (getWorkEndDate().getTime() - nowTime.getTime()) / 60000,
@@ -161,7 +230,7 @@ export default function CheckInIndex() {
       const workEndDate = getWorkEndDate();
       const reminderDate = new Date(workEndDate.getTime() - 15 * 60000);
       const dateKey = nowTime.toISOString().split("T")[0];
-      const reminderKey = `${user.uid}-${dateKey}-${workEndTime}`;
+      const reminderKey = `${user.uid}-${dateKey}-${effectiveWorkEndTime}`;
 
       if (lastReminderKeyRef.current === reminderKey) {
         return;
@@ -177,7 +246,10 @@ export default function CheckInIndex() {
               data: { type: "checkout-reminder" },
               sound: "default",
             },
-            trigger: reminderDate as any,
+            trigger: {
+              type: Notifications.SchedulableTriggerInputTypes.DATE,
+              date: reminderDate,
+            },
           });
         }
 
@@ -189,7 +261,10 @@ export default function CheckInIndex() {
               data: { type: "checkout-reminder" },
               sound: "default",
             },
-            trigger: workEndDate as any,
+            trigger: {
+              type: Notifications.SchedulableTriggerInputTypes.DATE,
+              date: workEndDate,
+            },
           });
         }
       } catch (error) {
@@ -198,7 +273,13 @@ export default function CheckInIndex() {
     };
 
     scheduleCheckoutReminder();
-  }, [getWorkEndDate, nowTime, shouldShowCountdown, user?.uid, workEndTime]);
+  }, [
+    getWorkEndDate,
+    nowTime,
+    shouldShowCountdown,
+    user?.uid,
+    effectiveWorkEndTime,
+  ]);
 
   return (
     <SafeAreaView
@@ -447,9 +528,27 @@ export default function CheckInIndex() {
                   { color: minutesToCheckout > 0 ? "#3B82F6" : "#DC2626" },
                 ]}
               >
-                เวลาเลิกงานตั้งไว้ {workEndTime} น.
+                เวลาเลิกงานตั้งไว้ {effectiveWorkEndTime} น.
               </Text>
             </View>
+          </View>
+        )}
+
+        {/* Inline Shift Preview - shows selected shift after check-in */}
+        {workShifts.length > 1 && !hasCheckedIn && (
+          <View
+            style={[
+              styles.shiftPreviewCard,
+              {
+                backgroundColor: isDark ? colors.card : "#F0FDF4",
+                borderColor: isDark ? colors.border : "#BBF7D0",
+              },
+            ]}
+          >
+            <Ionicons name="time-outline" size={18} color="#16A34A" />
+            <Text style={[styles.shiftPreviewText, { color: "#16A34A" }]}>
+              เลือกกะก่อนลงเวลา — กดปุ่มด้านล่างเพื่อเลือก
+            </Text>
           </View>
         )}
 
@@ -543,12 +642,105 @@ export default function CheckInIndex() {
               เวลาทำงาน
             </Text>
             <Text style={[styles.infoText, { color: "#3B82F6" }]}>
-              เข้างานก่อน {workStartTime} น. • เลิกงาน {workEndTime} น. •
-              ถ่ายรูปยืนยันพร้อมบูธ
+              เข้างานก่อน {workStartTime} น. • เลิกงาน {effectiveWorkEndTime} น.
+              • ถ่ายรูปยืนยันพร้อมบูธ
             </Text>
           </View>
         </View>
       </ScrollView>
+
+      {/* Shift Picker Modal */}
+      <Modal
+        visible={showShiftPicker}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setShowShiftPicker(false)}
+      >
+        <TouchableOpacity
+          style={styles.modalBackdrop}
+          activeOpacity={1}
+          onPress={() => setShowShiftPicker(false)}
+        />
+        <View
+          style={[
+            styles.shiftSheet,
+            { backgroundColor: isDark ? colors.card : "#FFFFFF" },
+          ]}
+        >
+          <View style={styles.shiftSheetHandle} />
+          <Text style={[styles.shiftSheetTitle, { color: colors.text }]}>
+            เลือกกะเข้างาน
+          </Text>
+          <Text
+            style={[styles.shiftSheetSubtitle, { color: colors.textSecondary }]}
+          >
+            กรุณาเลือกช่วงเวลาเข้างานของคุณ
+          </Text>
+          <View style={styles.shiftList}>
+            {workShifts.map((shift) => {
+              const [sh, sm] = shift.split(":").map(Number);
+              const total = sh * 60 + sm + shiftDurationMinutes;
+              const endH = Math.floor(total / 60) % 24;
+              const endM = total % 60;
+              const endShift = `${String(endH).padStart(2, "0")}:${String(endM).padStart(2, "0")}`;
+              const period =
+                sh < 12 ? "ช่วงเช้า" : sh < 17 ? "ช่วงบ่าย" : "ช่วงเย็น";
+              return (
+                <TouchableOpacity
+                  key={shift}
+                  style={[
+                    styles.shiftItem,
+                    {
+                      backgroundColor: isDark ? colors.background : "#F9FAFB",
+                      borderColor: colors.border,
+                    },
+                  ]}
+                  onPress={() => goToCameraWithShift(shift)}
+                >
+                  <View
+                    style={[
+                      styles.shiftIconBg,
+                      { backgroundColor: colors.primary + "15" },
+                    ]}
+                  >
+                    <Ionicons name="time" size={22} color={colors.primary} />
+                  </View>
+                  <View style={styles.shiftItemText}>
+                    <Text
+                      style={[styles.shiftTimeText, { color: colors.text }]}
+                    >
+                      เข้า {shift} น. • ออก {endShift} น.
+                    </Text>
+                    <Text
+                      style={[
+                        styles.shiftPeriodText,
+                        { color: colors.textSecondary },
+                      ]}
+                    >
+                      {period}
+                    </Text>
+                  </View>
+                  <Ionicons
+                    name="chevron-forward"
+                    size={20}
+                    color={colors.textSecondary}
+                  />
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+          <TouchableOpacity
+            style={[styles.shiftCancelButton, { borderColor: colors.border }]}
+            onPress={() => setShowShiftPicker(false)}
+          >
+            <Text
+              style={[styles.shiftCancelText, { color: colors.textSecondary }]}
+            >
+              ยกเลิก
+            </Text>
+          </TouchableOpacity>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -727,5 +919,93 @@ const styles = StyleSheet.create({
   infoText: {
     fontSize: 13,
     lineHeight: 18,
+  },
+  shiftPreviewCard: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    borderRadius: 12,
+    borderWidth: 1,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    marginBottom: 12,
+  },
+  shiftPreviewText: {
+    fontSize: 13,
+    fontWeight: "500",
+    flex: 1,
+  },
+  modalBackdrop: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.4)",
+  },
+  shiftSheet: {
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    paddingHorizontal: 20,
+    paddingBottom: 36,
+    paddingTop: 12,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: -2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 8,
+  },
+  shiftSheetHandle: {
+    width: 40,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: "#D1D5DB",
+    alignSelf: "center",
+    marginBottom: 16,
+  },
+  shiftSheetTitle: {
+    fontSize: 20,
+    fontWeight: "700",
+    marginBottom: 4,
+  },
+  shiftSheetSubtitle: {
+    fontSize: 14,
+    marginBottom: 20,
+  },
+  shiftList: {
+    gap: 10,
+  },
+  shiftItem: {
+    flexDirection: "row",
+    alignItems: "center",
+    borderRadius: 14,
+    borderWidth: 1,
+    padding: 14,
+    gap: 12,
+  },
+  shiftIconBg: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  shiftItemText: {
+    flex: 1,
+  },
+  shiftTimeText: {
+    fontSize: 16,
+    fontWeight: "600",
+  },
+  shiftPeriodText: {
+    fontSize: 13,
+    marginTop: 2,
+  },
+  shiftCancelButton: {
+    marginTop: 16,
+    borderRadius: 14,
+    borderWidth: 1,
+    paddingVertical: 14,
+    alignItems: "center",
+  },
+  shiftCancelText: {
+    fontSize: 16,
+    fontWeight: "500",
   },
 });

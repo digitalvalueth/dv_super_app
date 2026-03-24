@@ -2129,7 +2129,7 @@ export default function WatsonExcelValidatorPage() {
     [data, headers, setData, logAutoFix],
   );
 
-  const WATSON_VERSION = "v6.02.0.11";
+  const WATSON_VERSION = "v6.02.0.12";
 
   const handleExportFixed = useCallback(() => {
     if (showPriceColumns) {
