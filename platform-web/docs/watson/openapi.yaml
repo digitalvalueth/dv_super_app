@@ -54,18 +54,24 @@ paths:
           example: "2026-02-20T23:59:59Z"
         - name: confirmed_start_date
           in: query
-          description: Filter exports confirmed after this date (based on confirmedAt)
+          description: |
+            Filter exports confirmed after this date (based on confirmedAt).
+            **ใส่เป็น Thai time (UTC+7)** ไม่ต้องแปลง — เช่น ถ้าเห็น `19:53` บนเว็บ ก็ใส่ `19:53` ตรงๆ
+            รองรับทุกรูปแบบ: `2026-03-24T19:53:00`, `2026-03-24T19:53:00Z`, `2026-03-24T19:53:00+07:00`
           schema:
             type: string
             format: date-time
-          example: "2026-02-20T00:00:00Z"
+          example: "2026-03-24T19:00:00+07:00"
         - name: confirmed_end_date
           in: query
-          description: Filter exports confirmed before this date (based on confirmedAt)
+          description: |
+            Filter exports confirmed before this date (based on confirmedAt).
+            **ใส่เป็น Thai time (UTC+7)** ไม่ต้องแปลง — เช่น ถ้าเห็น `19:53` บนเว็บ ก็ใส่ `19:53` ตรงๆ
+            รองรับทุกรูปแบบ: `2026-03-24T23:59:59`, `2026-03-24T23:59:59Z`, `2026-03-24T23:59:59+07:00`
           schema:
             type: string
             format: date-time
-          example: "2026-02-20T23:59:59Z"
+          example: "2026-03-24T23:59:59+07:00"
         - name: limit
           in: query
           description: Number of results (default 50, max 100)
@@ -107,7 +113,7 @@ paths:
                     reportDate: "26/01/2026 15:07:25"
                     exportedAt: "2026-02-16T04:11:10.779Z"
                     status: confirmed
-                    confirmedAt: "2026-02-16T04:45:49.055Z"
+                    confirmedAt: "2026-02-16T11:45:49.055+07:00"
                     rowCount: 12998
                     passedCount: 12998
                     lowConfidenceCount: 0
@@ -156,9 +162,9 @@ paths:
                   supplierCode: "1087212501"
                   supplierName: "1087212501 - PHITHANLIFE COMPANY LIMITED"
                   reportDate: "26/01/2026 15:07:25"
-                  exportedAt: "2026-02-20T04:08:28.891Z"
+                  exportedAt: "2026-02-20T11:08:28.891+07:00"
                   status: confirmed
-                  confirmedAt: "2026-02-20T04:08:36.290Z"
+                  confirmedAt: "2026-02-20T11:08:36.290+07:00"
                   confirmedBy: null
                   rowCount: 161
                   passedCount: 161
@@ -259,7 +265,7 @@ paths:
                 data:
                   id: UTxIl6TNzzf8vyvvHQD2
                   status: confirmed
-                  confirmedAt: "2026-02-16T04:45:49.055Z"
+                  confirmedAt: "2026-02-16T11:45:49.055+07:00"
                   confirmedBy: "admin@company.com"
                   message: "Export confirmed successfully"
         "400":
