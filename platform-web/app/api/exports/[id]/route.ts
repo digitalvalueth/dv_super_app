@@ -3,6 +3,12 @@ import { COLLECTIONS } from "@/lib/watson-firebase";
 import { Timestamp } from "firebase-admin/firestore";
 import { NextRequest, NextResponse } from "next/server";
 
+// Return a Date shifted to Thai time (UTC+7), keeping Z suffix for plain timestamp display
+const toThaiISO = (date: Date): string => {
+  const thai = new Date(date.getTime() + 7 * 60 * 60 * 1000);
+  return thai.toISOString();
+};
+
 // GET /api/exports/[id] — fetch export detail including all row data
 export async function GET(
   _req: NextRequest,
@@ -52,7 +58,7 @@ export async function GET(
         ...d,
         id: docSnap.id,
         exportedAt: d.exportedAt?.toDate?.().toISOString() || null,
-        confirmedAt: d.confirmedAt?.toDate?.().toISOString() || null,
+        confirmedAt: d.confirmedAt ? toThaiISO(d.confirmedAt.toDate()) : null,
         data: rowData,
         storagePath: undefined,
         storageUrl: undefined,
@@ -110,7 +116,7 @@ export async function PATCH(
       );
     }
 
-    const now = new Date().toISOString();
+    const now = toThaiISO(new Date());
     let update: Record<string, unknown>;
 
     if (action === "confirm") {
