@@ -3,6 +3,18 @@ import { COLLECTIONS } from "@/lib/watson-firebase";
 import { Timestamp } from "firebase-admin/firestore";
 import { NextRequest, NextResponse } from "next/server";
 
+// Return a Date shifted to Thai time (UTC+7), keeping Z suffix for plain timestamp display
+const toThaiISO = (date: Date): string => {
+  const thai = new Date(date.getTime() + 7 * 60 * 60 * 1000);
+  return thai.toISOString();
+};
+
+// Parse filter date param as Thai time (UTC+7) regardless of supplied offset/Z
+const parseThaiFilter = (dateStr: string): Date => {
+  const base = dateStr.replace(/Z$/, "").replace(/[+-]\d{2}:?\d{2}$/, "");
+  return new Date(base + "+07:00");
+};
+
 // POST /api/exports — create a new export record
 export async function POST(req: NextRequest) {
   try {
@@ -161,14 +173,14 @@ export async function GET(req: NextRequest) {
         query = query.where(
           "confirmedAt",
           ">=",
-          Timestamp.fromDate(new Date(confirmedStart)),
+          Timestamp.fromDate(parseThaiFilter(confirmedStart)),
         );
       }
       if (confirmedEnd) {
         query = query.where(
           "confirmedAt",
           "<=",
-          Timestamp.fromDate(new Date(confirmedEnd)),
+          Timestamp.fromDate(parseThaiFilter(confirmedEnd)),
         );
       }
       query = query.orderBy("confirmedAt", "desc");
@@ -203,7 +215,7 @@ export async function GET(req: NextRequest) {
         ...d,
         id: doc.id,
         exportedAt: d.exportedAt?.toDate?.().toISOString() || null,
-        confirmedAt: d.confirmedAt?.toDate?.().toISOString() || null,
+        confirmedAt: d.confirmedAt ? toThaiISO(d.confirmedAt.toDate()) : null,
         // Omit data/storagePath from list response
         data: undefined,
         storagePath: undefined,
