@@ -2,15 +2,18 @@
 
 import { db } from "@/lib/firebase";
 import { useAuthStore } from "@/stores/auth.store";
+import { User } from "@/types";
 import { format } from "date-fns";
 import { th } from "date-fns/locale";
 import {
   addDoc,
   collection,
   doc,
+  getDoc,
   getDocs,
   query,
   serverTimestamp,
+  setDoc,
   Timestamp,
   updateDoc,
   where,
@@ -49,6 +52,27 @@ interface CountingPeriod {
   createdAt?: Timestamp;
 }
 
+interface CountingUploadOverride {
+  companyId: string;
+  enabled?: boolean;
+  startAt?: Timestamp;
+  endAt?: Timestamp;
+  reason?: string;
+  allowedUserIds?: string[];
+  targetPeriodDocId?: string;
+  targetPeriodKey?: string;
+  targetYear?: number;
+  targetMonth?: number;
+  targetHalf?: PeriodHalf;
+  targetPeriodLabel?: string;
+  targetStartDate?: Timestamp;
+  targetEndDate?: Timestamp;
+  updatedAt?: Timestamp;
+  updatedBy?: string;
+  updatedByName?: string;
+  createdAt?: Timestamp;
+}
+
 // ---- Helpers ----
 const THAI_MONTHS = [
   "",
@@ -70,6 +94,11 @@ function getPeriodLabel(period: CountingPeriod) {
   const start = period.startDate.toDate();
   const end = period.endDate.toDate();
   return `${start.getDate()}–${end.getDate()} ${THAI_MONTHS[period.month]} ${period.year + 543}`;
+}
+
+function getPeriodKey(period: Pick<CountingPeriod, "year" | "month" | "half">) {
+  const paddedMonth = String(period.month).padStart(2, "0");
+  return `${period.year}-${paddedMonth}-H${period.half}`;
 }
 
 function computeStatus(period: CountingPeriod): PeriodStatus {
@@ -133,6 +162,60 @@ function addDays(date: Date, days: number) {
   return d;
 }
 
+function toDateTimeLocalValue(date: Date): string {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  const hours = String(date.getHours()).padStart(2, "0");
+  const minutes = String(date.getMinutes()).padStart(2, "0");
+  return `${year}-${month}-${day}T${hours}:${minutes}`;
+}
+
+function getDefaultTemporaryOpenUntil(): string {
+  const end = new Date();
+  end.setHours(end.getHours() + 4, 0, 0, 0);
+  return toDateTimeLocalValue(end);
+}
+
+function formatOverrideDateTime(timestamp?: Timestamp): string {
+  if (!timestamp) return "-";
+  return format(timestamp.toDate(), "d MMM yyyy HH:mm", { locale: th });
+}
+
+function isTemporaryOpenActive(
+  override: CountingUploadOverride | null,
+  now: Date = new Date(),
+): boolean {
+  if (!override?.enabled || !override.endAt) {
+    return false;
+  }
+
+  const nowMs = now.getTime();
+  const startMs = override.startAt?.toDate().getTime() ?? 0;
+  const endMs = override.endAt.toDate().getTime();
+
+  return nowMs >= startMs && nowMs <= endMs;
+}
+
+function getOverrideTargetLabel(
+  override: CountingUploadOverride | null,
+  fallbackPeriod: CountingPeriod | null,
+): string | null {
+  if (override?.targetPeriodLabel) {
+    return override.targetPeriodLabel;
+  }
+
+  if (fallbackPeriod) {
+    return getPeriodLabel(fallbackPeriod);
+  }
+
+  return null;
+}
+
+function getUserIdentifier(user: User): string {
+  return user.uid || user.id;
+}
+
 // ---- Component ----
 export default function CountingPeriodsPage() {
   const { userData } = useAuthStore();
@@ -147,6 +230,19 @@ export default function CountingPeriodsPage() {
   const [selectedMonth, setSelectedMonth] = useState<number | null>(
     new Date().getMonth() + 1,
   ); // default เดือนปัจจุบัน
+  const [uploadOverride, setUploadOverride] =
+    useState<CountingUploadOverride | null>(null);
+  const [overrideLoading, setOverrideLoading] = useState(true);
+  const [overrideSaving, setOverrideSaving] = useState(false);
+  const [temporaryOpenUntil, setTemporaryOpenUntil] = useState(
+    getDefaultTemporaryOpenUntil(),
+  );
+  const [temporaryOpenReason, setTemporaryOpenReason] = useState("");
+  const [suggestedTargetPeriod, setSuggestedTargetPeriod] =
+    useState<CountingPeriod | null>(null);
+  const [companyEmployees, setCompanyEmployees] = useState<User[]>([]);
+  const [restrictToSelectedUsers, setRestrictToSelectedUsers] = useState(false);
+  const [selectedLateUserIds, setSelectedLateUserIds] = useState<string[]>([]);
 
   const companyId = userData?.companyId ?? "";
   const isSuperAdmin = userData?.role === "super_admin";
@@ -155,12 +251,236 @@ export default function CountingPeriodsPage() {
     userData?.role === "super_admin" ||
     userData?.role === "manager" ||
     userData?.role === "supervisor";
+  const canManageTemporaryOpen =
+    userData?.role === "admin" ||
+    userData?.role === "super_admin" ||
+    userData?.role === "manager";
 
   useEffect(() => {
     if (!companyId && !isSuperAdmin) return;
     fetchPeriods();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [companyId, selectedYear]);
+
+  useEffect(() => {
+    if (!companyId) {
+      setUploadOverride(null);
+      setTemporaryOpenUntil(getDefaultTemporaryOpenUntil());
+      setTemporaryOpenReason("");
+      setCompanyEmployees([]);
+      setRestrictToSelectedUsers(false);
+      setSelectedLateUserIds([]);
+      setOverrideLoading(false);
+      return;
+    }
+
+    void loadUploadOverride(companyId);
+    void loadSuggestedTargetPeriod(companyId);
+    void loadCompanyEmployees(companyId);
+  }, [companyId]);
+
+  async function loadCompanyEmployees(targetCompanyId: string) {
+    try {
+      const usersSnap = await getDocs(
+        query(
+          collection(db, "users"),
+          where("companyId", "==", targetCompanyId),
+        ),
+      );
+
+      const employees = usersSnap.docs
+        .map((userDoc) => {
+          const userData = userDoc.data() as Partial<User>;
+          return {
+            id: userDoc.id,
+            uid: userData.uid || userDoc.id,
+            email: userData.email || "",
+            ...userData,
+          } as User;
+        })
+        .filter((employee) => employee.role === "employee")
+        .sort((left, right) =>
+          (left.name || left.displayName || left.email).localeCompare(
+            right.name || right.displayName || right.email,
+            "th",
+          ),
+        );
+
+      setCompanyEmployees(employees);
+    } catch (err) {
+      console.error(err);
+      setCompanyEmployees([]);
+    }
+  }
+
+  async function loadSuggestedTargetPeriod(targetCompanyId: string) {
+    try {
+      const now = new Date();
+      const year = now.getFullYear();
+      const prevYear = now.getMonth() === 0 ? year - 1 : year;
+      const yearsToQuery = year === prevYear ? [year] : [year, prevYear];
+
+      const periodsSnap = await getDocs(
+        query(
+          collection(db, "countingPeriods"),
+          where("companyId", "==", targetCompanyId),
+          where("year", "in", yearsToQuery),
+        ),
+      );
+
+      const latestPastPeriod = periodsSnap.docs
+        .map(
+          (periodDoc) =>
+            ({
+              id: periodDoc.id,
+              ...(periodDoc.data() as Omit<CountingPeriod, "id">),
+            }) as CountingPeriod,
+        )
+        .filter((period) => period.endDate.toDate().getTime() < now.getTime())
+        .sort(
+          (left, right) =>
+            right.endDate.toDate().getTime() - left.endDate.toDate().getTime(),
+        )[0];
+
+      setSuggestedTargetPeriod(latestPastPeriod ?? null);
+    } catch (err) {
+      console.error(err);
+      setSuggestedTargetPeriod(null);
+    }
+  }
+
+  async function loadUploadOverride(targetCompanyId: string) {
+    try {
+      setOverrideLoading(true);
+      const overrideSnap = await getDoc(
+        doc(db, "countingUploadOverrides", targetCompanyId),
+      );
+
+      if (!overrideSnap.exists()) {
+        setUploadOverride(null);
+        setTemporaryOpenUntil(getDefaultTemporaryOpenUntil());
+        setTemporaryOpenReason("");
+        setRestrictToSelectedUsers(false);
+        setSelectedLateUserIds([]);
+        return;
+      }
+
+      const overrideData = overrideSnap.data() as CountingUploadOverride;
+      setUploadOverride(overrideData);
+      setTemporaryOpenUntil(
+        overrideData.endAt
+          ? toDateTimeLocalValue(overrideData.endAt.toDate())
+          : getDefaultTemporaryOpenUntil(),
+      );
+      setTemporaryOpenReason(overrideData.reason || "");
+      setSelectedLateUserIds(overrideData.allowedUserIds || []);
+      setRestrictToSelectedUsers(
+        (overrideData.allowedUserIds?.length ?? 0) > 0,
+      );
+    } catch (err) {
+      console.error(err);
+      toast.error("โหลดสถานะเปิดรับรูปชั่วคราวไม่สำเร็จ");
+    } finally {
+      setOverrideLoading(false);
+    }
+  }
+
+  async function handleEnableTemporaryOpen() {
+    if (!companyId) {
+      toast.error("ไม่พบ companyId");
+      return;
+    }
+
+    if (!suggestedTargetPeriod) {
+      toast.error("ไม่พบรอบย้อนหลังสำหรับเปิดรับรูปชั่วคราว");
+      return;
+    }
+
+    if (restrictToSelectedUsers && selectedLateUserIds.length === 0) {
+      toast.error("กรุณาเลือกพนักงานอย่างน้อย 1 คน");
+      return;
+    }
+
+    const endAt = new Date(temporaryOpenUntil);
+    if (Number.isNaN(endAt.getTime())) {
+      toast.error("กรุณาระบุวันเวลาให้ถูกต้อง");
+      return;
+    }
+
+    if (endAt.getTime() <= Date.now()) {
+      toast.error("เวลาสิ้นสุดต้องมากกว่าปัจจุบัน");
+      return;
+    }
+
+    try {
+      setOverrideSaving(true);
+      await setDoc(
+        doc(db, "countingUploadOverrides", companyId),
+        {
+          companyId,
+          enabled: true,
+          startAt: Timestamp.now(),
+          endAt: Timestamp.fromDate(endAt),
+          reason: temporaryOpenReason.trim(),
+          allowedUserIds: restrictToSelectedUsers ? selectedLateUserIds : [],
+          targetPeriodDocId: suggestedTargetPeriod.id,
+          targetPeriodKey: getPeriodKey(suggestedTargetPeriod),
+          targetYear: suggestedTargetPeriod.year,
+          targetMonth: suggestedTargetPeriod.month,
+          targetHalf: suggestedTargetPeriod.half,
+          targetPeriodLabel: getPeriodLabel(suggestedTargetPeriod),
+          targetStartDate: suggestedTargetPeriod.startDate,
+          targetEndDate: suggestedTargetPeriod.endDate,
+          updatedAt: serverTimestamp(),
+          updatedBy: userData?.uid || userData?.id || "",
+          updatedByName:
+            userData?.name || userData?.displayName || userData?.email || "",
+          ...(uploadOverride?.createdAt
+            ? {}
+            : { createdAt: serverTimestamp() }),
+        },
+        { merge: true },
+      );
+      toast.success("เปิดรับรูปชั่วคราวเรียบร้อยแล้ว");
+      await loadUploadOverride(companyId);
+    } catch (err) {
+      console.error(err);
+      toast.error("เปิดรับรูปชั่วคราวไม่สำเร็จ");
+    } finally {
+      setOverrideSaving(false);
+    }
+  }
+
+  async function handleDisableTemporaryOpen() {
+    if (!companyId) {
+      toast.error("ไม่พบ companyId");
+      return;
+    }
+
+    try {
+      setOverrideSaving(true);
+      await setDoc(
+        doc(db, "countingUploadOverrides", companyId),
+        {
+          companyId,
+          enabled: false,
+          endAt: Timestamp.now(),
+          updatedAt: serverTimestamp(),
+          updatedBy: userData?.uid || userData?.id || "",
+          updatedByName:
+            userData?.name || userData?.displayName || userData?.email || "",
+        },
+        { merge: true },
+      );
+      toast.success("ปิดการเปิดรับรูปชั่วคราวแล้ว");
+      await loadUploadOverride(companyId);
+    } catch (err) {
+      console.error(err);
+      toast.error("ปิดการเปิดรับรูปชั่วคราวไม่สำเร็จ");
+    } finally {
+      setOverrideSaving(false);
+    }
+  }
 
   async function fetchPeriods() {
     setLoading(true);
@@ -406,6 +726,29 @@ export default function CountingPeriodsPage() {
   const currentDay = now.getDate();
   const currentHalf: PeriodHalf = currentDay <= 15 ? 1 : 2;
   const isLockDay = currentDay === 1 || currentDay === 16;
+  const temporaryOpenActive = isTemporaryOpenActive(uploadOverride, now);
+  const overrideTargetLabel = getOverrideTargetLabel(
+    uploadOverride,
+    suggestedTargetPeriod,
+  );
+  const overrideUserNames = (uploadOverride?.allowedUserIds || [])
+    .map(
+      (userId) =>
+        companyEmployees.find(
+          (employee) => getUserIdentifier(employee) === userId,
+        )?.name ||
+        companyEmployees.find(
+          (employee) => getUserIdentifier(employee) === userId,
+        )?.displayName ||
+        companyEmployees.find(
+          (employee) => getUserIdentifier(employee) === userId,
+        )?.email ||
+        userId,
+    )
+    .filter(Boolean);
+  const overrideScopeLabel = uploadOverride?.allowedUserIds?.length
+    ? `เฉพาะ ${uploadOverride.allowedUserIds.length} คน`
+    : "ทั้งบริษัท";
 
   const filteredPeriods = selectedMonth
     ? periods.filter((p) => p.month === selectedMonth)
@@ -465,17 +808,31 @@ export default function CountingPeriodsPage() {
       {/* Current Period Indicator */}
       <div
         className={`flex items-center gap-3 p-4 border rounded-xl ${
-          isLockDay
-            ? "bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-800"
-            : "bg-blue-50 dark:bg-blue-900/20 border-blue-200 dark:border-blue-800"
+          temporaryOpenActive
+            ? "bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800"
+            : isLockDay
+              ? "bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-800"
+              : "bg-blue-50 dark:bg-blue-900/20 border-blue-200 dark:border-blue-800"
         }`}
       >
         <Calendar
-          className={`w-5 h-5 shrink-0 ${isLockDay ? "text-red-600" : "text-blue-600"}`}
+          className={`w-5 h-5 shrink-0 ${
+            temporaryOpenActive
+              ? "text-green-600"
+              : isLockDay
+                ? "text-red-600"
+                : "text-blue-600"
+          }`}
         />
         <div className="flex-1 min-w-0">
           <p
-            className={`text-sm font-semibold ${isLockDay ? "text-red-800 dark:text-red-300" : "text-blue-800 dark:text-blue-300"}`}
+            className={`text-sm font-semibold ${
+              temporaryOpenActive
+                ? "text-green-800 dark:text-green-300"
+                : isLockDay
+                  ? "text-red-800 dark:text-red-300"
+                  : "text-blue-800 dark:text-blue-300"
+            }`}
           >
             📅 วันนี้:{" "}
             {now.toLocaleDateString("th-TH", {
@@ -485,22 +842,289 @@ export default function CountingPeriodsPage() {
             })}
           </p>
           <p
-            className={`text-xs mt-0.5 ${isLockDay ? "text-red-600 dark:text-red-400" : "text-blue-600 dark:text-blue-400"}`}
+            className={`text-xs mt-0.5 ${
+              temporaryOpenActive
+                ? "text-green-600 dark:text-green-400"
+                : isLockDay
+                  ? "text-red-600 dark:text-red-400"
+                  : "text-blue-600 dark:text-blue-400"
+            }`}
           >
-            {isLockDay
-              ? `🔒 วันล็อค — ระบบไม่รับรูปภาพทุกรอบในวันนี้`
-              : `📸 รอบที่ ${currentHalf} ของเดือน (${currentHalf === 1 ? "วันที่ 2–15" : "วันที่ 17–สิ้นเดือน"}) — เปิดรับรูป`}
+            {temporaryOpenActive
+              ? `🟢 เปิดรับรูปชั่วคราวถึง ${formatOverrideDateTime(uploadOverride?.endAt)}`
+              : isLockDay
+                ? `🔒 วันล็อค — ระบบไม่รับรูปภาพทุกรอบในวันนี้`
+                : `📸 รอบที่ ${currentHalf} ของเดือน (${currentHalf === 1 ? "วันที่ 2–15" : "วันที่ 17–สิ้นเดือน"}) — เปิดรับรูป`}
           </p>
+          {temporaryOpenActive && overrideTargetLabel && (
+            <p className="text-xs mt-1 text-green-700 dark:text-green-300">
+              ผูกการส่งล่าช้ากับรอบ {overrideTargetLabel}
+            </p>
+          )}
         </div>
         <span
           className={`shrink-0 px-3 py-1 rounded-full text-xs font-bold ${
-            isLockDay
-              ? "bg-red-100 text-red-700 dark:bg-red-900/50 dark:text-red-300"
-              : "bg-blue-100 text-blue-700 dark:bg-blue-900/50 dark:text-blue-300"
+            temporaryOpenActive
+              ? "bg-green-100 text-green-700 dark:bg-green-900/50 dark:text-green-300"
+              : isLockDay
+                ? "bg-red-100 text-red-700 dark:bg-red-900/50 dark:text-red-300"
+                : "bg-blue-100 text-blue-700 dark:bg-blue-900/50 dark:text-blue-300"
           }`}
         >
-          {isLockDay ? "🔒 ล็อค" : `รอบ ${currentHalf}`}
+          {temporaryOpenActive
+            ? "เปิดชั่วคราว"
+            : isLockDay
+              ? "🔒 ล็อค"
+              : `รอบ ${currentHalf}`}
         </span>
+      </div>
+
+      {/* Temporary upload override */}
+      <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-5 space-y-4">
+        <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+          <div>
+            <h2 className="text-base font-semibold text-gray-900 dark:text-white">
+              เปิดรับรูปชั่วคราว
+            </h2>
+            <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
+              ใช้ในกรณีวันล็อคหรือหมดเวลาส่งรูป
+              แต่ต้องการให้มือถืออัปโหลดรูปได้ชั่วคราว
+            </p>
+          </div>
+          {overrideLoading ? (
+            <span className="inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300">
+              <RefreshCw className="w-3.5 h-3.5 animate-spin" /> โหลดสถานะ...
+            </span>
+          ) : temporaryOpenActive ? (
+            <span className="inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-300">
+              <CheckCircle className="w-3.5 h-3.5" /> กำลังเปิดรับรูปชั่วคราว
+            </span>
+          ) : (
+            <span className="inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300">
+              <Lock className="w-3.5 h-3.5" /> ยังไม่มี override ที่ใช้งานอยู่
+            </span>
+          )}
+        </div>
+
+        {!companyId ? (
+          <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-700 dark:border-amber-800 dark:bg-amber-900/20 dark:text-amber-300">
+            ต้องอยู่ใน company context ก่อน จึงจะตั้งค่าเปิดรับรูปชั่วคราวได้
+          </div>
+        ) : (
+          <>
+            <div className="grid gap-4 md:grid-cols-2">
+              <div className="rounded-lg border border-gray-200 dark:border-gray-700 px-4 py-3">
+                <p className="text-xs text-gray-500 dark:text-gray-400">
+                  เปิดตั้งแต่
+                </p>
+                <p className="mt-1 text-sm font-medium text-gray-900 dark:text-white">
+                  {formatOverrideDateTime(uploadOverride?.startAt)}
+                </p>
+              </div>
+              <div className="rounded-lg border border-gray-200 dark:border-gray-700 px-4 py-3">
+                <p className="text-xs text-gray-500 dark:text-gray-400">
+                  เปิดถึง
+                </p>
+                <p className="mt-1 text-sm font-medium text-gray-900 dark:text-white">
+                  {formatOverrideDateTime(uploadOverride?.endAt)}
+                </p>
+              </div>
+            </div>
+
+            {uploadOverride?.reason ? (
+              <div className="rounded-lg border border-gray-200 dark:border-gray-700 px-4 py-3">
+                <p className="text-xs text-gray-500 dark:text-gray-400">
+                  เหตุผลล่าสุด
+                </p>
+                <p className="mt-1 text-sm text-gray-900 dark:text-white">
+                  {uploadOverride.reason}
+                </p>
+                {uploadOverride.updatedByName && (
+                  <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
+                    แก้ไขโดย {uploadOverride.updatedByName}
+                  </p>
+                )}
+              </div>
+            ) : null}
+
+            <div className="rounded-lg border border-gray-200 dark:border-gray-700 px-4 py-3">
+              <p className="text-xs text-gray-500 dark:text-gray-400">
+                รอบที่เปิดรับชั่วคราว
+              </p>
+              <p className="mt-1 text-sm font-medium text-gray-900 dark:text-white">
+                {overrideTargetLabel || "ยังไม่กำหนด"}
+              </p>
+              <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                พนักงานจะไม่เห็นชื่อรอบนี้ในมือถือ แต่ระบบจะผูก session
+                และรายงานไว้กับรอบนี้
+              </p>
+            </div>
+
+            <div className="rounded-lg border border-gray-200 dark:border-gray-700 px-4 py-3 space-y-2">
+              <p className="text-xs text-gray-500 dark:text-gray-400">
+                ขอบเขตการเปิดรับชั่วคราว
+              </p>
+              <p className="text-sm font-medium text-gray-900 dark:text-white">
+                {overrideScopeLabel}
+              </p>
+              {overrideUserNames.length > 0 ? (
+                <div className="flex flex-wrap gap-2">
+                  {overrideUserNames.map((name) => (
+                    <span
+                      key={name}
+                      className="inline-flex items-center rounded-full bg-blue-50 px-2.5 py-1 text-xs font-medium text-blue-700 dark:bg-blue-900/30 dark:text-blue-300"
+                    >
+                      {name}
+                    </span>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-xs text-gray-500 dark:text-gray-400">
+                  เปิดสิทธิ์ให้ทุกคนในบริษัทส่งล่าช้าได้ ถ้าอยู่ในช่วงเวลา
+                  override
+                </p>
+              )}
+            </div>
+
+            {canManageTemporaryOpen && (
+              <div className="space-y-4">
+                <div className="grid gap-4 lg:grid-cols-2">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">
+                      เปิดรับรูปถึงวันเวลา
+                    </label>
+                    <input
+                      type="datetime-local"
+                      value={temporaryOpenUntil}
+                      onChange={(e) => setTemporaryOpenUntil(e.target.value)}
+                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">
+                      เหตุผล (ไม่บังคับ)
+                    </label>
+                    <input
+                      type="text"
+                      value={temporaryOpenReason}
+                      onChange={(e) => setTemporaryOpenReason(e.target.value)}
+                      placeholder="เช่น เปิดเพิ่มสำหรับสรุปรอบค้าง"
+                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    />
+                  </div>
+                </div>
+
+                <div className="rounded-lg border border-dashed border-gray-300 dark:border-gray-600 px-4 py-4 space-y-4">
+                  <div>
+                    <p className="text-sm font-medium text-gray-900 dark:text-white">
+                      เปิดให้ใครบ้าง
+                    </p>
+                    <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                      ถ้าเลือกเฉพาะพนักงาน
+                      ระบบจะเปิดสิทธิ์ส่งล่าช้าแค่คนที่เลือกเท่านั้น
+                      คนอื่นยังถูกบล็อกตามปกติ
+                    </p>
+                  </div>
+
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setRestrictToSelectedUsers(false)}
+                      className={`px-3 py-2 rounded-lg text-sm font-medium transition-colors ${!restrictToSelectedUsers ? "bg-blue-600 text-white" : "bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-300"}`}
+                    >
+                      ทั้งบริษัท
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setRestrictToSelectedUsers(true)}
+                      className={`px-3 py-2 rounded-lg text-sm font-medium transition-colors ${restrictToSelectedUsers ? "bg-blue-600 text-white" : "bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-300"}`}
+                    >
+                      เฉพาะพนักงานที่เลือก
+                    </button>
+                  </div>
+
+                  {restrictToSelectedUsers && (
+                    <div className="space-y-3">
+                      <p className="text-xs text-gray-500 dark:text-gray-400">
+                        เลือกพนักงานที่อนุญาตให้ส่งล่าช้าได้ในรอบนี้
+                      </p>
+                      {companyEmployees.length === 0 ? (
+                        <p className="text-sm text-gray-500 dark:text-gray-400">
+                          ไม่พบรายชื่อพนักงานในบริษัทนี้
+                        </p>
+                      ) : (
+                        <div className="max-h-56 overflow-y-auto grid gap-2 pr-1">
+                          {companyEmployees.map((employee) => {
+                            const userKey = getUserIdentifier(employee);
+                            const isChecked =
+                              selectedLateUserIds.includes(userKey);
+                            return (
+                              <label
+                                key={userKey}
+                                className="flex items-start gap-3 rounded-lg border border-gray-200 dark:border-gray-700 px-3 py-2 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700/40"
+                              >
+                                <input
+                                  type="checkbox"
+                                  checked={isChecked}
+                                  onChange={() =>
+                                    setSelectedLateUserIds((current) =>
+                                      current.includes(userKey)
+                                        ? current.filter((id) => id !== userKey)
+                                        : [...current, userKey],
+                                    )
+                                  }
+                                  className="mt-0.5 h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                                />
+                                <span className="min-w-0">
+                                  <span className="block text-sm font-medium text-gray-900 dark:text-white">
+                                    {employee.name ||
+                                      employee.displayName ||
+                                      employee.email}
+                                  </span>
+                                  <span className="block text-xs text-gray-500 dark:text-gray-400">
+                                    {employee.branchName || "ไม่ระบุสาขา"}
+                                    {employee.email
+                                      ? ` • ${employee.email}`
+                                      : ""}
+                                  </span>
+                                </span>
+                              </label>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+
+                <div className="flex gap-2 lg:justify-end">
+                  <button
+                    onClick={handleEnableTemporaryOpen}
+                    disabled={overrideSaving}
+                    className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white rounded-lg text-sm font-medium transition-colors"
+                  >
+                    {overrideSaving ? (
+                      <RefreshCw className="w-4 h-4 animate-spin" />
+                    ) : (
+                      <Clock className="w-4 h-4" />
+                    )}
+                    เปิดชั่วคราว
+                  </button>
+
+                  <button
+                    onClick={handleDisableTemporaryOpen}
+                    disabled={overrideSaving || !uploadOverride?.enabled}
+                    className="inline-flex items-center gap-2 px-4 py-2 bg-gray-200 hover:bg-gray-300 disabled:opacity-50 text-gray-800 dark:bg-gray-700 dark:hover:bg-gray-600 dark:text-gray-100 rounded-lg text-sm font-medium transition-colors"
+                  >
+                    <XCircle className="w-4 h-4" />
+                    ปิดทันที
+                  </button>
+                </div>
+              </div>
+            )}
+          </>
+        )}
       </div>
 
       {/* Stats Cards */}

@@ -210,6 +210,17 @@ service cloud.firestore {
       allow delete: if isSuperAdmin() || 
                       (isAdmin() && isSameCompany(resource.data.companyId));
     }
+
+    // ==================== COUNTING UPLOAD OVERRIDES COLLECTION ====================
+    match /countingUploadOverrides/{companyId} {
+      allow read: if isAuthenticated() && isSameCompany(companyId);
+      allow read: if isSuperAdmin();
+      allow create, update: if hasAnyRole(['manager', 'admin', 'super_admin']) &&
+                               isSameCompany(companyId) &&
+                               request.resource.data.companyId == companyId;
+      allow delete: if hasAnyRole(['manager', 'admin', 'super_admin']) &&
+                       isSameCompany(companyId);
+    }
     
     // ==================== ASSIGNMENTS COLLECTION ====================
     match /assignments/{assignmentId} {

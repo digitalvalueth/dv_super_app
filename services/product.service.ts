@@ -1,4 +1,5 @@
 import { db } from "@/config/firebase";
+import { getEffectiveCountingPeriod } from "@/services/counting-period.service";
 import { Product, ProductWithAssignment, UserAssignment } from "@/types";
 import {
   collection,
@@ -216,154 +217,191 @@ export const subscribeToProductsWithAssignments = (
 ): Unsubscribe => {
   console.log("🔔 Setting up realtime products listener for user:", userId);
 
-  // Filter by current month + year to match the active counting period
-  const now = new Date();
-  const currentMonth = now.getMonth() + 1;
-  const currentYear = now.getFullYear();
+  let assignmentUnsubscribe: Unsubscribe | null = null;
+  let isDisposed = false;
 
-  const assignmentsRef = collection(db, "assignments");
-  const q = query(
-    assignmentsRef,
-    where("userId", "==", userId),
-    where("month", "==", currentMonth),
-    where("year", "==", currentYear),
-  );
+  const initialize = async () => {
+    try {
+      const now = new Date();
+      const fallbackHalf = now.getDate() <= 15 ? 1 : 2;
+      const effectivePeriod = companyId
+        ? await getEffectiveCountingPeriod(companyId, now, { userId })
+        : null;
 
-  const unsubscribe = onSnapshot(
-    q,
-    async (snapshot) => {
-      console.log(`📋 Assignments updated: ${snapshot.size} items`);
+      const targetMonth = effectivePeriod?.month ?? now.getMonth() + 1;
+      const targetYear = effectivePeriod?.year ?? now.getFullYear();
+      const targetHalf = effectivePeriod?.half ?? fallbackHalf;
 
-      if (snapshot.empty) {
-        console.log("⚠️ No assignments found");
-        onUpdate([]);
-        return;
-      }
+      if (isDisposed) return;
 
-      const products: ProductWithAssignment[] = [];
+      console.log("📆 Loading assignments for period:", {
+        month: targetMonth,
+        year: targetYear,
+        half: targetHalf,
+        periodId: effectivePeriod?.periodId,
+        isLateSubmission: effectivePeriod?.isLateSubmission ?? false,
+        isTemporaryOverride: effectivePeriod?.isTemporaryOverride ?? false,
+      });
 
-      // Collect all product IDs and their assignment info
-      const productAssignmentMap = new Map<
-        string,
-        {
-          assignmentId: string;
-          userId: string;
-          isCompleted: boolean;
-          isInProgress: boolean;
-          isNotAvailable: boolean;
-        }
-      >();
-
-      for (const assignmentDoc of snapshot.docs) {
-        const assignment = assignmentDoc.data();
-        const assignmentId = assignmentDoc.id;
-        const productIds = assignment.productIds || [];
-        const completedProductIds = assignment.completedProductIds || [];
-        const inProgressProductIds = assignment.inProgressProductIds || [];
-        const notAvailableProductIds = assignment.notAvailableProductIds || [];
-
-        for (const productId of productIds) {
-          productAssignmentMap.set(productId, {
-            assignmentId,
-            userId: assignment.userId,
-            isCompleted: completedProductIds.includes(productId),
-            isInProgress: inProgressProductIds.includes(productId),
-            isNotAvailable: notAvailableProductIds.includes(productId),
-          });
-        }
-      }
-
-      // OPTIMIZED: Batch fetch products (max 30 per batch due to Firestore 'in' limit)
-      const allProductIds = Array.from(productAssignmentMap.keys());
-      const batchSize = 30;
-      const batches = [];
-
-      for (let i = 0; i < allProductIds.length; i += batchSize) {
-        batches.push(allProductIds.slice(i, i + batchSize));
-      }
-
-      console.log(
-        `📦 Fetching ${allProductIds.length} products in ${batches.length} batch(es)`,
+      const assignmentsRef = collection(db, "assignments");
+      const q = query(
+        assignmentsRef,
+        where("userId", "==", userId),
+        where("month", "==", targetMonth),
+        where("year", "==", targetYear),
+        where("half", "==", targetHalf),
       );
 
-      for (const batch of batches) {
-        try {
-          const productsRef = collection(db, "products");
-          const productQuery = query(
-            productsRef,
-            where("productId", "in", batch),
-          );
-          const productSnapshot = await getDocs(productQuery);
+      assignmentUnsubscribe = onSnapshot(
+        q,
+        async (snapshot) => {
+          console.log(`📋 Assignments updated: ${snapshot.size} items`);
 
-          for (const productDoc of productSnapshot.docs) {
-            const productData = productDoc.data();
-
-            // Filter by companyId to prevent cross-company duplicates
-            if (
-              companyId &&
-              productData.companyId &&
-              productData.companyId !== companyId
-            ) {
-              continue;
-            }
-
-            const assignmentInfo = productAssignmentMap.get(
-              productData.productId,
-            );
-
-            if (!assignmentInfo) continue;
-
-            // Determine status
-            let status:
-              | "pending"
-              | "in_progress"
-              | "completed"
-              | "not_available" = "pending";
-            if (assignmentInfo.isCompleted) {
-              status = "completed";
-            } else if (assignmentInfo.isNotAvailable) {
-              status = "not_available";
-            } else if (assignmentInfo.isInProgress) {
-              status = "in_progress";
-            }
-
-            products.push({
-              id: productDoc.id,
-              productId: productData.productId,
-              name: productData.name,
-              sku: productData.productId,
-              barcode: productData.barcode,
-              description: productData.description,
-              category: productData.category,
-              companyId: productData.companyId,
-              branchId: productData.branchId,
-              imageUrl: productData.imageUrl || productData.imageURL,
-              createdAt: productData.createdAt?.toDate() || new Date(),
-              updatedAt: productData.updatedAt?.toDate() || new Date(),
-              status: status,
-              assignmentStatus: status,
-              beforeCountQty: productData.beforeCount || 0,
-              assignment: {
-                id: assignmentInfo.assignmentId,
-                userId: assignmentInfo.userId,
-                productId: productData.productId,
-                status: status,
-              } as any,
-            });
+          if (snapshot.empty) {
+            console.log("⚠️ No assignments found");
+            onUpdate([]);
+            return;
           }
-        } catch (error) {
-          console.error(`❌ Error fetching product batch:`, error);
-        }
+
+          const products: ProductWithAssignment[] = [];
+
+          // Collect all product IDs and their assignment info
+          const productAssignmentMap = new Map<
+            string,
+            {
+              assignmentId: string;
+              userId: string;
+              isCompleted: boolean;
+              isInProgress: boolean;
+              isNotAvailable: boolean;
+            }
+          >();
+
+          for (const assignmentDoc of snapshot.docs) {
+            const assignment = assignmentDoc.data();
+            const assignmentId = assignmentDoc.id;
+            const productIds = assignment.productIds || [];
+            const completedProductIds = assignment.completedProductIds || [];
+            const inProgressProductIds = assignment.inProgressProductIds || [];
+            const notAvailableProductIds =
+              assignment.notAvailableProductIds || [];
+
+            for (const productId of productIds) {
+              productAssignmentMap.set(productId, {
+                assignmentId,
+                userId: assignment.userId,
+                isCompleted: completedProductIds.includes(productId),
+                isInProgress: inProgressProductIds.includes(productId),
+                isNotAvailable: notAvailableProductIds.includes(productId),
+              });
+            }
+          }
+
+          // OPTIMIZED: Batch fetch products (max 30 per batch due to Firestore 'in' limit)
+          const allProductIds = Array.from(productAssignmentMap.keys());
+          const batchSize = 30;
+          const batches = [];
+
+          for (let i = 0; i < allProductIds.length; i += batchSize) {
+            batches.push(allProductIds.slice(i, i + batchSize));
+          }
+
+          console.log(
+            `📦 Fetching ${allProductIds.length} products in ${batches.length} batch(es)`,
+          );
+
+          for (const batch of batches) {
+            try {
+              const productsRef = collection(db, "products");
+              const productQuery = query(
+                productsRef,
+                where("productId", "in", batch),
+              );
+              const productSnapshot = await getDocs(productQuery);
+
+              for (const productDoc of productSnapshot.docs) {
+                const productData = productDoc.data();
+
+                // Filter by companyId to prevent cross-company duplicates
+                if (
+                  companyId &&
+                  productData.companyId &&
+                  productData.companyId !== companyId
+                ) {
+                  continue;
+                }
+
+                const assignmentInfo = productAssignmentMap.get(
+                  productData.productId,
+                );
+
+                if (!assignmentInfo) continue;
+
+                // Determine status
+                let status:
+                  | "pending"
+                  | "in_progress"
+                  | "completed"
+                  | "not_available" = "pending";
+                if (assignmentInfo.isCompleted) {
+                  status = "completed";
+                } else if (assignmentInfo.isNotAvailable) {
+                  status = "not_available";
+                } else if (assignmentInfo.isInProgress) {
+                  status = "in_progress";
+                }
+
+                products.push({
+                  id: productDoc.id,
+                  productId: productData.productId,
+                  name: productData.name,
+                  sku: productData.productId,
+                  barcode: productData.barcode,
+                  description: productData.description,
+                  category: productData.category,
+                  companyId: productData.companyId,
+                  branchId: productData.branchId,
+                  imageUrl: productData.imageUrl || productData.imageURL,
+                  createdAt: productData.createdAt?.toDate() || new Date(),
+                  updatedAt: productData.updatedAt?.toDate() || new Date(),
+                  status: status,
+                  assignmentStatus: status,
+                  beforeCountQty: productData.beforeCount || 0,
+                  assignment: {
+                    id: assignmentInfo.assignmentId,
+                    userId: assignmentInfo.userId,
+                    productId: productData.productId,
+                    status: status,
+                  } as any,
+                });
+              }
+            } catch (error) {
+              console.error(`❌ Error fetching product batch:`, error);
+            }
+          }
+
+          console.log(`✅ Loaded ${products.length} products with assignments`);
+          onUpdate(products);
+        },
+        (error) => {
+          console.error("❌ Error in products listener:", error);
+          if (onError) onError(error);
+        },
+      );
+    } catch (error) {
+      console.error("❌ Error resolving effective assignment period:", error);
+      if (onError && error instanceof Error) {
+        onError(error);
       }
+    }
+  };
 
-      console.log(`✅ Loaded ${products.length} products with assignments`);
-      onUpdate(products);
-    },
-    (error) => {
-      console.error("❌ Error in products listener:", error);
-      if (onError) onError(error);
-    },
-  );
+  void initialize();
 
-  return unsubscribe;
+  return () => {
+    isDisposed = true;
+    if (assignmentUnsubscribe) {
+      assignmentUnsubscribe();
+    }
+  };
 };

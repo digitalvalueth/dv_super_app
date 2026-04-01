@@ -4,7 +4,8 @@ import { NextRequest, NextResponse } from "next/server";
 
 /**
  * POST /api/supervisor/override
- * Supervisor overrides a counting session's final count
+ * Supervisor overrides a counting session's final count.
+ * After writing to countingSessions, writes the confirmed result to shopCountConfirmed.
  *
  * Body: {
  *   sessionId: string;
@@ -13,6 +14,22 @@ import { NextRequest, NextResponse } from "next/server";
  *   reason?: string;
  * }
  */
+
+function getPeriodInfo(date: Date): {
+  periodId: string;
+  periodHalf: 1 | 2;
+  periodMonth: string;
+} {
+  const year = date.getFullYear();
+  const month = date.getMonth() + 1;
+  const day = date.getDate();
+  const periodHalf: 1 | 2 = day <= 15 ? 1 : 2;
+  const paddedMonth = String(month).padStart(2, "0");
+  const periodMonth = `${year}-${paddedMonth}`;
+  const periodId = `${periodMonth}-H${periodHalf}`;
+  return { periodId, periodHalf, periodMonth };
+}
+
 export async function POST(request: NextRequest) {
   try {
     // Auth
@@ -106,7 +123,7 @@ export async function POST(request: NextRequest) {
         finalCount = 0;
     }
 
-    // Write override
+    // Write override to countingSessions
     await sessionRef.update({
       finalCount,
       finalCountSource: source,
@@ -127,6 +144,41 @@ export async function POST(request: NextRequest) {
       reviewedAt: FieldValue.serverTimestamp(),
       updatedAt: FieldValue.serverTimestamp(),
     });
+
+    // Case B: Write confirmed record to shopCountConfirmed
+    const countDate: Date = sessionData.createdAt?.toDate?.() ?? new Date();
+    const fallbackPeriod = getPeriodInfo(countDate);
+    const periodId: string = sessionData.periodId ?? fallbackPeriod.periodId;
+    const periodHalf: 1 | 2 =
+      sessionData.periodHalf ?? fallbackPeriod.periodHalf;
+    const periodMonth: string =
+      sessionData.periodMonth ?? fallbackPeriod.periodMonth;
+    const branchId: string = sessionData.branchId ?? "";
+    const productId: string = sessionData.productId ?? "";
+    const confirmedDocId = `${branchId}_${productId}_${periodId}`;
+
+    await db
+      .collection("shopCountConfirmed")
+      .doc(confirmedDocId)
+      .set({
+        periodId,
+        periodHalf,
+        periodMonth,
+        submissionId: sessionId,
+        locationId: branchId,
+        counterId: sessionData.userId ?? "",
+        counterName: sessionData.userName ?? "",
+        countDate: sessionData.createdAt ?? FieldValue.serverTimestamp(),
+        item: productId,
+        barcode: sessionData.barcode ?? "",
+        paTotalQty: finalCount,
+        paSellQty: null,
+        paTestQty: null,
+        confirmedBy: uid,
+        confirmedAt: FieldValue.serverTimestamp(),
+        source,
+        originalSessionId: sessionId,
+      });
 
     return NextResponse.json({
       success: true,

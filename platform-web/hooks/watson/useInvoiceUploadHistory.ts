@@ -65,6 +65,7 @@ export interface InvoiceUploadHistoryReturn {
         role: string;
       };
     },
+    originalFile?: File,
   ) => Promise<string>;
   loadRecord: (id: string) => Promise<InvoiceUploadRecord | null>;
   loadRecordData: (record: InvoiceUploadRecord) => Promise<InvoiceUploadRecord>;
@@ -277,6 +278,7 @@ export function useInvoiceUploadHistory(): InvoiceUploadHistoryReturn {
           role: string;
         };
       },
+      originalFile?: File,
     ): Promise<string> => {
       const tempId = `temp-${Date.now()}`;
 
@@ -324,6 +326,18 @@ export function useInvoiceUploadHistory(): InvoiceUploadHistoryReturn {
 
         const result = await response.json();
         const newId = result.id;
+
+        // Upload original file separately (non-blocking, best-effort)
+        if (originalFile && newId && !newId.startsWith("temp-")) {
+          const formData = new FormData();
+          formData.append("originalFile", originalFile);
+          fetch(`/api/watson/invoice-history/${newId}/original-file`, {
+            method: "POST",
+            body: formData,
+          }).catch((err) =>
+            console.warn("Failed to upload original file:", err),
+          );
+        }
 
         // Update with real ID
         updateLocalHistory((prev) =>

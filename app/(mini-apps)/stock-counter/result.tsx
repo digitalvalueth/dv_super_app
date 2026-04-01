@@ -1,9 +1,13 @@
-import { canUploadPhoto } from "@/services/counting-period.service";
+import {
+  canUploadPhoto,
+  getEffectiveCountingPeriod,
+} from "@/services/counting-period.service";
 import {
   createCountingSession,
   updateAssignmentStatus,
   uploadCountingImage,
 } from "@/services/counting.service";
+import { writeShopCountConfirmed } from "@/services/shopCountConfirmed.service";
 import { useAuthStore } from "@/stores/auth.store";
 import { useTheme } from "@/stores/theme.store";
 import { formatTimestamp, WatermarkData } from "@/utils/watermark";
@@ -84,9 +88,25 @@ export default function ResultScreen() {
       setIsSaving(true);
 
       // Check if this is a late submission (in grace period)
-      const uploadCheck = user.companyId
-        ? await canUploadPhoto(user.companyId)
-        : null;
+      const [uploadCheck, effectivePeriod] = user.companyId
+        ? await Promise.all([
+            canUploadPhoto(user.companyId, undefined, { userId: user.uid }),
+            getEffectiveCountingPeriod(user.companyId, undefined, {
+              userId: user.uid,
+            }),
+          ])
+        : [null, null];
+
+      if (uploadCheck && !uploadCheck.canUpload) {
+        Alert.alert(
+          uploadCheck.status === "locked"
+            ? "🔒 ระบบปิดรับรูปชั่วคราว"
+            : "❌ หมดเวลาส่งรูป",
+          uploadCheck.message || "ขณะนี้ยังไม่สามารถบันทึกผลการนับได้",
+        );
+        return;
+      }
+
       const isLate = uploadCheck?.isLateSubmission ?? false;
 
       // ถ้ามี sessionId แสดงว่ามี session อยู่แล้ว (จาก preview) ให้อัพเดทแทนการสร้างใหม่
@@ -98,16 +118,42 @@ export default function ResultScreen() {
           await import("firebase/firestore");
         const { db } = await import("@/config/firebase");
 
+        const sessionStatus = hasDispute ? "mismatch" : "completed";
+
         await updateDoc(doc(db, "countingSessions", params.sessionId), {
-          status: "completed",
+          status: sessionStatus,
           finalCount: barcodeCount,
           manualCount: barcodeCount,
+          barcode: params.productBarcode || "",
+          ...(effectivePeriod && {
+            periodId: effectivePeriod.periodId,
+            periodMonth: effectivePeriod.periodMonth,
+            periodHalf: effectivePeriod.periodHalf,
+          }),
           updatedAt: new Date(),
           ...(disputeRemark && { errorRemark: disputeRemark }),
           ...(userReportedCount !== null && { userReportedCount }),
           ...(isLate && { isLate: true }),
           ...(isSupplemental && { isSupplemental: true }),
         });
+
+        // Case A: AI correct — write confirmed record immediately
+        if (!hasDispute && !isSupplemental) {
+          await writeShopCountConfirmed({
+            sessionId: params.sessionId,
+            branchId: user.branchId || "",
+            productId: params.productId || "",
+            userId: user.uid,
+            userName: user.name || "",
+            barcode: params.productBarcode || "",
+            paTotalQty: barcodeCount,
+            source: "ai",
+            countDate: new Date(),
+            periodId: effectivePeriod?.periodId,
+            periodMonth: effectivePeriod?.periodMonth,
+            periodHalf: effectivePeriod?.periodHalf,
+          });
+        }
 
         // อัพเดท assignment status เป็น completed (ข้ามถ้าเป็น supplemental)
         if (!isSupplemental && params.assignmentId) {
@@ -152,12 +198,19 @@ export default function ResultScreen() {
       }
 
       // 3. Create counting session in Firestore
+      const newSessionStatus = hasDispute ? "mismatch" : "completed";
+
       await createCountingSession({
         assignmentId: params.assignmentId || "",
         userId: user.uid,
         productId: params.productId,
         companyId: user.companyId || "",
         branchId: user.branchId || "",
+        ...(effectivePeriod && {
+          periodId: effectivePeriod.periodId,
+          periodMonth: effectivePeriod.periodMonth,
+          periodHalf: effectivePeriod.periodHalf,
+        }),
         beforeCountQty: beforeQty,
         currentCountQty: barcodeCount,
         variance: variance,
@@ -171,14 +224,15 @@ export default function ResultScreen() {
         userEmail: user.email || "",
         branchName: user.branchName || "",
         productName: params.productName || "",
-        productSKU: params.productBarcode || params.productId || "",
+        productSKU: params.productId || "",
+        barcode: params.productBarcode || "",
         imageURL: imageUrl,
         aiCount: barcodeCount,
         manualCount: barcodeCount,
         finalCount: barcodeCount,
         standardCount: beforeQty,
         discrepancy: Math.abs(variance),
-        status: "completed",
+        status: newSessionStatus,
         ...(isLate && { isLate: true }),
         ...(isSupplemental && { isSupplemental: true }),
         ...(disputeRemark && { errorRemark: disputeRemark }),
@@ -194,6 +248,24 @@ export default function ResultScreen() {
           }),
         }),
       });
+
+      // Case A: AI correct — write confirmed record immediately
+      if (!hasDispute && !isSupplemental) {
+        await writeShopCountConfirmed({
+          sessionId: sessionId,
+          branchId: user.branchId || "",
+          productId: params.productId || "",
+          userId: user.uid,
+          userName: user.name || "",
+          barcode: params.productBarcode || "",
+          paTotalQty: barcodeCount,
+          source: "ai",
+          countDate: new Date(),
+          periodId: effectivePeriod?.periodId,
+          periodMonth: effectivePeriod?.periodMonth,
+          periodHalf: effectivePeriod?.periodHalf,
+        });
+      }
 
       Alert.alert(
         "บันทึกสำเร็จ",

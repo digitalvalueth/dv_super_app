@@ -1,4 +1,7 @@
-import { canUploadPhoto } from "@/services/counting-period.service";
+import {
+  canUploadPhoto,
+  getEffectiveCountingPeriod,
+} from "@/services/counting-period.service";
 import {
   createCountingSession,
   updateAssignmentStatus,
@@ -108,28 +111,6 @@ export default function PreviewScreen() {
     }
   }, [params.watermarkData]);
 
-  // ตรวจวันล็อค: ถ้าวันที่ 1 หรือ 16 ห้ามอัปโหลดทั้งวัน
-  useEffect(() => {
-    async function checkPeriodLock() {
-      if (!user?.companyId) return;
-      try {
-        const result = await canUploadPhoto(user.companyId);
-        if (result.status === "locked") {
-          Alert.alert(
-            "🔒 ระบบปิดรับรูปชั่วคราว",
-            "วันนี้ระบบปิดรับรูปชั่วคราว กรุณากลับมาพรุ่งนี้",
-            [{ text: "ตกลง", onPress: () => router.back() }],
-            { cancelable: false },
-          );
-        }
-      } catch {
-        // ไม่มี period config → ไม่บล็อค
-      }
-    }
-    checkPeriodLock();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
   // เมื่อเข้าหน้า preview: อัพโหลดรูปและสร้าง/อัพเดท draft session
   useEffect(() => {
     const createOrUpdateDraftSession = async () => {
@@ -143,6 +124,39 @@ export default function PreviewScreen() {
         !params.assignmentId
       )
         return;
+
+      const isViewingExistingRemoteSession =
+        !!params.existingSessionId &&
+        !params.imageBase64 &&
+        params.imageUri?.startsWith("https://");
+
+      if (user.companyId && !isViewingExistingRemoteSession) {
+        try {
+          const uploadCheck = await canUploadPhoto(user.companyId, undefined, {
+            userId: user.uid,
+          });
+
+          if (!uploadCheck.canUpload) {
+            Alert.alert(
+              uploadCheck.status === "locked"
+                ? "🔒 ระบบปิดรับรูปชั่วคราว"
+                : "❌ หมดเวลาส่งรูป",
+              uploadCheck.message || "ขณะนี้ยังไม่สามารถอัปโหลดรูปได้",
+              [{ text: "ตกลง", onPress: () => router.back() }],
+              { cancelable: false },
+            );
+            return;
+          }
+        } catch {
+          // ไม่มี period config → ไม่บล็อค
+        }
+      }
+
+      const effectivePeriod = user.companyId
+        ? await getEffectiveCountingPeriod(user.companyId, undefined, {
+            userId: user.uid,
+          })
+        : null;
 
       // ── Supplement mode (history flow): just upload image, no counting session ──
       if (params.isSupplementMode === "true") {
@@ -255,6 +269,11 @@ export default function PreviewScreen() {
             {
               imageUrl: imageUrl,
               imageURL: imageUrl,
+              ...(effectivePeriod && {
+                periodId: effectivePeriod.periodId,
+                periodMonth: effectivePeriod.periodMonth,
+                periodHalf: effectivePeriod.periodHalf,
+              }),
               status: "pending", // Reset to pending (need AI analysis again)
               currentCountQty: 0,
               variance: 0,
@@ -281,6 +300,11 @@ export default function PreviewScreen() {
             branchId: user.branchId || "",
             branchName: user.branchName || "",
             beforeCountQty: beforeQty,
+            ...(effectivePeriod && {
+              periodId: effectivePeriod.periodId,
+              periodMonth: effectivePeriod.periodMonth,
+              periodHalf: effectivePeriod.periodHalf,
+            }),
             currentCountQty: 0,
             variance: 0,
             aiCount: 0,

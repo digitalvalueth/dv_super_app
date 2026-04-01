@@ -159,6 +159,7 @@ export default function WatsonExcelValidatorPage() {
     setFileName,
     reportMeta,
     setReportMeta,
+    rawFile,
   } = useExcelUpload();
   const {
     data,
@@ -1208,18 +1209,24 @@ export default function WatsonExcelValidatorPage() {
       logImportExcel(fileName, parsedData.data.length);
 
       // Save to upload history and capture the real ID for auto-save
-      saveInvoiceUpload(fileName, parsedData.headers, parsedData.data, {
-        supplierCode: reportMeta?.reportParameters || undefined,
-        reportDate: reportMeta?.reportRunDateTime || undefined,
-        uploader: userData
-          ? {
-              id: userData.id,
-              name: userData.name || userData.email || "Unknown",
-              email: userData.email,
-              role: userData.role,
-            }
-          : undefined,
-      }).then((newId) => {
+      saveInvoiceUpload(
+        fileName,
+        parsedData.headers,
+        parsedData.data,
+        {
+          supplierCode: reportMeta?.reportParameters || undefined,
+          reportDate: reportMeta?.reportRunDateTime || undefined,
+          uploader: userData
+            ? {
+                id: userData.id,
+                name: userData.name || userData.email || "Unknown",
+                email: userData.email,
+                role: userData.role,
+              }
+            : undefined,
+        },
+        rawFile ?? undefined,
+      ).then((newId) => {
         setCurrentRecordId(newId);
         // Update URL without reload
         const newUrl = new URL(window.location.href);
@@ -1236,6 +1243,7 @@ export default function WatsonExcelValidatorPage() {
     reportMeta,
     invoiceUploadHistory,
     userData,
+    rawFile,
   ]);
 
   // Load from history
@@ -1597,6 +1605,7 @@ export default function WatsonExcelValidatorPage() {
         supplierCode: currentReportMeta?.reportParameters || undefined,
         reportDate: currentReportMeta?.reportRunDateTime || undefined,
       },
+      rawFile ?? undefined,
     ).then((newId) => {
       setCurrentRecordId(newId);
       const newUrl = new URL(window.location.href);
@@ -1613,6 +1622,7 @@ export default function WatsonExcelValidatorPage() {
     reset,
     setFileName,
     setReportMeta,
+    rawFile,
   ]);
 
   // Auto-save when data changes for an existing record (debounced)
@@ -2767,6 +2777,51 @@ export default function WatsonExcelValidatorPage() {
                                   },
                                 )}
                               </span>
+                              {/* Download original file button */}
+                              {!record.id.startsWith("temp-") && (
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  className="opacity-0 group-hover:opacity-100 h-6 w-6 p-0 text-blue-500 hover:text-blue-700 hover:bg-blue-50"
+                                  onClick={async (e) => {
+                                    e.stopPropagation();
+                                    try {
+                                      const res = await fetch(
+                                        `/api/watson/invoice-history/${record.id}/original-file`,
+                                      );
+                                      if (!res.ok) {
+                                        const err = await res
+                                          .json()
+                                          .catch(() => ({}));
+                                        toast.error(
+                                          "ไม่พบไฟล์ต้นฉบับ",
+                                          err.error ||
+                                            "ไฟล์นี้อาจถูกอัปโหลดก่อนเวอร์ชันนี้",
+                                        );
+                                        return;
+                                      }
+                                      const blob = await res.blob();
+                                      const url = URL.createObjectURL(blob);
+                                      const a = document.createElement("a");
+                                      a.href = url;
+                                      a.download = record.fileName;
+                                      a.click();
+                                      URL.revokeObjectURL(url);
+                                    } catch (err) {
+                                      console.error(
+                                        "Error downloading original file:",
+                                        err,
+                                      );
+                                      toast.error(
+                                        "เกิดข้อผิดพลาดในการดาวน์โหลด",
+                                      );
+                                    }
+                                  }}
+                                  title="ดาวน์โหลดไฟล์ต้นฉบับ"
+                                >
+                                  <Download className="h-3 w-3" />
+                                </Button>
+                              )}
                               {/* Confirm button - only show for exported status */}
                               {record.status === "exported" &&
                                 record.lastExportId && (
