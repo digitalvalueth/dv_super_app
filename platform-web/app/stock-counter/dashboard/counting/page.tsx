@@ -13,7 +13,15 @@ import {
   updateDoc,
   where,
 } from "firebase/firestore";
-import { Check, Eye, MapPin, Phone, Search, X } from "lucide-react";
+import {
+  AlertTriangle,
+  Check,
+  Eye,
+  MapPin,
+  Phone,
+  Search,
+  X,
+} from "lucide-react";
 import Image from "next/image";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
@@ -38,6 +46,7 @@ export default function CountingPage() {
   const [filterHalf, setFilterHalf] = useState<"all" | "1" | "2">(
     new Date().getDate() <= 15 ? "1" : "2",
   );
+  const [filterLateOnly, setFilterLateOnly] = useState(false);
 
   useEffect(() => {
     if (!userData) return;
@@ -48,7 +57,15 @@ export default function CountingPage() {
   useEffect(() => {
     applyFilters();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sessions, filterStatus, searchTerm, filterMonth, filterYear, filterHalf]);
+  }, [
+    sessions,
+    filterStatus,
+    searchTerm,
+    filterMonth,
+    filterYear,
+    filterHalf,
+    filterLateOnly,
+  ]);
 
   const fetchSessions = async () => {
     if (!userData) return;
@@ -97,6 +114,9 @@ export default function CountingPage() {
           companyId: data.companyId,
           branchId: data.branchId,
           branchName: data.branchName,
+          periodId: data.periodId,
+          periodMonth: data.periodMonth,
+          periodHalf: data.periodHalf,
           productId: data.productId,
           productName: data.productName,
           productSKU: data.productSKU,
@@ -110,6 +130,9 @@ export default function CountingPage() {
           status: data.status,
           remarks: data.remarks,
           adminRemarks: data.adminRemarks,
+          errorRemark: data.errorRemark,
+          userReportedCount: data.userReportedCount,
+          isLate: data.isLate,
           createdAt: data.createdAt?.toDate(),
           reviewedAt: data.reviewedAt?.toDate(),
           reviewedBy: data.reviewedBy,
@@ -130,18 +153,32 @@ export default function CountingPage() {
 
   const applyFilters = () => {
     let filtered = [...sessions];
+    const selectedPeriodMonth = `${filterYear}-${String(filterMonth).padStart(2, "0")}`;
 
     // Filter by month/year
     filtered = filtered.filter((s) => {
-      if (!s.createdAt) return false;
-      const d = s.createdAt;
-      const matchesMonth =
-        d.getMonth() + 1 === filterMonth && d.getFullYear() === filterYear;
-      const matchesHalf =
-        filterHalf === "all" ||
-        (filterHalf === "1" ? d.getDate() <= 15 : d.getDate() >= 16);
+      const matchesMonth = s.periodMonth
+        ? s.periodMonth === selectedPeriodMonth
+        : s.createdAt
+          ? s.createdAt.getMonth() + 1 === filterMonth &&
+            s.createdAt.getFullYear() === filterYear
+          : false;
+
+      const matchesHalf = s.periodHalf
+        ? filterHalf === "all" || String(s.periodHalf) === filterHalf
+        : s.createdAt
+          ? filterHalf === "all" ||
+            (filterHalf === "1"
+              ? s.createdAt.getDate() <= 15
+              : s.createdAt.getDate() >= 16)
+          : false;
+
       return matchesMonth && matchesHalf;
     });
+
+    if (filterLateOnly) {
+      filtered = filtered.filter((s) => s.isLate);
+    }
 
     // Filter by status
     if (filterStatus !== "all") {
@@ -319,7 +356,7 @@ export default function CountingPage() {
               <option value="rejected">ป๏ิเสธแล้ว</option>
               <option value="completed">เสร็จสิ้น</option>
               <option value="analyzed">วิเคราะห์แล้ว (ยังไม่ยืนยัน)</option>
-              <option value="mismatch">บาร์โค้ดไม่ตรง</option>
+              <option value="mismatch">พนักงานแจ้ง AI นับผิด</option>
             </select>
           </div>
         </div>
@@ -370,8 +407,15 @@ export default function CountingPage() {
             onClick={() => setFilterStatus("mismatch")}
             className={`px-4 py-2 rounded-lg text-sm cursor-pointer transition-all ${filterStatus === "mismatch" ? "ring-2 ring-red-400" : ""} bg-red-100 dark:bg-red-900/40 text-red-800 dark:text-red-300`}
           >
-            <span className="font-semibold">บาร์โค้ดไม่ตรง:</span>{" "}
+            <span className="font-semibold">พนักงานแจ้ง AI ผิด:</span>{" "}
             {sessions.filter((s) => s.status === "mismatch").length}
+          </button>
+          <button
+            onClick={() => setFilterLateOnly((value) => !value)}
+            className={`px-4 py-2 rounded-lg text-sm cursor-pointer transition-all ${filterLateOnly ? "ring-2 ring-amber-400" : ""} bg-amber-100 dark:bg-amber-900/40 text-amber-800 dark:text-amber-300`}
+          >
+            <span className="font-semibold">ส่งล่าช้า:</span>{" "}
+            {sessions.filter((s) => s.isLate).length}
           </button>
         </div>
       </div>
@@ -514,6 +558,60 @@ function SessionDetailModal({
   onReject: (id: string, remarks: string) => void;
 }) {
   const [remarks, setRemarks] = useState("");
+  const [overrideSource, setOverrideSource] = useState<
+    "ai" | "employee" | "custom"
+  >("employee");
+  const [customCount, setCustomCount] = useState<string>("");
+  const [isOverriding, setIsOverriding] = useState(false);
+
+  const isMismatch = session.status === "mismatch";
+
+  const handleOverride = async () => {
+    if (
+      overrideSource === "custom" &&
+      (!customCount || isNaN(Number(customCount)))
+    ) {
+      toast.error("กรุณาระบุจำนวนที่ถูกต้อง");
+      return;
+    }
+
+    try {
+      setIsOverriding(true);
+      const { getAuth } = await import("firebase/auth");
+      const auth = getAuth();
+      const token = await auth.currentUser?.getIdToken();
+
+      const res = await fetch("/api/supervisor/override", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          sessionId: session.id,
+          source: overrideSource,
+          ...(overrideSource === "custom" && {
+            customCount: Number(customCount),
+          }),
+          ...(remarks && { reason: remarks }),
+        }),
+      });
+
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.error || "Override failed");
+      }
+
+      toast.success("อนุมัติและยืนยันจำนวนสำเร็จ");
+      onClose();
+      window.location.reload();
+    } catch (error: any) {
+      console.error("Override error:", error);
+      toast.error(error.message || "เกิดข้อผิดพลาด");
+    } finally {
+      setIsOverriding(false);
+    }
+  };
 
   // Parse watermark data from remarks
   const watermarkData = (() => {
@@ -682,6 +780,99 @@ function SessionDetailModal({
             </div>
           </div>
 
+          {/* Mismatch Info Box */}
+          {isMismatch && (
+            <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-4 space-y-3">
+              <div className="flex items-center gap-2 text-red-700 dark:text-red-300 font-semibold">
+                <AlertTriangle className="w-5 h-5" />
+                พนักงานแจ้งว่า AI นับผิด
+              </div>
+              <div className="grid grid-cols-2 gap-4 text-sm">
+                <div>
+                  <span className="text-red-600 dark:text-red-400">
+                    AI นับได้:
+                  </span>{" "}
+                  <span className="font-bold text-gray-900 dark:text-white">
+                    {session.aiCount ?? "-"}
+                  </span>
+                </div>
+                <div>
+                  <span className="text-red-600 dark:text-red-400">
+                    พนักงานรายงาน:
+                  </span>{" "}
+                  <span className="font-bold text-gray-900 dark:text-white">
+                    {session.userReportedCount ?? "-"}
+                  </span>
+                </div>
+              </div>
+              {session.errorRemark && (
+                <div className="text-sm">
+                  <span className="text-red-600 dark:text-red-400">
+                    เหตุผล:
+                  </span>{" "}
+                  <span className="text-gray-800 dark:text-gray-200">
+                    {session.errorRemark}
+                  </span>
+                </div>
+              )}
+
+              {/* Override Options */}
+              <div className="border-t border-red-200 dark:border-red-800 pt-3 mt-3 space-y-3">
+                <h4 className="font-semibold text-gray-900 dark:text-white text-sm">
+                  เลือกจำนวนที่ถูกต้อง:
+                </h4>
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    onClick={() => setOverrideSource("ai")}
+                    className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+                      overrideSource === "ai"
+                        ? "bg-blue-600 text-white ring-2 ring-blue-400"
+                        : "bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-300 border border-gray-300 dark:border-gray-600"
+                    }`}
+                  >
+                    ใช้ค่า AI ({session.aiCount ?? 0})
+                  </button>
+                  <button
+                    onClick={() => setOverrideSource("employee")}
+                    className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+                      overrideSource === "employee"
+                        ? "bg-blue-600 text-white ring-2 ring-blue-400"
+                        : "bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-300 border border-gray-300 dark:border-gray-600"
+                    }`}
+                  >
+                    ใช้ค่าพนักงาน ({session.userReportedCount ?? 0})
+                  </button>
+                  <button
+                    onClick={() => setOverrideSource("custom")}
+                    className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+                      overrideSource === "custom"
+                        ? "bg-blue-600 text-white ring-2 ring-blue-400"
+                        : "bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-300 border border-gray-300 dark:border-gray-600"
+                    }`}
+                  >
+                    กำหนดเอง
+                  </button>
+                </div>
+                {overrideSource === "custom" && (
+                  <input
+                    type="number"
+                    value={customCount}
+                    onChange={(e) => setCustomCount(e.target.value)}
+                    placeholder="ระบุจำนวน..."
+                    className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                  />
+                )}
+                <textarea
+                  value={remarks}
+                  onChange={(e) => setRemarks(e.target.value)}
+                  placeholder="หมายเหตุ (ไม่บังคับ)..."
+                  rows={2}
+                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500"
+                />
+              </div>
+            </div>
+          )}
+
           {session.imageUrl && (
             <div>
               <h3 className="font-semibold text-gray-900 dark:text-white mb-4">
@@ -770,6 +961,20 @@ function SessionDetailModal({
         </div>
 
         <div className="p-6 border-t border-gray-200 dark:border-gray-700 flex gap-3">
+          {isMismatch && (
+            <button
+              onClick={handleOverride}
+              disabled={isOverriding}
+              className="flex-1 bg-green-600 text-white py-3 rounded-lg font-semibold hover:bg-green-700 transition flex items-center justify-center gap-2 disabled:opacity-50"
+            >
+              {isOverriding ? (
+                <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white" />
+              ) : (
+                <Check className="w-5 h-5" />
+              )}
+              ยืนยันจำนวน
+            </button>
+          )}
           {session.status === "pending-review" && (
             <>
               <button
@@ -827,7 +1032,7 @@ function StatusBadge({ status }: { status: string }) {
         "bg-orange-100 dark:bg-orange-900/40 text-orange-800 dark:text-orange-300",
     },
     mismatch: {
-      label: "บาร์โค้ดไม่ตรง",
+      label: "พนักงานแจ้ง AI นับผิด",
       className: "bg-red-100 dark:bg-red-900/40 text-red-700 dark:text-red-300",
     },
     pending: {

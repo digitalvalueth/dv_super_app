@@ -97,12 +97,13 @@ function parseWatsonDate(dateVal: unknown): Date | null {
     }
   }
 
-  // Pattern 3: M/D/YYYY (US format common in Excel, 4-digit year)
-  const mdyMatch = trimmed.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
-  if (mdyMatch) {
-    const month = parseInt(mdyMatch[1], 10) - 1;
-    const day = parseInt(mdyMatch[2], 10);
-    const year = parseInt(mdyMatch[3], 10);
+  // Pattern 3: D/M/YYYY or DD/MM/YYYY (format from excel-parser, 4-digit year)
+  // e.g. "08/01/2026", "1/2/2026"
+  const dmyMatch = trimmed.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+  if (dmyMatch) {
+    const day = parseInt(dmyMatch[1], 10);
+    const month = parseInt(dmyMatch[2], 10) - 1;
+    const year = parseInt(dmyMatch[3], 10);
     return new Date(year, month, day);
   }
 
@@ -1018,10 +1019,14 @@ export function usePriceListData() {
               // Buy1 (Std) allocation
               if (effectiveStdQty > 0) {
                 qtyBuy1 = effectiveStdQty;
+                const _stdExtVat = stdAlloc?.price ?? validPrices[0].price;
                 // Display: per-unit Invoice 62% IncV (not total)
+                // Fallback chain: rawItem.invoice62IncV → alloc.invoice62IncV → ExtVat × 1.07
                 priceBuy1InvoiceFormula =
                   rawItem?.invoice62IncV ||
-                  (stdAlloc?.price ?? validPrices[0].price);
+                  stdAlloc?.invoice62IncV ||
+                  validPrices[0].invoice62IncV ||
+                  Math.round(_stdExtVat * 1.07 * 100) / 100;
                 // Comm Calculate = Comm Price IncV (not invoice62)
                 priceBuy1ComCalculate =
                   rawItem?.priceIncVat ||
@@ -1029,10 +1034,14 @@ export function usePriceListData() {
                   validPrices[0].priceIncVat ||
                   0;
                 // Store per-unit prices for manual override recalculation
-                _stdPricePerUnit = stdAlloc?.price ?? validPrices[0].price;
+                _stdPricePerUnit = _stdExtVat;
                 _stdCommPerUnit =
                   stdAlloc?.priceIncVat || validPrices[0].priceIncVat || 0;
-                _stdInvoice62PerUnit = rawItem?.invoice62IncV || 0;
+                _stdInvoice62PerUnit =
+                  rawItem?.invoice62IncV ||
+                  stdAlloc?.invoice62IncV ||
+                  validPrices[0].invoice62IncV ||
+                  Math.round(_stdExtVat * 1.07 * 100) / 100;
               }
 
               // Promo allocations (sum all promo)
@@ -1065,7 +1074,10 @@ export function usePriceListData() {
                 const stdTier = validPrices[0]; // highest price = std tier
                 _stdPricePerUnit = stdTier.price;
                 _stdCommPerUnit = stdTier.priceIncVat || 0;
-                _stdInvoice62PerUnit = rawItem?.invoice62IncV || 0;
+                _stdInvoice62PerUnit =
+                  rawItem?.invoice62IncV ||
+                  stdTier.invoice62IncV ||
+                  Math.round(stdTier.price * 1.07 * 100) / 100;
               }
 
               // If Knapsack didn't allocate promo, store available promo tier price

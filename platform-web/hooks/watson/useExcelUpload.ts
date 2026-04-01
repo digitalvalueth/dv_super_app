@@ -1,7 +1,11 @@
 "use client";
 
-import { useState, useCallback } from "react";
-import { parseExcelFile, ParsedExcel, ReportMeta } from "@/lib/watson/excel-parser";
+import {
+  ParsedExcel,
+  parseExcelFile,
+  ReportMeta,
+} from "@/lib/watson/excel-parser";
+import { useCallback, useState } from "react";
 
 interface UseExcelUploadReturn {
   isLoading: boolean;
@@ -13,6 +17,7 @@ interface UseExcelUploadReturn {
   setFileName: (name: string | null) => void;
   reportMeta: ReportMeta | null;
   setReportMeta: (meta: ReportMeta | null) => void;
+  rawFile: File | null;
 }
 
 export function useExcelUpload(): UseExcelUploadReturn {
@@ -21,6 +26,7 @@ export function useExcelUpload(): UseExcelUploadReturn {
   const [parsedData, setParsedData] = useState<ParsedExcel | null>(null);
   const [fileName, setFileName] = useState<string | null>(null);
   const [reportMeta, setReportMeta] = useState<ReportMeta | null>(null);
+  const [rawFile, setRawFile] = useState<File | null>(null);
 
   const uploadFile = useCallback(async (file: File) => {
     setIsLoading(true);
@@ -42,6 +48,7 @@ export function useExcelUpload(): UseExcelUploadReturn {
       setParsedData(result);
       setFileName(file.name);
       setReportMeta(result.reportMeta);
+      setRawFile(file);
     } catch (err) {
       setError(
         err instanceof Error ? err.message : "เกิดข้อผิดพลาดในการอ่านไฟล์",
@@ -57,6 +64,7 @@ export function useExcelUpload(): UseExcelUploadReturn {
     setError(null);
     setFileName(null);
     setReportMeta(null);
+    setRawFile(null);
   }, []);
 
   return {
@@ -69,5 +77,6 @@ export function useExcelUpload(): UseExcelUploadReturn {
     setFileName,
     reportMeta,
     setReportMeta,
+    rawFile,
   };
 }

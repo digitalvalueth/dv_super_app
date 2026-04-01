@@ -214,9 +214,10 @@ export function parseExcelFile(file: File): Promise<ParsedExcel> {
               if (dateColIndices.has(colIndex) && typeof val === "number") {
                 const parsed = XLSX.SSF.parse_date_code(val);
                 if (parsed) {
-                  // Format as D/M/YY to match original Watson date format
-                  const yy = String(parsed.y).slice(-2);
-                  val = `${parsed.d}/${parsed.m}/${yy}`;
+                  // Format as DD/MM/YYYY to preserve original date format exactly
+                  const dd = String(parsed.d).padStart(2, "0");
+                  const mm = String(parsed.m).padStart(2, "0");
+                  val = `${dd}/${mm}/${parsed.y}`;
                 }
               }
 

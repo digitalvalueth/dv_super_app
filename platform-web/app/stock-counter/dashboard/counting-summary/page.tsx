@@ -226,6 +226,9 @@ export default function CountingSummaryPage() {
           companyId: d.companyId,
           branchId: d.branchId,
           branchName: d.branchName,
+          periodId: d.periodId,
+          periodMonth: d.periodMonth,
+          periodHalf: d.periodHalf,
           productId: d.productId,
           productName: d.productName,
           productSKU: d.productSKU,
@@ -240,6 +243,7 @@ export default function CountingSummaryPage() {
           adminRemarks: d.adminRemarks,
           errorRemark: d.errorRemark,
           userReportedCount: d.userReportedCount,
+          isLate: d.isLate,
           createdAt: d.createdAt?.toDate(),
         });
       });
@@ -634,13 +638,23 @@ export default function CountingSummaryPage() {
 
   // Helper: check if session matches selected month/year/half
   const inSelectedMonth = (s: CountingSession) => {
-    if (!s.createdAt) return false;
-    const d = s.createdAt;
-    const matchesMonth =
-      d.getMonth() + 1 === filterMonth && d.getFullYear() === filterYear;
-    const matchesHalf =
-      filterHalf === "all" ||
-      (filterHalf === "1" ? d.getDate() <= 15 : d.getDate() >= 16);
+    const selectedPeriodMonth = `${filterYear}-${String(filterMonth).padStart(2, "0")}`;
+    const matchesMonth = s.periodMonth
+      ? s.periodMonth === selectedPeriodMonth
+      : s.createdAt
+        ? s.createdAt.getMonth() + 1 === filterMonth &&
+          s.createdAt.getFullYear() === filterYear
+        : false;
+
+    const matchesHalf = s.periodHalf
+      ? filterHalf === "all" || String(s.periodHalf) === filterHalf
+      : s.createdAt
+        ? filterHalf === "all" ||
+          (filterHalf === "1"
+            ? s.createdAt.getDate() <= 15
+            : s.createdAt.getDate() >= 16)
+        : false;
+
     return matchesMonth && matchesHalf;
   };
 
