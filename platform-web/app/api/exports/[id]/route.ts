@@ -92,7 +92,7 @@ export async function GET(
         id: docSnap.id,
         exportedAt: d.exportedAt?.toDate?.().toISOString() || null,
         confirmedAt: d.confirmedAt ? toThaiISO(d.confirmedAt.toDate()) : null,
-        data: rowData,
+        data: normalizeDatesInRows(rowData),
         storagePath: undefined,
         storageUrl: undefined,
       },
