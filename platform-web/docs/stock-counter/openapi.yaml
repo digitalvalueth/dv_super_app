@@ -1,0 +1,139 @@
+openapi: 3.1.0
+info:
+  title: PHITHAN-EOD Import API
+  version: 1.0.0
+  description: |
+    API สำหรับรับข้อมูล End-of-Day (EOD) จากระบบ Phithan
+    เพื่อนำมาเทียบกับผลการนับสต็อกในระบบ Stock Counter
+
+servers:
+  - url: https://app.fittbsa.com
+    description: Production
+  - url: https://uat-app.fittbsa.com
+    description: Sandbox
+  - url: http://localhost:3000
+    description: Local
+
+security:
+  - ApiKeyAuth: []
+
+paths:
+  /api/phithan-eod:
+    post:
+      summary: Submit PHITHAN EOD data
+      operationId: createPhithanEod
+      tags:
+        - PHITHAN EOD
+      description: |
+        ส่งข้อมูล EOD จากระบบ Phithan เข้ามาเก็บใน Firestore collection `phithanEodImports`
+
+        **ส่ง field อะไรก็ได้** ภายใน `data` array — ระบบจะเก็บทั้งหมดโดยไม่ตรวจ schema
+        Field ที่ required คือ `branchCode` และ `data`
+
+        **POST ซ้ำ = overwrite** — ระบบใช้ `branchCode` เป็น Firestore document ID
+        ดังนั้น POST ซ้ำสาขาเดิม = อัปเดตข้อมูลล่าสุดทับของเก่าทันที
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - branchCode
+                - data
+              properties:
+                branchCode:
+                  type: string
+                  description: รหัสสาขา — ใช้เป็น Firestore document ID (POST ซ้ำ = overwrite)
+                  example: "256"
+                data:
+                  type: array
+                  description: Array ของ EOD record — ส่ง field อะไรก็ได้ในแต่ละ object
+                  minItems: 1
+                  items:
+                    type: object
+                    additionalProperties: true
+              additionalProperties: true
+            example:
+              branchCode: "256"
+              data:
+                - ProductBarcode: "8859109897033"
+                  ProductName: "สินค้าตัวอย่าง A"
+                  Qty: 100
+                  Date: "2026-04-02"
+                - ProductBarcode: "8859109897040"
+                  ProductName: "สินค้าตัวอย่าง B"
+                  Qty: 50
+                  Date: "2026-04-02"
+      responses:
+        "201":
+          description: EOD data received and stored successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    type: object
+                    properties:
+                      id:
+                        type: string
+                        description: Firestore document ID (= branchCode ที่ส่งมา)
+                        example: "256"
+                      branchCode:
+                        type: string
+                        example: "256"
+                      recordCount:
+                        type: integer
+                        description: จำนวน record ที่รับเข้ามา
+                        example: 2
+                      receivedAt:
+                        type: string
+                        format: date-time
+                        example: "2026-04-02T10:00:00.000+07:00"
+                      overwritten:
+                        type: boolean
+                        description: true ถ้าเป็นการ overwrite doc เดิม
+                        example: false
+              example:
+                success: true
+                data:
+                  id: "256"
+                  branchCode: "256"
+                  recordCount: 2
+                  receivedAt: "2026-04-02T10:00:00.000+07:00"
+                  overwritten: false
+        "400":
+          description: Validation error
+          content:
+            application/json:
+              example:
+                success: false
+                error:
+                  error: Bad Request
+                  message: "`branchCode` and `data` are required"
+                  code: VALIDATION_ERROR
+        "401":
+          description: Missing or invalid API Key
+          content:
+            application/json:
+              example:
+                success: false
+                error:
+                  error: Unauthorized
+                  message: "Missing or invalid API Key. Please provide X-API-Key header."
+                  code: AUTH_INVALID_KEY
+
+components:
+  securitySchemes:
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-API-Key
+      description: |
+        ขอ API Key ได้จากทีม FITTBSA
+        **Sandbox:** ใช้สำหรับทดสอบ
+        **Production:** ใช้สำหรับ production จริง
