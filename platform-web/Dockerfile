@@ -70,6 +70,10 @@ RUN npm run build
 FROM node:20-alpine AS runner
 WORKDIR /app
 
+# Re-declare ARGs needed at runtime (ARG scope is per-stage)
+ARG WATSON_API_KEY_SANDBOX
+ARG WATSON_API_KEY_PROD
+
 # Set NODE_ENV
 ENV NODE_ENV=production
 
@@ -94,6 +98,8 @@ EXPOSE 3000
 # Set environment for runtime
 ENV PORT=3000
 ENV HOSTNAME="0.0.0.0"
+ENV WATSON_API_KEY_SANDBOX=$WATSON_API_KEY_SANDBOX
+ENV WATSON_API_KEY_PROD=$WATSON_API_KEY_PROD
 
 # Start the app
 CMD ["node", "server.js"]
