@@ -1,5 +1,9 @@
-import { withApiKeyAuth } from "@/lib/watson/api-utils";
 import { adminDb } from "@/lib/firebase-admin";
+import {
+  getCorsHeaders,
+  handleCorsOptions,
+  withApiKeyAuth,
+} from "@/lib/watson/api-utils";
 import { FieldValue } from "firebase-admin/firestore";
 import { NextRequest, NextResponse } from "next/server";
 
@@ -9,6 +13,11 @@ const toThaiISO = (date: Date): string => {
   const thai = new Date(date.getTime() + 7 * 60 * 60 * 1000);
   return thai.toISOString();
 };
+
+// OPTIONS /api/phithan-eod — CORS preflight
+export async function OPTIONS(): Promise<NextResponse> {
+  return handleCorsOptions();
+}
 
 // POST /api/phithan-eod
 // Body: { branchCode: string, data: object[], ...anything }
@@ -48,19 +57,26 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       );
     }
 
-    if (!Array.isArray(data) || data.length === 0) {
+    if (!data || (typeof data !== "object" && !Array.isArray(data))) {
       return NextResponse.json(
         {
           success: false,
           error: {
             error: "Bad Request",
-            message: "`data` array is required and must not be empty.",
+            message: "`data` is required (object or array).",
             code: "VALIDATION_ERROR",
           },
         },
         { status: 400 },
       );
     }
+
+    // คำนวณ recordCount — รองรับทั้ง array และ object ที่มี details array
+    const recordCount = Array.isArray(data)
+      ? data.length
+      : Array.isArray((data as Record<string, unknown>).details)
+        ? ((data as Record<string, unknown>).details as unknown[]).length
+        : 1;
 
     const docRef = adminDb.collection(COLLECTION).doc(branchCode.trim());
     const existing = await docRef.get();
@@ -83,12 +99,12 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
         data: {
           id: branchCode.trim(),
           branchCode: branchCode.trim(),
-          recordCount: data.length,
+          recordCount,
           receivedAt: toThaiISO(now),
           overwritten,
         },
       },
-      { status: 201 },
+      { status: 201, headers: getCorsHeaders() },
     );
   });
 }
