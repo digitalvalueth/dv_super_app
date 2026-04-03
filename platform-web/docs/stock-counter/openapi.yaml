@@ -47,24 +47,38 @@ paths:
                   description: รหัสสาขา — ใช้เป็น Firestore document ID (POST ซ้ำ = overwrite)
                   example: "256"
                 data:
-                  type: array
-                  description: Array ของ EOD record — ส่ง field อะไรก็ได้ในแต่ละ object
-                  minItems: 1
-                  items:
-                    type: object
-                    additionalProperties: true
+                  description: |
+                    ข้อมูล EOD — รองรับ 2 รูปแบบ:
+                    - **Object** ที่มี `details` array ข้างใน (รูปแบบที่เพื่อนส่ง)
+                    - **Array** ของ record โดยตรง
+                    ส่ง field อะไรก็ได้ ระบบเก็บทั้งหมด
+                  oneOf:
+                    - type: object
+                      additionalProperties: true
+                      description: Object ที่มี details array ข้างใน
+                    - type: array
+                      minItems: 1
+                      items:
+                        type: object
+                        additionalProperties: true
               additionalProperties: true
             example:
-              branchCode: "256"
+              branchCode: "LP 5064"
               data:
-                - ProductBarcode: "8859109897033"
-                  ProductName: "สินค้าตัวอย่าง A"
-                  Qty: 100
-                  Date: "2026-04-02"
-                - ProductBarcode: "8859109897040"
-                  ProductName: "สินค้าตัวอย่าง B"
-                  Qty: 50
-                  Date: "2026-04-02"
+                EOD_Date_MAX: "2026-03-31T00:00:00Z"
+                Location: "Tesco Lotus Pharmacy Krabi(5064)"
+                LocationID: "LP 5064"
+                details:
+                  - Barcode: "8859109851462"
+                    EOD_Date: "2026-03-31T00:00:00Z"
+                    EOD_Qty: 8
+                    ID: 145103
+                    Item: "SK-C-246"
+                  - Barcode: "8859109851486"
+                    EOD_Date: "2026-03-31T00:00:00Z"
+                    EOD_Qty: 0
+                    ID: 145104
+                    Item: "SK-C-248"
       responses:
         "201":
           description: EOD data received and stored successfully
@@ -114,7 +128,7 @@ paths:
                 success: false
                 error:
                   error: Bad Request
-                  message: "`branchCode` and `data` are required"
+                  message: "`branchCode` and `data` (object or array) are required"
                   code: VALIDATION_ERROR
         "401":
           description: Missing or invalid API Key
