@@ -7,7 +7,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "migrate:fix-image-urls": "npx tsx scripts/fix-image-url-encoding.ts"
+    "migrate:fix-image-urls": "npx tsx scripts/fix-image-url-encoding.ts",
+    "migrate:phithan-eod-branch-codes": "node scripts/migrate-phithan-eod-branch-codes.mjs"
   },
   "dependencies": {
     "@google/generative-ai": "^0.24.1",

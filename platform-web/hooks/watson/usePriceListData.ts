@@ -600,7 +600,13 @@ export function usePriceListData() {
             if (byDateAll.length > 0) {
               // Best: date range + priceExtVat match (select the tier matching invoice price)
               if (actualPrice !== null) {
-                const byDateAndPrice = byDateAll.reduce((best, r) => {
+                // Exclude tiers where actual ExtVat > tier IncVat — impossible for that tier
+                const feasibleTiers = byDateAll.filter(
+                  (r) => !r.priceIncVat || actualPrice <= r.priceIncVat,
+                );
+                const matchableSet =
+                  feasibleTiers.length > 0 ? feasibleTiers : byDateAll;
+                const byDateAndPrice = matchableSet.reduce((best, r) => {
                   const currDiff = Math.abs(r.priceExtVat - actualPrice);
                   const bestDiff = Math.abs(best.priceExtVat - actualPrice);
                   return currDiff < bestDiff ? r : best;
@@ -979,14 +985,21 @@ export function usePriceListData() {
               // from different time periods but no real promo distinction).
               // Also treat single-tier items as "all same" — there's no real promo
               // tier to split into when only 1 price is available.
+              const maxValidPrice = Math.max(
+                ...validPrices.map((vp) => vp.price),
+              );
+              const allPricesClose = validPrices.every(
+                (vp) => maxValidPrice <= 0 || vp.price >= maxValidPrice * 0.9,
+              );
               const allSameTier =
                 validPrices.length <= 1 ||
-                validPrices.every((vp) => {
-                  const r = (vp.remark || "Buy1")
-                    .toLowerCase()
-                    .replace(/\s/g, "");
-                  return r === "buy1" || r === "std" || r === "standard";
-                });
+                (allPricesClose &&
+                  validPrices.every((vp) => {
+                    const r = (vp.remark || "Buy1")
+                      .toLowerCase()
+                      .replace(/\s/g, "");
+                    return r === "buy1" || r === "std" || r === "standard";
+                  }));
 
               if (allSameTier) {
                 calcLog.push(``);
