@@ -100,7 +100,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     const userBranchId =
       typeof userData.branchId === "string" ? userData.branchId : "";
 
-    let branchesQuery = adminDb.collection("branches");
+    let branchesQuery: FirebaseFirestore.Query = adminDb.collection("branches");
     if (companyId) {
       branchesQuery = branchesQuery.where("companyId", "==", companyId);
     }

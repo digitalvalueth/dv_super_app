@@ -19,6 +19,8 @@ export interface User {
   branchId?: string;
   branchCode?: string;
   branchName?: string;
+  branchIds?: string[]; // All branch IDs this user belongs to (multi-branch support)
+  branchNames?: Record<string, string>; // Map of branchId to branchName
   managedBranchIds?: string[]; // For managers who control multiple branches
   supervisorId?: string; // ID of supervisor (for employees)
   supervisorName?: string; // Name of supervisor
