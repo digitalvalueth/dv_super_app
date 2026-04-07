@@ -188,8 +188,10 @@ export const createCheckIn = async (
       }
     }
 
+    const { selectedShift, ...restData } = data;
     const newCheckIn = {
-      ...data,
+      ...restData,
+      ...(selectedShift !== undefined && { selectedShift }),
       isLate: lateInfo.isLate,
       lateMinutes: lateInfo.lateMinutes,
       isEarly: earlyInfo.isEarly,
@@ -243,6 +245,45 @@ export const getTodayCheckIn = async (
   } catch (error) {
     console.error("Error getting today's check-in:", error);
     return null;
+  }
+};
+
+/**
+ * Get all of today's check-in/out records for a user (all branches)
+ * Uses two separate queries (one per type) to reuse existing composite index
+ */
+export const getTodayCheckInsAll = async (
+  userId: string,
+): Promise<CheckIn[]> => {
+  try {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const tomorrow = new Date(today);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+
+    const checkInsRef = collection(db, "checkIns");
+    const makeQ = (type: CheckInType) =>
+      query(
+        checkInsRef,
+        where("userId", "==", userId),
+        where("type", "==", type),
+        where("createdAt", ">=", Timestamp.fromDate(today)),
+        where("createdAt", "<", Timestamp.fromDate(tomorrow)),
+        orderBy("createdAt", "asc"),
+      );
+
+    const [inSnap, outSnap] = await Promise.all([
+      getDocs(makeQ("check-in")),
+      getDocs(makeQ("check-out")),
+    ]);
+
+    return [...inSnap.docs, ...outSnap.docs].map((doc) => ({
+      id: doc.id,
+      ...doc.data(),
+    })) as CheckIn[];
+  } catch (error) {
+    console.error("Error getting all today's check-ins:", error);
+    return [];
   }
 };
 

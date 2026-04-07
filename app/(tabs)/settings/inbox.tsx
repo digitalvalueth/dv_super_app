@@ -5,6 +5,7 @@ import { Notification, NotificationType } from "@/types";
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
 import {
+  arrayUnion,
   collection,
   doc,
   onSnapshot,
@@ -158,12 +159,17 @@ export default function InboxScreen() {
 
       // Update user with company/branch
       const userRef = doc(db, "users", user.uid);
+      const newBranchId = notification.data.branchId;
+      const newBranchName = notification.data.branchName || "";
       await updateDoc(userRef, {
         companyId: notification.data.companyId,
-        branchId: notification.data.branchId,
-        branchName: notification.data.branchName || "",
+        branchId: newBranchId,
+        branchName: newBranchName,
         companyName: notification.data.companyName || "",
         role: notification.data.role || "employee",
+        // Multi-branch support: add to branchIds array + branchNames map
+        branchIds: arrayUnion(newBranchId),
+        [`branchNames.${newBranchId}`]: newBranchName,
         updatedAt: new Date(),
       });
 
@@ -189,13 +195,22 @@ export default function InboxScreen() {
         ),
       );
 
-      // Update auth store with new user data
+      // Update auth store with new user data (include branchIds for multi-branch UI)
+      const updatedBranchIds = Array.from(
+        new Set([...(user.branchIds || []), newBranchId]),
+      );
+      const updatedBranchNames = {
+        ...(user.branchNames || {}),
+        [newBranchId]: newBranchName,
+      };
       setUser({
         ...user,
         companyId: notification.data.companyId,
-        branchId: notification.data.branchId,
-        branchName: notification.data.branchName || "",
+        branchId: newBranchId,
+        branchName: newBranchName,
         companyName: notification.data.companyName || "",
+        branchIds: updatedBranchIds,
+        branchNames: updatedBranchNames,
         role:
           (notification.data.role as
             | "employee"

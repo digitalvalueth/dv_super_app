@@ -438,6 +438,14 @@ service cloud.firestore {
     match /watson_api_keys/{document=**} {
       allow read, write: if isAuthenticated();
     }
+
+    // ==================== PHITHAN EOD IMPORTS ====================
+    match /phithanEodImports/{docId} {
+      // Authenticated users can read EOD data (mobile app needs this)
+      allow read: if isAuthenticated();
+      // Only admin SDK (server-side) can write — no client writes
+      allow write: if false;
+    }
     
     // ==================== DEFAULT DENY ====================
     // Deny all other access by default

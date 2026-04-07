@@ -487,7 +487,7 @@ export default function CountingSummaryPage() {
           "EOD Qty",
           "ต่างจาก EOD",
           "วันที่ EOD",
-          "換算เป็นชิ้น",
+          "จำนวนที่นับได้",
           "AI Count",
           "วันที่เสร็จสิ้น",
           "ตำแหน่งที่อยู่",
@@ -1848,6 +1848,8 @@ export default function CountingSummaryPage() {
           session={selectedSession}
           onClose={() => setSelectedSession(null)}
           userData={userData}
+          eodSnapshotsByCode={eodSnapshotsByCode}
+          branchesById={branchesById}
           onOverrideSuccess={(sessionId, finalCount, source) => {
             // Update local state
             setSessions((prev) =>
@@ -1950,11 +1952,15 @@ function SessionDetailModal({
   session,
   onClose,
   userData,
+  eodSnapshotsByCode,
+  branchesById,
   onOverrideSuccess,
 }: {
   session: CountingSession;
   onClose: () => void;
   userData: User | null;
+  eodSnapshotsByCode: Record<string, EodSnapshot>;
+  branchesById: Record<string, Branch>;
   onOverrideSuccess?: (
     sessionId: string,
     finalCount: number,
@@ -1962,6 +1968,7 @@ function SessionDetailModal({
   ) => void;
 }) {
   const [showOverride, setShowOverride] = useState(false);
+  const [imageFullscreen, setImageFullscreen] = useState(false);
   const [overrideSource, setOverrideSource] = useState<
     "ai" | "employee" | "custom"
   >("ai");
@@ -2029,6 +2036,26 @@ function SessionDetailModal({
     }
   };
 
+  // Look up EOD qty for this session's product barcode
+  const eodQty = (() => {
+    const branch = branchesById[session.branchId];
+    const code =
+      normalizeBranchCode(branch?.code) ||
+      normalizeBranchCode(session.branchId);
+    const snap = code ? eodSnapshotsByCode[code] : null;
+    if (!snap || !session.productSKU) return null;
+    const barcode = session.productSKU.trim();
+    const detail = snap.details.find(
+      (d) => String(d.Barcode ?? "").trim() === barcode,
+    );
+    return detail?.EOD_Qty ?? null;
+  })();
+  const eodStandardCount = eodQty ?? session.standardCount ?? null;
+  const eodDiscrepancy =
+    eodStandardCount != null
+      ? (session.finalCount ?? 0) - eodStandardCount
+      : null;
+
   // Parse watermark data from remarks
   const watermarkData = (() => {
     try {
@@ -2037,7 +2064,10 @@ function SessionDetailModal({
         if (parsed.location || parsed.timestamp || parsed.employeeName) {
           return parsed as {
             location?: string;
-            coordinates?: { lat: number; lng: number };
+            coordinates?: {
+              latitude: number | string;
+              longitude: number | string;
+            };
             timestamp?: string;
             employeeName?: string;
             employeeId?: string;
@@ -2172,10 +2202,10 @@ function SessionDetailModal({
                 </div>
                 <div>
                   <span className="text-gray-600 dark:text-gray-400">
-                    Standard Count:
+                    Standard Count (EOD):
                   </span>{" "}
                   <span className="font-semibold text-gray-900 dark:text-white">
-                    {session.standardCount || "-"}
+                    {eodStandardCount ?? "-"}
                   </span>
                 </div>
                 <div>
@@ -2183,11 +2213,21 @@ function SessionDetailModal({
                     ส่วนต่าง:
                   </span>{" "}
                   <span
-                    className={`font-semibold ${(session.discrepancy ?? 0) > 0 ? "text-red-600" : "text-green-600"}`}
+                    className={`font-semibold ${
+                      eodDiscrepancy == null
+                        ? "text-gray-500"
+                        : eodDiscrepancy < 0
+                          ? "text-red-600"
+                          : eodDiscrepancy > 0
+                            ? "text-green-600"
+                            : "text-gray-500"
+                    }`}
                   >
-                    {(session.discrepancy ?? 0) > 0
-                      ? `-${session.discrepancy}`
-                      : "0"}
+                    {eodDiscrepancy == null
+                      ? "-"
+                      : eodDiscrepancy > 0
+                        ? `+${eodDiscrepancy}`
+                        : String(eodDiscrepancy)}
                   </span>
                 </div>
                 <div>
@@ -2222,6 +2262,12 @@ function SessionDetailModal({
                   fill
                   className="object-contain"
                 />
+                <button
+                  onClick={() => setImageFullscreen(true)}
+                  className="absolute top-2 right-2 bg-black/60 hover:bg-black/80 text-white rounded-lg px-3 py-1.5 text-xs font-medium flex items-center gap-1 transition-colors"
+                >
+                  <Eye className="w-3 h-3" /> ดูเต็มจอ
+                </button>
                 {watermarkData && (
                   <div className="absolute bottom-0 left-0 right-0 bg-linear-to-t from-black/80 to-transparent p-4">
                     <div className="text-white text-sm space-y-1">
@@ -2241,7 +2287,18 @@ function SessionDetailModal({
                       {watermarkData.location && (
                         <p className="text-xs opacity-80 flex items-center gap-1">
                           <MapPin className="w-3 h-3" />
-                          {watermarkData.location}
+                          {watermarkData.coordinates ? (
+                            <a
+                              href={`https://www.google.com/maps?q=${Number(watermarkData.coordinates.latitude)},${Number(watermarkData.coordinates.longitude)}`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="underline hover:text-blue-300"
+                            >
+                              {watermarkData.location}
+                            </a>
+                          ) : (
+                            watermarkData.location
+                          )}
                         </p>
                       )}
                       {watermarkData.deviceModel && (
@@ -2256,6 +2313,61 @@ function SessionDetailModal({
               </div>
             </div>
           )}
+
+          {/* Embedded Map */}
+          {(watermarkData?.coordinates || watermarkData?.location) &&
+            (() => {
+              let lat = Number(watermarkData?.coordinates?.latitude);
+              let lng = Number(watermarkData?.coordinates?.longitude);
+              // Fallback: parse from location string e.g. "13.75321, 100.65760"
+              if (
+                (isNaN(lat) || isNaN(lng) || (lat === 0 && lng === 0)) &&
+                watermarkData?.location
+              ) {
+                const parts = watermarkData.location
+                  .split(",")
+                  .map((s: string) => parseFloat(s.trim()));
+                if (
+                  parts.length === 2 &&
+                  !isNaN(parts[0]) &&
+                  !isNaN(parts[1])
+                ) {
+                  lat = parts[0];
+                  lng = parts[1];
+                }
+              }
+              if (isNaN(lat) || isNaN(lng) || (lat === 0 && lng === 0))
+                return null;
+              return (
+                <div>
+                  <h3 className="font-semibold text-gray-900 dark:text-white mb-3 flex items-center gap-2">
+                    <MapPin className="w-4 h-4 text-red-500" /> ตำแหน่งที่ถ่าย
+                  </h3>
+                  <div className="rounded-lg overflow-hidden border border-gray-200 dark:border-gray-700">
+                    <iframe
+                      src={`https://www.openstreetmap.org/export/embed.html?bbox=${lng - 0.005},${lat - 0.005},${lng + 0.005},${lat + 0.005}&layer=mapnik&marker=${lat},${lng}`}
+                      width="100%"
+                      height="280"
+                      className="block"
+                      loading="lazy"
+                    />
+                    <div className="flex items-center justify-between px-3 py-2 bg-gray-50 dark:bg-gray-800 text-xs text-gray-500 dark:text-gray-400">
+                      <span>
+                        {lat.toFixed(5)}, {lng.toFixed(5)}
+                      </span>
+                      <a
+                        href={`https://www.google.com/maps?q=${lat},${lng}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="flex items-center gap-1 text-blue-600 hover:text-blue-700 font-medium"
+                      >
+                        <MapPin className="w-3 h-3" /> เปิดใน Google Maps
+                      </a>
+                    </div>
+                  </div>
+                </div>
+              );
+            })()}
 
           {session.remarks && !watermarkData && (
             <div>
@@ -2483,6 +2595,30 @@ function SessionDetailModal({
           </button>
         </div>
       </div>
+
+      {/* Fullscreen image lightbox */}
+      {imageFullscreen && session.imageUrl && (
+        <div
+          className="fixed inset-0 z-60 bg-black flex items-center justify-center"
+          onClick={() => setImageFullscreen(false)}
+        >
+          <button
+            onClick={() => setImageFullscreen(false)}
+            className="absolute top-4 right-4 text-white bg-black/60 hover:bg-black/80 rounded-full p-2 z-10"
+          >
+            <X className="w-6 h-6" />
+          </button>
+          <div className="relative w-full h-full">
+            <Image
+              src={session.imageUrl}
+              alt="Counting image fullscreen"
+              fill
+              className="object-contain"
+              onClick={(e) => e.stopPropagation()}
+            />
+          </div>
+        </div>
+      )}
     </div>
   );
 }

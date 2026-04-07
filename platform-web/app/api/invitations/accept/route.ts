@@ -1,4 +1,5 @@
 import { adminAuth, adminDb } from "@/lib/firebase-admin";
+import { FieldValue } from "firebase-admin/firestore";
 import { NextRequest, NextResponse } from "next/server";
 
 /**
@@ -96,12 +97,18 @@ export async function POST(request: NextRequest) {
 
     // Role-specific fields
     if (invitationData.role === "employee") {
-      // Employee: single branch
+      // Employee: single branch (primary)
       userData.branchId = invitationData.branchId || null;
       userData.branchName = invitationData.branchName || null;
       userData.branchCode = invitationData.branchCode || null;
       userData.supervisorId = invitationData.supervisorId || null;
       userData.supervisorName = invitationData.supervisorName || null;
+      // Multi-branch support: add branchId to branchIds array + branchNames map
+      if (invitationData.branchId) {
+        userData.branchIds = FieldValue.arrayUnion(invitationData.branchId);
+        userData[`branchNames.${invitationData.branchId}`] =
+          invitationData.branchName || "";
+      }
     } else {
       // Supervisor/Manager: multiple branches
       userData.managedBranchIds = invitationData.managedBranchIds || [];
@@ -112,12 +119,21 @@ export async function POST(request: NextRequest) {
     const existingDoc = await userDocRef.get();
 
     if (existingDoc.exists) {
-      // Update existing user
+      // Update existing user — arrayUnion and dot notation work with update()
       await userDocRef.update(userData);
     } else {
       // Create new user with createdAt
+      // For new users, convert arrayUnion to a plain array and dot notation to nested object
+      const newUserData = { ...userData };
+      if (invitationData.role === "employee" && invitationData.branchId) {
+        newUserData.branchIds = [invitationData.branchId];
+        delete newUserData[`branchNames.${invitationData.branchId}`];
+        newUserData.branchNames = {
+          [invitationData.branchId]: invitationData.branchName || "",
+        };
+      }
       await userDocRef.set({
-        ...userData,
+        ...newUserData,
         createdAt: new Date(),
       });
     }

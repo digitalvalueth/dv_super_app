@@ -17,6 +17,7 @@ import { useTheme } from "@/stores/theme.store";
 import { formatTimestamp, WatermarkData } from "@/utils/watermark";
 import { Ionicons } from "@expo/vector-icons";
 import * as FileSystem from "expo-file-system/legacy";
+import * as ImageManipulator from "expo-image-manipulator";
 import { router, useLocalSearchParams } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -62,6 +63,7 @@ export default function PreviewScreen() {
     productBarcode?: string;
     assignmentId?: string;
     beforeQty?: string;
+    assignmentBranchId?: string;
     existingSessionId?: string; // ถ้ามี แสดงว่ามี session อยู่แล้ว ให้อัพเดทแทนสร้างใหม่
     nativeScannedBarcode?: string; // barcode ที่สแกนด้วย native scanner (แม่นยำ 100%)
     isSupplementMode?: string; // "true" เมื่อเข้ามาจาก history ถ่ายเพิ่ม
@@ -324,8 +326,8 @@ export default function PreviewScreen() {
               ? JSON.stringify({
                   location: watermarkData.location || "",
                   coordinates: {
-                    latitude: watermarkData.latitude || 0,
-                    longitude: watermarkData.longitude || 0,
+                    latitude: watermarkData.coordinates?.latitude ?? 0,
+                    longitude: watermarkData.coordinates?.longitude ?? 0,
                   },
                   timestamp:
                     watermarkData.timestamp || new Date().toISOString(),
@@ -413,8 +415,14 @@ export default function PreviewScreen() {
           Alert.alert("เกิดข้อผิดพลาด", "ไม่พบข้อมูลรูปภาพ");
           return;
         }
-        // Read from local file — fast disk I/O, no network needed
-        base64ForAI = await FileSystem.readAsStringAsync(localUri, {
+        // Resize: cap longest side at 1280px to keep file small for Gemini
+        const resized = await ImageManipulator.manipulateAsync(
+          localUri,
+          [{ resize: { width: 1280, height: 1280 } }],
+          { compress: 0.78, format: ImageManipulator.SaveFormat.JPEG },
+        );
+        // Read from resized file — smaller base64 = faster AI
+        base64ForAI = await FileSystem.readAsStringAsync(resized.uri, {
           encoding: "base64",
         });
         setImageBase64(base64ForAI);
@@ -427,11 +435,21 @@ export default function PreviewScreen() {
       const effectiveExpectedBarcode =
         params.productBarcode || params.nativeScannedBarcode || undefined;
 
-      const result: BarcodeCountResult = await countBarcodesInImage(
+      let result: BarcodeCountResult = await countBarcodesInImage(
         base64ForAI,
         effectiveExpectedBarcode,
         params.productName || undefined,
       );
+
+      // Auto-retry once if Gemini returned nothing (hallucination / empty response)
+      if (result.count === 0 && result.detectedBarcodes.length === 0) {
+        console.log("[Preview] Gemini returned empty — auto-retrying once...");
+        result = await countBarcodesInImage(
+          base64ForAI,
+          effectiveExpectedBarcode,
+          params.productName || undefined,
+        );
+      }
 
       setBarcodeCount(result.count);
       setBarcodeMatch(result.barcodeMatch);
@@ -568,6 +586,7 @@ export default function PreviewScreen() {
         productBarcode: params.productBarcode,
         assignmentId: params.assignmentId,
         beforeQty: params.beforeQty,
+        assignmentBranchId: params.assignmentBranchId || "",
         watermarkData: params.watermarkData,
         // Barcode match status — used to block save on mismatch
         barcodeMatchStatus: barcodeMatch === false ? "mismatch" : "match",

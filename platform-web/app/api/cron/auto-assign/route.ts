@@ -60,40 +60,50 @@ export async function GET(request: NextRequest) {
       const productIds = productsByCompany.get(companyId) || [];
       if (productIds.length === 0) continue;
 
-      // เช็คว่ามี assignment นี้อยู่แล้วไหม
-      const existing = await db
-        .collection("assignments")
-        .where("userId", "==", employee.id)
-        .where("month", "==", month)
-        .where("year", "==", year)
-        .where("half", "==", half)
-        .limit(1)
-        .get();
+      // รองรับพนักงานหลายสาขา: ใช้ branchIds array ถ้ามี, fallback เป็น branchId เดียว
+      const empBranchIds: string[] =
+        employee.branchIds && employee.branchIds.length > 0
+          ? employee.branchIds
+          : [employee.branchId || ""];
+      const empBranchNames: Record<string, string> = employee.branchNames || {};
 
-      if (!existing.empty) {
-        skipped++;
-        continue;
+      for (const branchId of empBranchIds) {
+        // เช็คว่ามี assignment สำหรับ userId + month + year + half + branchId อยู่แล้วไหม
+        const existing = await db
+          .collection("assignments")
+          .where("userId", "==", employee.id)
+          .where("month", "==", month)
+          .where("year", "==", year)
+          .where("half", "==", half)
+          .where("branchId", "==", branchId)
+          .limit(1)
+          .get();
+
+        if (!existing.empty) {
+          skipped++;
+          continue;
+        }
+
+        await db.collection("assignments").add({
+          userId: employee.id,
+          userName: employee.name || employee.displayName || "",
+          userEmail: employee.email || "",
+          companyId,
+          branchId,
+          branchName: empBranchNames[branchId] || employee.branchName || "",
+          productIds,
+          productCount: productIds.length,
+          month,
+          year,
+          half,
+          status: "pending",
+          completedCount: 0,
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        });
+
+        created++;
       }
-
-      await db.collection("assignments").add({
-        userId: employee.id,
-        userName: employee.name || employee.displayName || "",
-        userEmail: employee.email || "",
-        companyId,
-        branchId: employee.branchId || "",
-        branchName: employee.branchName || "",
-        productIds,
-        productCount: productIds.length,
-        month,
-        year,
-        half,
-        status: "pending",
-        completedCount: 0,
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      });
-
-      created++;
     }
 
     console.log(`[auto-assign] เสร็จ: สร้าง ${created}, ข้าม ${skipped}`);

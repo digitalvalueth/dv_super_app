@@ -108,47 +108,57 @@ async function processCompany(
     const emp = empDoc.data();
     const userId = empDoc.id;
 
-    // เช็คว่ามี assignment สำหรับ userId + month + year + half อยู่แล้วไหม
-    const existingSnap = await db
-      .collection("assignments")
-      .where("userId", "==", userId)
-      .where("month", "==", month)
-      .where("year", "==", year)
-      .where("half", "==", half)
-      .limit(1)
-      .get();
+    // รองรับพนักงานหลายสาขา: ใช้ branchIds array ถ้ามี, fallback เป็น branchId เดียว
+    const empBranchIds: string[] =
+      emp.branchIds && emp.branchIds.length > 0
+        ? emp.branchIds
+        : [emp.branchId || ""];
+    const empBranchNames: Record<string, string> = emp.branchNames || {};
 
-    if (!existingSnap.empty) {
-      skipped++;
-      continue;
-    }
+    for (const branchId of empBranchIds) {
+      // เช็คว่ามี assignment สำหรับ userId + month + year + half + branchId อยู่แล้วไหม
+      const existingSnap = await db
+        .collection("assignments")
+        .where("userId", "==", userId)
+        .where("month", "==", month)
+        .where("year", "==", year)
+        .where("half", "==", half)
+        .where("branchId", "==", branchId)
+        .limit(1)
+        .get();
 
-    const assignmentRef = db.collection("assignments").doc();
-    batch.set(assignmentRef, {
-      userId,
-      userName: emp.name || emp.displayName || "",
-      userEmail: emp.email || "",
-      companyId,
-      branchId: emp.branchId || "",
-      branchName: emp.branchName || "",
-      productIds,
-      productCount: productIds.length,
-      month,
-      year,
-      half,
-      status: "pending",
-      completedCount: 0,
-      createdAt: admin.firestore.FieldValue.serverTimestamp(),
-      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-    });
+      if (!existingSnap.empty) {
+        skipped++;
+        continue;
+      }
 
-    batchCount++;
-    created++;
+      const assignmentRef = db.collection("assignments").doc();
+      batch.set(assignmentRef, {
+        userId,
+        userName: emp.name || emp.displayName || "",
+        userEmail: emp.email || "",
+        companyId,
+        branchId,
+        branchName: empBranchNames[branchId] || emp.branchName || "",
+        productIds,
+        productCount: productIds.length,
+        month,
+        year,
+        half,
+        status: "pending",
+        completedCount: 0,
+        createdAt: admin.firestore.FieldValue.serverTimestamp(),
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      });
 
-    // Firestore batch limit = 500
-    if (batchCount >= 490) {
-      await batch.commit();
-      batchCount = 0;
+      batchCount++;
+      created++;
+
+      // Firestore batch limit = 500
+      if (batchCount >= 490) {
+        await batch.commit();
+        batchCount = 0;
+      }
     }
   }
 

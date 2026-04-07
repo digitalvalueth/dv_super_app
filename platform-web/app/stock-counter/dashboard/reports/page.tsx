@@ -223,7 +223,7 @@ export default function ReportsPage() {
       </div>
 
       {/* Quick Links to Sub-Reports */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
         <Link
           href="/stock-counter/dashboard/reports/employee-behavior"
           className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 hover:border-purple-400 hover:shadow-md transition-all group"
@@ -263,6 +263,28 @@ export default function ReportsPage() {
               </div>
             </div>
             <ArrowRight className="w-5 h-5 text-gray-400 group-hover:text-teal-500 transition-colors" />
+          </div>
+        </Link>
+
+        <Link
+          href="/stock-counter/dashboard/reports/eod-stock"
+          className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 hover:border-blue-400 hover:shadow-md transition-all group"
+        >
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-4">
+              <div className="p-3 bg-blue-500 rounded-lg text-white">
+                <Building2 className="w-6 h-6" />
+              </div>
+              <div>
+                <h3 className="font-semibold text-gray-900 group-hover:text-blue-600">
+                  สินค้าตามสาขา (EOD)
+                </h3>
+                <p className="text-sm text-gray-500">
+                  จำนวนสินค้าแต่ละรายการของแต่ละสาขา
+                </p>
+              </div>
+            </div>
+            <ArrowRight className="w-5 h-5 text-gray-400 group-hover:text-blue-500 transition-colors" />
           </div>
         </Link>
 

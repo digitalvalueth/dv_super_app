@@ -125,10 +125,17 @@ export default function BranchesPage() {
           const branchUserCount: Record<string, number> = {};
           usersSnapshot.forEach((doc) => {
             const data = doc.data() as any;
-            if (data.branchId) {
-              branchUserCount[data.branchId] =
-                (branchUserCount[data.branchId] || 0) + 1;
-            }
+            // Count via branchIds array (multi-branch) or fall back to branchId
+            const ids: string[] = data.branchIds?.length
+              ? data.branchIds
+              : data.branchId
+                ? [data.branchId]
+                : [];
+            ids.forEach((id) => {
+              if (managedIds.includes(id)) {
+                branchUserCount[id] = (branchUserCount[id] || 0) + 1;
+              }
+            });
           });
           branchesData.forEach((b) => {
             b.userCount = branchUserCount[b.id] || 0;
@@ -181,10 +188,15 @@ export default function BranchesPage() {
       const branchUserCount: Record<string, number> = {};
       usersSnapshot.forEach((doc) => {
         const data = doc.data() as any;
-        const branchId = data.branchId;
-        if (branchId) {
-          branchUserCount[branchId] = (branchUserCount[branchId] || 0) + 1;
-        }
+        // Count via branchIds array (multi-branch) or fall back to branchId
+        const ids: string[] = data.branchIds?.length
+          ? data.branchIds
+          : data.branchId
+            ? [data.branchId]
+            : [];
+        ids.forEach((id) => {
+          branchUserCount[id] = (branchUserCount[id] || 0) + 1;
+        });
         // เก็บข้อมูล company
         if (data.companyId && data.companyName) {
           companiesMap.set(data.companyId, {

@@ -12,6 +12,8 @@ export interface User {
   branchId?: string; // Optional until admin assigns
   branchCode?: string;
   branchName?: string;
+  branchIds?: string[]; // Multiple branches support
+  branchNames?: Record<string, string>; // branchId → branchName map
   role?: UserRole; // Optional until admin assigns
   supervisorId?: string; // ID of supervisor (for employees)
   supervisorName?: string; // Name of supervisor
@@ -276,6 +278,7 @@ export interface ProductWithAssignment extends Omit<Product, "status"> {
   currentCountQty?: number;
   variance?: number;
   lastCountedAt?: Timestamp | null;
+  assignmentBranchId?: string; // Which branch this assignment belongs to
 }
 
 // ==================== API Response Types ====================
