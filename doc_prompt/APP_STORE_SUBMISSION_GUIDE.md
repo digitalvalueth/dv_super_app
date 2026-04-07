@@ -391,7 +391,7 @@ LOGIN INSTRUCTIONS:
 1. Open the app
 2. Tap "Sign in with Google"
 3. Use the demo account provided above
-4. OR use: demo@digitalvalue.co.th / DemoPassword123!
+4. OR use: demo@review.fittbsa.com / FittBSA@Demo2026
 
 KEY FEATURES TO TEST:
 1. Home Dashboard - View daily statistics
