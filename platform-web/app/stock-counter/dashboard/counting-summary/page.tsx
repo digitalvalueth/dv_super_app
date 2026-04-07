@@ -6,7 +6,7 @@ import {
 } from "@/lib/export-with-images";
 import { db } from "@/lib/firebase";
 import { useAuthStore } from "@/stores/auth.store";
-import { CountingSession, User } from "@/types";
+import { Branch, CountingSession, User } from "@/types";
 import { format } from "date-fns";
 import { th } from "date-fns/locale";
 import {
@@ -54,11 +54,106 @@ interface SummaryRow {
   statuses: string[];
   errorRemark?: string;
   userReportedCount?: number;
+  eodQty?: number;
+  eodDate?: Date;
+  eodDiff?: number;
 }
 
+interface EodDetailRow {
+  Barcode?: string;
+  EOD_Date?: string;
+  EOD_Qty?: number;
+  ID?: number;
+  Item?: string;
+}
+
+interface EodSnapshot {
+  id: string;
+  branchCode: string;
+  location?: string;
+  locationId?: string;
+  eodDateMax?: string;
+  details: EodDetailRow[];
+  createdAt?: Date;
+  updatedAt?: Date;
+}
+
+interface EodEntry {
+  branchId: string;
+  branchCode: string;
+  productKey: string;
+  item?: string;
+  barcode?: string;
+  eodQty: number;
+  eodDate?: Date;
+  location?: string;
+  locationId?: string;
+}
+
+const normalizeBranchCode = (value?: string | null) => {
+  const raw = (value || "").trim();
+  const digitsOnly = raw.replace(/\D+/g, "");
+  return digitsOnly || raw.replace(/\s+/g, "").toUpperCase();
+};
+
+const normalizeProductKey = (value?: string | null) =>
+  (value || "").trim().toUpperCase();
+
+const parseMaybeDate = (value: unknown): Date | undefined => {
+  if (!value) return undefined;
+  if (value instanceof Date) return value;
+  if (typeof value === "string") {
+    const parsed = new Date(value);
+    return Number.isNaN(parsed.getTime()) ? undefined : parsed;
+  }
+  if (
+    typeof value === "object" &&
+    value !== null &&
+    "toDate" in value &&
+    typeof (value as { toDate?: () => Date }).toDate === "function"
+  ) {
+    return (value as { toDate: () => Date }).toDate();
+  }
+  return undefined;
+};
+
+const toNumber = (value: unknown): number => {
+  if (typeof value === "number") return value;
+  if (typeof value === "string" && value.trim() !== "") {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : 0;
+  }
+  return 0;
+};
+
+const getEodDetails = (rawData: unknown): EodDetailRow[] => {
+  if (Array.isArray(rawData)) {
+    return rawData.filter(
+      (entry): entry is EodDetailRow =>
+        typeof entry === "object" && entry !== null,
+    );
+  }
+
+  if (typeof rawData === "object" && rawData !== null) {
+    const details = (rawData as { details?: unknown }).details;
+    if (Array.isArray(details)) {
+      return details.filter(
+        (entry): entry is EodDetailRow =>
+          typeof entry === "object" && entry !== null,
+      );
+    }
+  }
+
+  return [];
+};
+
 export default function CountingSummaryPage() {
-  const { userData } = useAuthStore();
+  const { userData, user } = useAuthStore();
   const [sessions, setSessions] = useState<CountingSession[]>([]);
+  const [branchesById, setBranchesById] = useState<Record<string, Branch>>({});
+  const [eodSnapshotsByCode, setEodSnapshotsByCode] = useState<
+    Record<string, EodSnapshot>
+  >({});
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
   const [filterBranch, setFilterBranch] = useState("all");
@@ -178,10 +273,10 @@ export default function CountingSummaryPage() {
   };
 
   useEffect(() => {
-    if (!userData) return;
+    if (!userData || !user) return;
     fetchSessions();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [userData]);
+  }, [userData, user]);
 
   const fetchSessions = async () => {
     if (!userData) return;
@@ -214,7 +309,34 @@ export default function CountingSummaryPage() {
         sessionsQuery = query(collection(db, "countingSessions"));
       }
 
-      const snapshot = await getDocs(sessionsQuery);
+      const branchesQuery = companyId
+        ? query(collection(db, "branches"), where("companyId", "==", companyId))
+        : query(collection(db, "branches"));
+
+      const token = await user?.getIdToken();
+
+      const [snapshot, branchesSnapshot, eodPayload] = await Promise.all([
+        getDocs(sessionsQuery),
+        getDocs(branchesQuery),
+        token
+          ? fetch("/api/phithan-eod", {
+              headers: {
+                Authorization: `Bearer ${token}`,
+              },
+            })
+              .then(async (response) => {
+                if (!response.ok) {
+                  throw new Error(`โหลด EOD ไม่สำเร็จ (${response.status})`);
+                }
+                return response.json();
+              })
+              .catch((error) => {
+                console.error("Error fetching EOD snapshots:", error);
+                return { data: [] };
+              })
+          : Promise.resolve({ data: [] }),
+      ]);
+
       const data: CountingSession[] = [];
       snapshot.forEach((doc) => {
         const d = doc.data() as any;
@@ -226,6 +348,9 @@ export default function CountingSummaryPage() {
           companyId: d.companyId,
           branchId: d.branchId,
           branchName: d.branchName,
+          periodId: d.periodId,
+          periodMonth: d.periodMonth,
+          periodHalf: d.periodHalf,
           productId: d.productId,
           productName: d.productName,
           productSKU: d.productSKU,
@@ -240,13 +365,70 @@ export default function CountingSummaryPage() {
           adminRemarks: d.adminRemarks,
           errorRemark: d.errorRemark,
           userReportedCount: d.userReportedCount,
+          isLate: d.isLate,
           createdAt: d.createdAt?.toDate(),
         });
+      });
+
+      const branchMap: Record<string, Branch> = {};
+      const branchCodeSet = new Set<string>();
+
+      branchesSnapshot.forEach((branchDoc) => {
+        const branchData = branchDoc.data() as any;
+        const branch: Branch = {
+          id: branchDoc.id,
+          companyId: branchData.companyId,
+          companyName: branchData.companyName,
+          name: branchData.name,
+          code: branchData.code,
+          address: branchData.address,
+          phone: branchData.phone,
+          createdAt: branchData.createdAt?.toDate(),
+          updatedAt: branchData.updatedAt?.toDate(),
+        };
+
+        branchMap[branch.id] = branch;
+
+        const normalizedCode = normalizeBranchCode(branch.code);
+        if (normalizedCode) {
+          branchCodeSet.add(normalizedCode);
+        }
+      });
+
+      const nextEodSnapshots: Record<string, EodSnapshot> = {};
+      const eodRows = Array.isArray(eodPayload?.data) ? eodPayload.data : [];
+
+      eodRows.forEach((eodData: any) => {
+        const rawBranchCode = String(
+          eodData.branchCode || eodData.id || "",
+        ).trim();
+        const normalizedCode = normalizeBranchCode(rawBranchCode);
+        if (!normalizedCode || !branchCodeSet.has(normalizedCode)) return;
+
+        nextEodSnapshots[normalizedCode] = {
+          id: String(eodData.id || rawBranchCode),
+          branchCode: rawBranchCode,
+          location:
+            typeof eodData.location === "string" ? eodData.location : undefined,
+          locationId:
+            typeof eodData.locationId === "string"
+              ? eodData.locationId
+              : undefined,
+          eodDateMax:
+            typeof eodData.eodDateMax === "string"
+              ? eodData.eodDateMax
+              : undefined,
+          details: getEodDetails(eodData.details),
+          createdAt: parseMaybeDate(eodData.createdAt),
+          updatedAt: parseMaybeDate(eodData.updatedAt),
+        };
       });
 
       data.sort(
         (a, b) => (b.createdAt?.getTime() || 0) - (a.createdAt?.getTime() || 0),
       );
+      setBranchesById(branchMap);
+      setEodSnapshotsByCode(nextEodSnapshots);
       setSessions(data);
     } catch (error) {
       console.error("Error fetching sessions:", error);
@@ -302,7 +484,10 @@ export default function CountingSummaryPage() {
           "Barcode",
           "หน่วย",
           "จำนวนที่นับได้",
-          "換算เป็นชิ้น",
+          "EOD Qty",
+          "ต่างจาก EOD",
+          "วันที่ EOD",
+          "จำนวนที่นับได้",
           "AI Count",
           "วันที่เสร็จสิ้น",
           "ตำแหน่งที่อยู่",
@@ -325,6 +510,11 @@ export default function CountingSummaryPage() {
           const uom = productUomMap.get(s.productSKU || "");
           const unitType = uom?.unitType || "piece";
           const count = s.finalCount ?? s.aiCount ?? 0;
+          const eodEntry = resolveEodEntry(
+            s.branchId,
+            s.productSKU,
+            s.productId,
+          );
           const convertedCount =
             unitType === "box" ? count * (uom?.unitsPerBox || 1) : count;
           return [
@@ -335,6 +525,9 @@ export default function CountingSummaryPage() {
             s.productSKU || "",
             unitType === "box" ? "กล่อง" : "ชิ้น",
             count,
+            eodEntry?.eodQty ?? "",
+            eodEntry ? count - eodEntry.eodQty : "",
+            eodEntry?.eodDate ? format(eodEntry.eodDate, "dd/MM/yyyy") : "",
             convertedCount,
             s.aiCount ?? 0,
             s.createdAt ? format(s.createdAt, "dd/MM/yyyy HH:mm") : "",
@@ -634,58 +827,226 @@ export default function CountingSummaryPage() {
 
   // Helper: check if session matches selected month/year/half
   const inSelectedMonth = (s: CountingSession) => {
-    if (!s.createdAt) return false;
-    const d = s.createdAt;
-    const matchesMonth =
-      d.getMonth() + 1 === filterMonth && d.getFullYear() === filterYear;
-    const matchesHalf =
-      filterHalf === "all" ||
-      (filterHalf === "1" ? d.getDate() <= 15 : d.getDate() >= 16);
+    const selectedPeriodMonth = `${filterYear}-${String(filterMonth).padStart(2, "0")}`;
+    const matchesMonth = s.periodMonth
+      ? s.periodMonth === selectedPeriodMonth
+      : s.createdAt
+        ? s.createdAt.getMonth() + 1 === filterMonth &&
+          s.createdAt.getFullYear() === filterYear
+        : false;
+
+    const matchesHalf = s.periodHalf
+      ? filterHalf === "all" || String(s.periodHalf) === filterHalf
+      : s.createdAt
+        ? filterHalf === "all" ||
+          (filterHalf === "1"
+            ? s.createdAt.getDate() <= 15
+            : s.createdAt.getDate() >= 16)
+        : false;
+
     return matchesMonth && matchesHalf;
+  };
+
+  const matchesActiveFilters = (s: CountingSession) => {
+    if (!inSelectedMonth(s)) return false;
+    if (filterBranch !== "all" && s.branchId !== filterBranch) return false;
+    if (filterEmployee !== "all" && s.userId !== filterEmployee) return false;
+    if (!searchTerm) return true;
+
+    const term = searchTerm.toLowerCase();
+    return !!(
+      s.userName?.toLowerCase().includes(term) ||
+      s.productName?.toLowerCase().includes(term) ||
+      s.productSKU?.toLowerCase().includes(term) ||
+      s.branchName?.toLowerCase().includes(term)
+    );
+  };
+
+  const visibleSessions = useMemo(
+    () => sessions.filter(matchesActiveFilters),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [
+      sessions,
+      filterBranch,
+      filterEmployee,
+      searchTerm,
+      filterMonth,
+      filterYear,
+      filterHalf,
+    ],
+  );
+
+  const completedVisibleSessions = useMemo(
+    () => visibleSessions.filter((s) => s.status === "completed"),
+    [visibleSessions],
+  );
+
+  const eodComparison = useMemo(() => {
+    const entries = new Map<string, EodEntry>();
+    const missingBranchNames: string[] = [];
+    const snapshotDates = new Set<string>();
+    const branchIdsInScope = Array.from(
+      new Set(
+        (filterBranch !== "all"
+          ? [filterBranch]
+          : visibleSessions.map((session) => session.branchId)
+        ).filter(Boolean),
+      ),
+    );
+
+    let branchesCompared = 0;
+
+    branchIdsInScope.forEach((branchId) => {
+      const branch = branchesById[branchId];
+      const candidateCodes = [
+        normalizeBranchCode(branch?.code),
+        normalizeBranchCode(branchId),
+      ].filter(Boolean);
+      const snapshot = candidateCodes
+        .map((code) => eodSnapshotsByCode[code])
+        .find(Boolean);
+
+      if (!snapshot) {
+        if (branch?.name) {
+          missingBranchNames.push(branch.name);
+        }
+        return;
+      }
+
+      branchesCompared += 1;
+
+      const snapshotDate =
+        parseMaybeDate(snapshot.eodDateMax) ||
+        parseMaybeDate(snapshot.details[0]?.EOD_Date) ||
+        snapshot.updatedAt ||
+        snapshot.createdAt;
+
+      if (snapshotDate) {
+        snapshotDates.add(format(snapshotDate, "dd MMM yyyy", { locale: th }));
+      }
+
+      snapshot.details.forEach((detail) => {
+        const productKey = normalizeProductKey(detail.Item || detail.Barcode);
+        if (!productKey) return;
+
+        const entryKey = `${branchId}__${productKey}`;
+        const qty = toNumber(detail.EOD_Qty);
+
+        if (entries.has(entryKey)) {
+          const existing = entries.get(entryKey)!;
+          existing.eodQty += qty;
+          if (!existing.eodDate) {
+            existing.eodDate = parseMaybeDate(detail.EOD_Date) || snapshotDate;
+          }
+          return;
+        }
+
+        entries.set(entryKey, {
+          branchId,
+          branchCode: snapshot.branchCode,
+          productKey,
+          item: detail.Item,
+          barcode: detail.Barcode,
+          eodQty: qty,
+          eodDate: parseMaybeDate(detail.EOD_Date) || snapshotDate,
+          location: snapshot.location,
+          locationId: snapshot.locationId,
+        });
+      });
+    });
+
+    const countedBranchProducts = new Set<string>();
+    const matchedBranchProducts = new Set<string>();
+    const countedWithoutEod = new Set<string>();
+
+    completedVisibleSessions.forEach((session) => {
+      const candidateProductKeys = [
+        normalizeProductKey(session.productSKU),
+        normalizeProductKey(session.productId),
+      ].filter(Boolean);
+
+      if (candidateProductKeys.length === 0) return;
+
+      const matchedKey = candidateProductKeys.find((productKey) =>
+        entries.has(`${session.branchId}__${productKey}`),
+      );
+      const comparisonKey = `${session.branchId}__${matchedKey || candidateProductKeys[0]}`;
+
+      countedBranchProducts.add(comparisonKey);
+      if (entries.has(comparisonKey)) {
+        matchedBranchProducts.add(comparisonKey);
+      } else {
+        countedWithoutEod.add(comparisonKey);
+      }
+    });
+
+    return {
+      entries,
+      totalItems: entries.size,
+      matchedItems: matchedBranchProducts.size,
+      missingItems: Math.max(entries.size - matchedBranchProducts.size, 0),
+      countedWithoutEod: countedWithoutEod.size,
+      branchesCompared,
+      missingBranchNames,
+      snapshotDates: Array.from(snapshotDates),
+    };
+  }, [
+    branchesById,
+    completedVisibleSessions,
+    eodSnapshotsByCode,
+    filterBranch,
+    visibleSessions,
+  ]);
+
+  const resolveEodEntry = (
+    branchId: string,
+    productSKU?: string,
+    productId?: string,
+  ) => {
+    const candidateProductKeys = [
+      normalizeProductKey(productSKU),
+      normalizeProductKey(productId),
+    ].filter(Boolean);
+
+    for (const productKey of candidateProductKeys) {
+      const match = eodComparison.entries.get(`${branchId}__${productKey}`);
+      if (match) return match;
+    }
+
+    return undefined;
   };
 
   // Unique branches and employees for filter dropdowns (scoped to selected month)
   const branches = useMemo(() => {
     const map = new Map<string, string>();
-    sessions.filter(inSelectedMonth).forEach((s) => {
-      if (s.branchId && s.branchName) map.set(s.branchId, s.branchName);
-    });
+    sessions
+      .filter((s) => s.status === "completed" && inSelectedMonth(s))
+      .forEach((s) => {
+        if (s.branchId && s.branchName) map.set(s.branchId, s.branchName);
+      });
     return Array.from(map.entries()).map(([id, name]) => ({ id, name }));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessions, filterMonth, filterYear, filterHalf]);
 
   const employees = useMemo(() => {
     const map = new Map<string, string>();
-    sessions.filter(inSelectedMonth).forEach((s) => {
-      if (s.userId && s.userName) map.set(s.userId, s.userName);
-    });
+    sessions
+      .filter((s) => s.status === "completed" && inSelectedMonth(s))
+      .forEach((s) => {
+        if (s.userId && s.userName) map.set(s.userId, s.userName);
+      });
     return Array.from(map.entries()).map(([id, name]) => ({ id, name }));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessions, filterMonth, filterYear, filterHalf]);
 
   // Summary: group by employee + branch + product
   const summaryRows = useMemo((): SummaryRow[] => {
-    // Only show sessions with status "completed" in selected month
-    const completedSessions = sessions.filter(
-      (s) => s.status === "completed" && inSelectedMonth(s),
-    );
     const map = new Map<string, SummaryRow>();
 
-    completedSessions.forEach((s) => {
-      // Apply filters
-      if (filterBranch !== "all" && s.branchId !== filterBranch) return;
-      if (filterEmployee !== "all" && s.userId !== filterEmployee) return;
-      if (searchTerm) {
-        const term = searchTerm.toLowerCase();
-        const match =
-          s.userName?.toLowerCase().includes(term) ||
-          s.productName?.toLowerCase().includes(term) ||
-          s.productSKU?.toLowerCase().includes(term) ||
-          s.branchName?.toLowerCase().includes(term);
-        if (!match) return;
-      }
-
+    completedVisibleSessions.forEach((s) => {
       const key = `${s.userId}__${s.branchId}__${s.productId}`;
+      const eodEntry = resolveEodEntry(s.branchId, s.productSKU, s.productId);
+
       if (!map.has(key)) {
         map.set(key, {
           userId: s.userId,
@@ -702,67 +1063,45 @@ export default function CountingSummaryPage() {
           statuses: ["completed"],
           errorRemark: s.errorRemark,
           userReportedCount: s.userReportedCount,
+          eodQty: eodEntry?.eodQty,
+          eodDate: eodEntry?.eodDate,
+          eodDiff:
+            eodEntry != null
+              ? (s.finalCount ?? s.aiCount ?? 0) - eodEntry.eodQty
+              : undefined,
         });
+        return;
       }
+
+      const existing = map.get(key)!;
+      existing.totalSessions += 1;
     });
 
     return Array.from(map.values()).sort(
       (a, b) => (b.latestDate?.getTime() || 0) - (a.latestDate?.getTime() || 0),
     );
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [
-    sessions,
-    filterBranch,
-    filterEmployee,
-    searchTerm,
-    filterMonth,
-    filterYear,
-    filterHalf,
-  ]);
+  }, [completedVisibleSessions, eodComparison.entries]);
 
   // Detail list (flat)
-  const detailRows = useMemo(() => {
-    return sessions.filter((s) => {
-      if (!inSelectedMonth(s)) return false;
-      if (filterBranch !== "all" && s.branchId !== filterBranch) return false;
-      if (filterEmployee !== "all" && s.userId !== filterEmployee) return false;
-      if (searchTerm) {
-        const term = searchTerm.toLowerCase();
-        return (
-          s.userName?.toLowerCase().includes(term) ||
-          s.productName?.toLowerCase().includes(term) ||
-          s.productSKU?.toLowerCase().includes(term) ||
-          s.branchName?.toLowerCase().includes(term)
-        );
-      }
-      return true;
-    });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [
-    sessions,
-    filterBranch,
-    filterEmployee,
-    searchTerm,
-    filterMonth,
-    filterYear,
-    filterHalf,
-  ]);
+  const detailRows = completedVisibleSessions;
   const totalEmployees = useMemo(
-    () => new Set(sessions.map((s) => s.userId)).size,
-    [sessions],
+    () => new Set(completedVisibleSessions.map((s) => s.userId)).size,
+    [completedVisibleSessions],
   );
   const totalBranches = useMemo(
-    () => new Set(sessions.map((s) => s.branchId)).size,
-    [sessions],
+    () => new Set(completedVisibleSessions.map((s) => s.branchId)).size,
+    [completedVisibleSessions],
   );
   const totalProducts = useMemo(
-    () => new Set(sessions.map((s) => s.productId)).size,
-    [sessions],
+    () => new Set(completedVisibleSessions.map((s) => s.productId)).size,
+    [completedVisibleSessions],
   );
-  const totalSessions = sessions.length;
-  const totalCompleted = sessions.filter(
-    (s) => s.status === "completed",
-  ).length;
+  const totalSessions = visibleSessions.length;
+  const totalCompleted =
+    eodComparison.totalItems > 0
+      ? eodComparison.matchedItems
+      : completedVisibleSessions.length;
 
   if (loading) {
     return (
@@ -818,7 +1157,11 @@ export default function CountingSummaryPage() {
               {totalCompleted}
             </p>
             <p className="text-xs text-gray-400 dark:text-gray-500">
-              จาก {totalSessions} รายการ
+              จาก{" "}
+              {eodComparison.totalItems > 0
+                ? eodComparison.totalItems
+                : totalSessions}{" "}
+              {eodComparison.totalItems > 0 ? "SKU ตาม EOD" : "รายการ"}
             </p>
           </div>
         </div>
@@ -856,6 +1199,47 @@ export default function CountingSummaryPage() {
           </div>
         </div>
       </div>
+
+      {(eodComparison.totalItems > 0 ||
+        eodComparison.missingBranchNames.length > 0) && (
+        <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-xl p-4">
+          <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+            <div>
+              <h2 className="text-sm font-semibold text-blue-900 dark:text-blue-100">
+                เทียบกับ EOD ล่าสุดของแต่ละสาขา
+              </h2>
+              <p className="text-sm text-blue-700 dark:text-blue-200 mt-1">
+                {eodComparison.totalItems > 0
+                  ? `เทียบได้ ${eodComparison.matchedItems}/${eodComparison.totalItems} SKU ใน ${eodComparison.branchesCompared} สาขา`
+                  : "ยังไม่พบข้อมูล EOD สำหรับสาขาในชุดข้อมูลที่เลือก"}
+              </p>
+              {eodComparison.snapshotDates.length > 0 && (
+                <p className="text-xs text-blue-600 dark:text-blue-300 mt-1">
+                  วันที่ EOD: {eodComparison.snapshotDates.join(", ")}
+                </p>
+              )}
+            </div>
+
+            {eodComparison.totalItems > 0 && (
+              <div className="flex flex-wrap gap-2 text-xs">
+                <span className="inline-flex items-center gap-1 rounded-full bg-white/80 dark:bg-blue-950/40 px-3 py-1 font-medium text-blue-800 dark:text-blue-100">
+                  ยังไม่ได้นับ {eodComparison.missingItems} SKU
+                </span>
+                <span className="inline-flex items-center gap-1 rounded-full bg-white/80 dark:bg-blue-950/40 px-3 py-1 font-medium text-blue-800 dark:text-blue-100">
+                  ไม่พบใน EOD {eodComparison.countedWithoutEod} SKU
+                </span>
+              </div>
+            )}
+          </div>
+
+          {eodComparison.missingBranchNames.length > 0 && (
+            <p className="text-xs text-amber-700 dark:text-amber-300 mt-3">
+              ยังไม่มี EOD สำหรับสาขา:{" "}
+              {eodComparison.missingBranchNames.join(", ")}
+            </p>
+          )}
+        </div>
+      )}
 
       {/* Filters */}
       <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4">
@@ -1120,6 +1504,12 @@ export default function CountingSummaryPage() {
                   <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                     จำนวนที่นับได้
                   </th>
+                  <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                    EOD ล่าสุด
+                  </th>
+                  <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                    ผลต่าง
+                  </th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                     วันที่เสร็จสิ้น
                   </th>
@@ -1132,7 +1522,7 @@ export default function CountingSummaryPage() {
                 {summaryRows.length === 0 ? (
                   <tr>
                     <td
-                      colSpan={6}
+                      colSpan={8}
                       className="px-6 py-12 text-center text-gray-500 dark:text-gray-400"
                     >
                       ไม่พบข้อมูล
@@ -1187,6 +1577,49 @@ export default function CountingSummaryPage() {
                           </div>
                         )}
                       </td>
+                      <td className="px-6 py-4 text-center">
+                        {row.eodQty != null ? (
+                          <div>
+                            <div className="text-sm font-semibold text-gray-900 dark:text-white">
+                              {row.eodQty}
+                            </div>
+                            <div className="text-xs text-gray-500 dark:text-gray-400">
+                              {row.eodDate
+                                ? format(row.eodDate, "dd MMM yyyy", {
+                                    locale: th,
+                                  })
+                                : "EOD ล่าสุด"}
+                            </div>
+                          </div>
+                        ) : (
+                          <span className="text-xs text-gray-400 dark:text-gray-500">
+                            ไม่พบ
+                          </span>
+                        )}
+                      </td>
+                      <td className="px-6 py-4 text-center">
+                        {row.eodDiff != null ? (
+                          <span
+                            className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ${
+                              row.eodDiff === 0
+                                ? "bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300"
+                                : row.eodDiff > 0
+                                  ? "bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300"
+                                  : "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300"
+                            }`}
+                          >
+                            {row.eodDiff === 0
+                              ? "ตรง"
+                              : row.eodDiff > 0
+                                ? `+${row.eodDiff}`
+                                : row.eodDiff}
+                          </span>
+                        ) : (
+                          <span className="text-xs text-gray-400 dark:text-gray-500">
+                            -
+                          </span>
+                        )}
+                      </td>
                       <td className="px-6 py-4 text-sm text-gray-600 dark:text-gray-400">
                         {row.latestDate
                           ? format(row.latestDate, "dd MMM yyyy HH:mm", {
@@ -1238,6 +1671,12 @@ export default function CountingSummaryPage() {
                   <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                     จำนวนที่นับได้
                   </th>
+                  <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                    EOD ล่าสุด
+                  </th>
+                  <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                    ผลต่าง
+                  </th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                     สถานะ
                   </th>
@@ -1250,7 +1689,7 @@ export default function CountingSummaryPage() {
                 {detailRows.length === 0 ? (
                   <tr>
                     <td
-                      colSpan={7}
+                      colSpan={9}
                       className="px-6 py-12 text-center text-gray-500 dark:text-gray-400"
                     >
                       ไม่พบข้อมูล
@@ -1262,64 +1701,127 @@ export default function CountingSummaryPage() {
                       key={s.id}
                       className="hover:bg-gray-50 dark:hover:bg-gray-700/50"
                     >
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600 dark:text-gray-400">
-                        {s.createdAt
-                          ? format(s.createdAt, "dd MMM yyyy HH:mm", {
-                              locale: th,
-                            })
-                          : "-"}
-                      </td>
-                      <td className="px-6 py-4">
-                        <div className="text-sm font-medium text-gray-900 dark:text-white">
-                          {s.userName}
-                        </div>
-                        <div className="text-xs text-gray-500 dark:text-gray-400">
-                          {s.userEmail}
-                        </div>
-                      </td>
-                      <td className="px-6 py-4 text-sm text-gray-900 dark:text-gray-200 whitespace-nowrap">
-                        {s.branchName}
-                      </td>
-                      <td className="px-6 py-4">
-                        <div className="text-sm text-gray-900 dark:text-white">
-                          {s.productName}
-                        </div>
-                        <div className="text-xs text-gray-500 dark:text-gray-400">
-                          SKU: {s.productSKU}
-                        </div>
-                      </td>
-                      <td className="px-6 py-4 text-center">
-                        <span className="text-2xl font-bold text-gray-900 dark:text-white">
-                          {s.finalCount ?? s.aiCount ?? 0}
-                        </span>
-                        <span className="text-xs text-gray-500 dark:text-gray-400 ml-1">
-                          ชิ้น
-                        </span>
-                        {(s.errorRemark || s.userReportedCount) && (
-                          <div className="mt-1">
-                            <span
-                              className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-orange-100 dark:bg-orange-900/40 text-orange-700 dark:text-orange-400 text-xs font-medium"
-                              title={s.errorRemark || ""}
-                            >
-                              {s.userReportedCount != null
-                                ? `⚠ พนักงานรายงาน: ${s.userReportedCount}`
-                                : "⚠ แจ้งความผิดพลาด"}
-                            </span>
-                          </div>
-                        )}
-                      </td>
-                      <td className="px-6 py-4">
-                        <StatusBadge status={s.status} />
-                      </td>
-                      <td className="px-6 py-4 text-center">
-                        <button
-                          onClick={() => setSelectedSession(s)}
-                          className="p-1.5 text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/30 rounded-lg transition-colors"
-                          title="ดูรายละเอียด"
-                        >
-                          <Eye className="w-4 h-4" />
-                        </button>
-                      </td>
+                      {(() => {
+                        const eodEntry = resolveEodEntry(
+                          s.branchId,
+                          s.productSKU,
+                          s.productId,
+                        );
+                        const eodDiff =
+                          eodEntry != null
+                            ? (s.finalCount ?? s.aiCount ?? 0) - eodEntry.eodQty
+                            : undefined;
+
+                        return (
+                          <>
+                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600 dark:text-gray-400">
+                              {s.createdAt
+                                ? format(s.createdAt, "dd MMM yyyy HH:mm", {
+                                    locale: th,
+                                  })
+                                : "-"}
+                            </td>
+                            <td className="px-6 py-4">
+                              <div className="text-sm font-medium text-gray-900 dark:text-white">
+                                {s.userName}
+                              </div>
+                              <div className="text-xs text-gray-500 dark:text-gray-400">
+                                {s.userEmail}
+                              </div>
+                            </td>
+                            <td className="px-6 py-4 text-sm text-gray-900 dark:text-gray-200 whitespace-nowrap">
+                              {s.branchName}
+                            </td>
+                            <td className="px-6 py-4">
+                              <div className="text-sm text-gray-900 dark:text-white">
+                                {s.productName}
+                              </div>
+                              <div className="text-xs text-gray-500 dark:text-gray-400">
+                                SKU: {s.productSKU}
+                              </div>
+                            </td>
+                            <td className="px-6 py-4 text-center">
+                              <span className="text-2xl font-bold text-gray-900 dark:text-white">
+                                {s.finalCount ?? s.aiCount ?? 0}
+                              </span>
+                              <span className="text-xs text-gray-500 dark:text-gray-400 ml-1">
+                                ชิ้น
+                              </span>
+                              {(s.errorRemark || s.userReportedCount) && (
+                                <div className="mt-1">
+                                  <span
+                                    className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-orange-100 dark:bg-orange-900/40 text-orange-700 dark:text-orange-400 text-xs font-medium"
+                                    title={s.errorRemark || ""}
+                                  >
+                                    {s.userReportedCount != null
+                                      ? `⚠ พนักงานรายงาน: ${s.userReportedCount}`
+                                      : "⚠ แจ้งความผิดพลาด"}
+                                  </span>
+                                </div>
+                              )}
+                            </td>
+                            <td className="px-6 py-4 text-center">
+                              {eodEntry ? (
+                                <div>
+                                  <div className="text-sm font-semibold text-gray-900 dark:text-white">
+                                    {eodEntry.eodQty}
+                                  </div>
+                                  <div className="text-xs text-gray-500 dark:text-gray-400">
+                                    {eodEntry.eodDate
+                                      ? format(
+                                          eodEntry.eodDate,
+                                          "dd MMM yyyy",
+                                          {
+                                            locale: th,
+                                          },
+                                        )
+                                      : "EOD ล่าสุด"}
+                                  </div>
+                                </div>
+                              ) : (
+                                <span className="text-xs text-gray-400 dark:text-gray-500">
+                                  ไม่พบ
+                                </span>
+                              )}
+                            </td>
+                            <td className="px-6 py-4 text-center">
+                              {eodDiff != null ? (
+                                <span
+                                  className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ${
+                                    eodDiff === 0
+                                      ? "bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300"
+                                      : eodDiff > 0
+                                        ? "bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300"
+                                        : "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300"
+                                  }`}
+                                >
+                                  {eodDiff === 0
+                                    ? "ตรง"
+                                    : eodDiff > 0
+                                      ? `+${eodDiff}`
+                                      : eodDiff}
+                                </span>
+                              ) : (
+                                <span className="text-xs text-gray-400 dark:text-gray-500">
+                                  -
+                                </span>
+                              )}
+                            </td>
+                            <td className="px-6 py-4">
+                              <StatusBadge status={s.status} />
+                            </td>
+                            <td className="px-6 py-4 text-center">
+                              <button
+                                onClick={() => setSelectedSession(s)}
+                                className="p-1.5 text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/30 rounded-lg transition-colors"
+                                title="ดูรายละเอียด"
+                              >
+                                <Eye className="w-4 h-4" />
+                              </button>
+                            </td>
+                          </>
+                        );
+                      })()}
                     </tr>
                   ))
                 )}
@@ -1331,8 +1833,12 @@ export default function CountingSummaryPage() {
         {/* Footer row count */}
         <div className="px-6 py-3 border-t border-gray-200 dark:border-gray-700 text-sm text-gray-500 dark:text-gray-400">
           {viewMode === "summary"
-            ? `แสดง ${summaryRows.length} รายการ (สถานะเสร็จสิ้น) จากทั้งหมด ${totalSessions} รายการ`
-            : `แสดง ${detailRows.length} รายการ จากทั้งหมด ${totalSessions} รายการ`}
+            ? `แสดง ${summaryRows.length} รายการ (สถานะเสร็จสิ้น) จากทั้งหมด ${totalSessions} รายการ${
+                eodComparison.totalItems > 0
+                  ? ` · เทียบ EOD ได้ ${eodComparison.matchedItems}/${eodComparison.totalItems} SKU`
+                  : ""
+              }`
+            : `แสดง ${detailRows.length} รายการ (เสร็จสิ้น) จากทั้งหมด ${totalSessions} รายการ`}
         </div>
       </div>
 
@@ -1342,6 +1848,8 @@ export default function CountingSummaryPage() {
           session={selectedSession}
           onClose={() => setSelectedSession(null)}
           userData={userData}
+          eodSnapshotsByCode={eodSnapshotsByCode}
+          branchesById={branchesById}
           onOverrideSuccess={(sessionId, finalCount, source) => {
             // Update local state
             setSessions((prev) =>
@@ -1444,11 +1952,15 @@ function SessionDetailModal({
   session,
   onClose,
   userData,
+  eodSnapshotsByCode,
+  branchesById,
   onOverrideSuccess,
 }: {
   session: CountingSession;
   onClose: () => void;
   userData: User | null;
+  eodSnapshotsByCode: Record<string, EodSnapshot>;
+  branchesById: Record<string, Branch>;
   onOverrideSuccess?: (
     sessionId: string,
     finalCount: number,
@@ -1456,6 +1968,7 @@ function SessionDetailModal({
   ) => void;
 }) {
   const [showOverride, setShowOverride] = useState(false);
+  const [imageFullscreen, setImageFullscreen] = useState(false);
   const [overrideSource, setOverrideSource] = useState<
     "ai" | "employee" | "custom"
   >("ai");
@@ -1523,6 +2036,26 @@ function SessionDetailModal({
     }
   };
 
+  // Look up EOD qty for this session's product barcode
+  const eodQty = (() => {
+    const branch = branchesById[session.branchId];
+    const code =
+      normalizeBranchCode(branch?.code) ||
+      normalizeBranchCode(session.branchId);
+    const snap = code ? eodSnapshotsByCode[code] : null;
+    if (!snap || !session.productSKU) return null;
+    const barcode = session.productSKU.trim();
+    const detail = snap.details.find(
+      (d) => String(d.Barcode ?? "").trim() === barcode,
+    );
+    return detail?.EOD_Qty ?? null;
+  })();
+  const eodStandardCount = eodQty ?? session.standardCount ?? null;
+  const eodDiscrepancy =
+    eodStandardCount != null
+      ? (session.finalCount ?? 0) - eodStandardCount
+      : null;
+
   // Parse watermark data from remarks
   const watermarkData = (() => {
     try {
@@ -1531,7 +2064,10 @@ function SessionDetailModal({
         if (parsed.location || parsed.timestamp || parsed.employeeName) {
           return parsed as {
             location?: string;
-            coordinates?: { lat: number; lng: number };
+            coordinates?: {
+              latitude: number | string;
+              longitude: number | string;
+            };
             timestamp?: string;
             employeeName?: string;
             employeeId?: string;
@@ -1666,10 +2202,10 @@ function SessionDetailModal({
                 </div>
                 <div>
                   <span className="text-gray-600 dark:text-gray-400">
-                    Standard Count:
+                    Standard Count (EOD):
                   </span>{" "}
                   <span className="font-semibold text-gray-900 dark:text-white">
-                    {session.standardCount || "-"}
+                    {eodStandardCount ?? "-"}
                   </span>
                 </div>
                 <div>
@@ -1677,11 +2213,21 @@ function SessionDetailModal({
                     ส่วนต่าง:
                   </span>{" "}
                   <span
-                    className={`font-semibold ${(session.discrepancy ?? 0) > 0 ? "text-red-600" : "text-green-600"}`}
+                    className={`font-semibold ${
+                      eodDiscrepancy == null
+                        ? "text-gray-500"
+                        : eodDiscrepancy < 0
+                          ? "text-red-600"
+                          : eodDiscrepancy > 0
+                            ? "text-green-600"
+                            : "text-gray-500"
+                    }`}
                   >
-                    {(session.discrepancy ?? 0) > 0
-                      ? `-${session.discrepancy}`
-                      : "0"}
+                    {eodDiscrepancy == null
+                      ? "-"
+                      : eodDiscrepancy > 0
+                        ? `+${eodDiscrepancy}`
+                        : String(eodDiscrepancy)}
                   </span>
                 </div>
                 <div>
@@ -1716,6 +2262,12 @@ function SessionDetailModal({
                   fill
                   className="object-contain"
                 />
+                <button
+                  onClick={() => setImageFullscreen(true)}
+                  className="absolute top-2 right-2 bg-black/60 hover:bg-black/80 text-white rounded-lg px-3 py-1.5 text-xs font-medium flex items-center gap-1 transition-colors"
+                >
+                  <Eye className="w-3 h-3" /> ดูเต็มจอ
+                </button>
                 {watermarkData && (
                   <div className="absolute bottom-0 left-0 right-0 bg-linear-to-t from-black/80 to-transparent p-4">
                     <div className="text-white text-sm space-y-1">
@@ -1735,7 +2287,18 @@ function SessionDetailModal({
                       {watermarkData.location && (
                         <p className="text-xs opacity-80 flex items-center gap-1">
                           <MapPin className="w-3 h-3" />
-                          {watermarkData.location}
+                          {watermarkData.coordinates ? (
+                            <a
+                              href={`https://www.google.com/maps?q=${Number(watermarkData.coordinates.latitude)},${Number(watermarkData.coordinates.longitude)}`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="underline hover:text-blue-300"
+                            >
+                              {watermarkData.location}
+                            </a>
+                          ) : (
+                            watermarkData.location
+                          )}
                         </p>
                       )}
                       {watermarkData.deviceModel && (
@@ -1750,6 +2313,61 @@ function SessionDetailModal({
               </div>
             </div>
           )}
+
+          {/* Embedded Map */}
+          {(watermarkData?.coordinates || watermarkData?.location) &&
+            (() => {
+              let lat = Number(watermarkData?.coordinates?.latitude);
+              let lng = Number(watermarkData?.coordinates?.longitude);
+              // Fallback: parse from location string e.g. "13.75321, 100.65760"
+              if (
+                (isNaN(lat) || isNaN(lng) || (lat === 0 && lng === 0)) &&
+                watermarkData?.location
+              ) {
+                const parts = watermarkData.location
+                  .split(",")
+                  .map((s: string) => parseFloat(s.trim()));
+                if (
+                  parts.length === 2 &&
+                  !isNaN(parts[0]) &&
+                  !isNaN(parts[1])
+                ) {
+                  lat = parts[0];
+                  lng = parts[1];
+                }
+              }
+              if (isNaN(lat) || isNaN(lng) || (lat === 0 && lng === 0))
+                return null;
+              return (
+                <div>
+                  <h3 className="font-semibold text-gray-900 dark:text-white mb-3 flex items-center gap-2">
+                    <MapPin className="w-4 h-4 text-red-500" /> ตำแหน่งที่ถ่าย
+                  </h3>
+                  <div className="rounded-lg overflow-hidden border border-gray-200 dark:border-gray-700">
+                    <iframe
+                      src={`https://www.openstreetmap.org/export/embed.html?bbox=${lng - 0.005},${lat - 0.005},${lng + 0.005},${lat + 0.005}&layer=mapnik&marker=${lat},${lng}`}
+                      width="100%"
+                      height="280"
+                      className="block"
+                      loading="lazy"
+                    />
+                    <div className="flex items-center justify-between px-3 py-2 bg-gray-50 dark:bg-gray-800 text-xs text-gray-500 dark:text-gray-400">
+                      <span>
+                        {lat.toFixed(5)}, {lng.toFixed(5)}
+                      </span>
+                      <a
+                        href={`https://www.google.com/maps?q=${lat},${lng}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="flex items-center gap-1 text-blue-600 hover:text-blue-700 font-medium"
+                      >
+                        <MapPin className="w-3 h-3" /> เปิดใน Google Maps
+                      </a>
+                    </div>
+                  </div>
+                </div>
+              );
+            })()}
 
           {session.remarks && !watermarkData && (
             <div>
@@ -1977,6 +2595,30 @@ function SessionDetailModal({
           </button>
         </div>
       </div>
+
+      {/* Fullscreen image lightbox */}
+      {imageFullscreen && session.imageUrl && (
+        <div
+          className="fixed inset-0 z-60 bg-black flex items-center justify-center"
+          onClick={() => setImageFullscreen(false)}
+        >
+          <button
+            onClick={() => setImageFullscreen(false)}
+            className="absolute top-4 right-4 text-white bg-black/60 hover:bg-black/80 rounded-full p-2 z-10"
+          >
+            <X className="w-6 h-6" />
+          </button>
+          <div className="relative w-full h-full">
+            <Image
+              src={session.imageUrl}
+              alt="Counting image fullscreen"
+              fill
+              className="object-contain"
+              onClick={(e) => e.stopPropagation()}
+            />
+          </div>
+        </div>
+      )}
     </div>
   );
 }

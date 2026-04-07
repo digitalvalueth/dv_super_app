@@ -307,7 +307,7 @@ export default function ProductsPage() {
 
     try {
       setUploadingImage(true);
-      let imageUrl = selectedProduct.imageUrl;
+      let imageUrl: string | null = selectedProduct.imageUrl ?? null;
 
       // Upload new image if selected
       if (imageFile) {

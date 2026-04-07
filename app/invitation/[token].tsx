@@ -152,6 +152,7 @@ export default function InvitationScreen() {
         setDoc,
         updateDoc: fsUpdateDoc,
         Timestamp: fsTimestamp,
+        arrayUnion,
       } = await import("firebase/firestore");
 
       const userDocRef = firestoreDoc(db, "users", user.uid);
@@ -167,6 +168,12 @@ export default function InvitationScreen() {
         userUpdate.branchId = invitation.branchId || null;
         userUpdate.branchName = invitation.branchName || "";
         userUpdate.branchCode = invitation.branchCode || "";
+        // Multi-branch support: add branchId to branchIds array + branchNames map
+        if (invitation.branchId) {
+          userUpdate.branchIds = arrayUnion(invitation.branchId);
+          userUpdate[`branchNames.${invitation.branchId}`] =
+            invitation.branchName || "";
+        }
         if (invitation.supervisorId) {
           userUpdate.supervisorId = invitation.supervisorId;
         }
@@ -185,8 +192,25 @@ export default function InvitationScreen() {
         acceptedBy: user.uid,
       });
 
-      // Update local store
-      setUser({ ...user, ...userUpdate });
+      // Update local store (include branchIds for multi-branch UI)
+      const updatedBranchIds = Array.from(
+        new Set([
+          ...(user.branchIds || []),
+          ...(invitation.branchId ? [invitation.branchId] : []),
+        ]),
+      );
+      const updatedBranchNames = {
+        ...(user.branchNames || {}),
+        ...(invitation.branchId
+          ? { [invitation.branchId]: invitation.branchName || "" }
+          : {}),
+      };
+      setUser({
+        ...user,
+        ...userUpdate,
+        branchIds: updatedBranchIds,
+        branchNames: updatedBranchNames,
+      });
 
       Alert.alert(
         "ยินดีต้อนรับ! 🎉",

@@ -7,7 +7,7 @@ import { ProductWithAssignment } from "@/types";
 import { Ionicons } from "@expo/vector-icons";
 import { Image } from "expo-image";
 import { router } from "expo-router";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -49,17 +49,75 @@ export default function HomeScreen() {
     "all" | "pending" | "in_progress" | "completed" | "not_available"
   >("all");
   const [searchTerm, setSearchTerm] = useState("");
+  const [selectedBranchId, setSelectedBranchId] = useState<string | null>(null);
 
   // Pagination for better performance
   const pagination = usePaginationState<ProductWithAssignment>(20);
 
-  // Calculate counts for filter badges
+  // Derive branch tabs: prefer user.branchIds (authoritative) over product-derived ids
+  const branchTabs = useMemo(() => {
+    // If user explicitly has multiple branches, show all of them
+    const userBranchIds = user?.branchIds;
+    if (userBranchIds && userBranchIds.length > 1) {
+      return userBranchIds.map((id) => ({
+        id,
+        name: user?.branchNames?.[id] || user?.branchName || id,
+      }));
+    }
+    // Fallback: derive from loaded products
+    const branchIds = Array.from(
+      new Set(
+        products.map((p) => p.assignmentBranchId).filter(Boolean) as string[],
+      ),
+    );
+    if (branchIds.length <= 1) return [];
+    return branchIds.map((id) => ({
+      id,
+      name: user?.branchNames?.[id] || id,
+    }));
+  }, [products, user?.branchIds, user?.branchNames, user?.branchName]);
+
+  // Reset branch selection when tabs change
+  useEffect(() => {
+    if (branchTabs.length > 0 && !selectedBranchId) {
+      // Default to user's primary branchId if it's in the tabs, else first tab
+      const defaultId =
+        user?.branchId && branchTabs.find((t) => t.id === user.branchId)
+          ? user.branchId
+          : branchTabs[0].id;
+      setSelectedBranchId(defaultId);
+    }
+    if (branchTabs.length === 0) {
+      setSelectedBranchId(null);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [branchTabs.length]);
+
+  // Products filtered by selected branch (if multi-branch)
+  // Match on assignmentBranchId (from assignment doc) or fallback to product's branchId
+  const branchFilteredProducts = useMemo(() => {
+    if (!selectedBranchId) return products;
+    return products.filter(
+      (p) =>
+        (p.assignmentBranchId && p.assignmentBranchId === selectedBranchId) ||
+        (!p.assignmentBranchId && p.branchId === selectedBranchId),
+    );
+  }, [products, selectedBranchId]);
+
+  // Calculate counts for filter badges (scoped to selected branch)
   const counts = {
-    all: products.length,
-    pending: products.filter((p) => !p.status || p.status === "pending").length,
-    in_progress: products.filter((p) => p.status === "in_progress").length,
-    completed: products.filter((p) => p.status === "completed").length,
-    not_available: products.filter((p) => p.status === "not_available").length,
+    all: branchFilteredProducts.length,
+    pending: branchFilteredProducts.filter(
+      (p) => !p.status || p.status === "pending",
+    ).length,
+    in_progress: branchFilteredProducts.filter(
+      (p) => p.status === "in_progress",
+    ).length,
+    completed: branchFilteredProducts.filter((p) => p.status === "completed")
+      .length,
+    not_available: branchFilteredProducts.filter(
+      (p) => p.status === "not_available",
+    ).length,
   };
 
   // Setup realtime listener for products
@@ -74,7 +132,6 @@ export default function HomeScreen() {
       (productsData) => {
         console.log(`✅ Products updated: ${productsData.length} items`);
         setProducts(productsData);
-        pagination.setData(productsData); // Update pagination
         setLoading(false);
         setRefreshing(false);
       },
@@ -132,6 +189,10 @@ export default function HomeScreen() {
           productSKU: product.sku,
           productImage: product.imageUrl || "",
           beforeQty: product.beforeCountQty?.toString() || "0",
+          productBarcode: product.barcode || "",
+          assignmentId: product.assignment?.id || "",
+          assignmentBranchId:
+            product.assignmentBranchId || selectedBranchId || "",
         },
       });
       return;
@@ -149,6 +210,8 @@ export default function HomeScreen() {
         beforeQty: product.beforeCountQty?.toString() || "0",
         assignmentId: product.assignment?.id || "",
         productBarcode: product.barcode || "",
+        assignmentBranchId:
+          product.assignmentBranchId || selectedBranchId || "",
       },
     });
   };
@@ -192,8 +255,16 @@ export default function HomeScreen() {
     }
   };
 
+  // Re-paginate when branch selection or products change
+  useEffect(() => {
+    pagination.setData(branchFilteredProducts);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [branchFilteredProducts]);
+
   // Filter products first, then paginate
-  const filteredProducts = pagination.data.filter((product) => {
+  // When searching, scan all data; otherwise use the paginated slice for performance
+  const sourceData = searchTerm.trim() ? pagination.allData : pagination.data;
+  const filteredProducts = sourceData.filter((product) => {
     // Status filter
     const matchesStatus =
       filter === "all"
@@ -564,6 +635,56 @@ export default function HomeScreen() {
             </TouchableOpacity>
           )}
         </View>
+
+        {/* Branch Tabs — only shown when user has products from multiple branches */}
+        {branchTabs.length > 0 && (
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={{
+              paddingHorizontal: 12,
+              paddingVertical: 6,
+              gap: 8,
+              flexDirection: "row",
+            }}
+          >
+            {branchTabs.map((branch) => (
+              <TouchableOpacity
+                key={branch.id}
+                style={[
+                  {
+                    paddingHorizontal: 14,
+                    paddingVertical: 7,
+                    borderRadius: 20,
+                    borderWidth: 1.5,
+                    backgroundColor:
+                      selectedBranchId === branch.id
+                        ? colors.primary
+                        : colors.background,
+                    borderColor:
+                      selectedBranchId === branch.id
+                        ? colors.primary
+                        : colors.border,
+                  },
+                ]}
+                onPress={() => setSelectedBranchId(branch.id)}
+              >
+                <Text
+                  style={{
+                    color:
+                      selectedBranchId === branch.id
+                        ? "#fff"
+                        : colors.textSecondary,
+                    fontWeight: "600",
+                    fontSize: 13,
+                  }}
+                >
+                  🏪 {branch.name}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+        )}
 
         {/* Filter Buttons */}
         <ScrollView

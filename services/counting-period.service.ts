@@ -9,6 +9,7 @@ import {
   addDoc,
   collection,
   doc,
+  getDoc,
   getDocs,
   query,
   Timestamp,
@@ -20,6 +21,44 @@ import {
 const GRACE_PERIOD_DAYS = 5;
 const LOCK_DATES = [1, 16]; // วันที่ห้ามอัปโหลดทั้งวัน
 const COLLECTION_NAME = "countingPeriods";
+const UPLOAD_OVERRIDE_COLLECTION = "countingUploadOverrides";
+
+interface CountingUploadOverride {
+  companyId: string;
+  enabled?: boolean;
+  startAt?: Timestamp;
+  endAt?: Timestamp;
+  reason?: string;
+  allowedUserIds?: string[];
+  targetPeriodDocId?: string;
+  targetPeriodKey?: string;
+  targetYear?: number;
+  targetMonth?: number;
+  targetHalf?: CountingPeriodHalf;
+  targetPeriodLabel?: string;
+  targetStartDate?: Timestamp;
+  targetEndDate?: Timestamp;
+  updatedAt?: Timestamp;
+  updatedBy?: string;
+  updatedByName?: string;
+  createdAt?: Timestamp;
+}
+
+export interface EffectiveCountingPeriod {
+  periodId: string; // e.g. 2026-03-H2
+  periodMonth: string; // e.g. 2026-03
+  periodHalf: CountingPeriodHalf;
+  year: number;
+  month: number;
+  half: CountingPeriodHalf;
+  label: string;
+  isLateSubmission: boolean;
+  isTemporaryOverride: boolean;
+}
+
+export interface UploadActorContext {
+  userId?: string;
+}
 
 // ==================== Helper Functions ====================
 
@@ -65,6 +104,178 @@ export function getCurrentHalf(date: Date = new Date()): CountingPeriodHalf {
   return day <= 15 ? 1 : 2;
 }
 
+function getPeriodIdentity(
+  year: number,
+  month: number,
+  half: CountingPeriodHalf,
+): {
+  periodId: string;
+  periodMonth: string;
+  periodHalf: CountingPeriodHalf;
+} {
+  const paddedMonth = String(month).padStart(2, "0");
+  const periodMonth = `${year}-${paddedMonth}`;
+  return {
+    periodId: `${periodMonth}-H${half}`,
+    periodMonth,
+    periodHalf: half,
+  };
+}
+
+function getPeriodIdentityFromPeriod(period: CountingPeriod) {
+  return getPeriodIdentity(period.year, period.month, period.half);
+}
+
+function getPeriodLabelFromParts(
+  year: number,
+  month: number,
+  half: CountingPeriodHalf,
+): string {
+  const startDay = half === 1 ? 2 : 17;
+  const endDay = half === 1 ? 15 : getLastDayOfMonth(year, month);
+  return `${startDay}-${endDay} ${
+    [
+      "",
+      "ม.ค.",
+      "ก.พ.",
+      "มี.ค.",
+      "เม.ย.",
+      "พ.ค.",
+      "มิ.ย.",
+      "ก.ค.",
+      "ส.ค.",
+      "ก.ย.",
+      "ต.ค.",
+      "พ.ย.",
+      "ธ.ค.",
+    ][month]
+  } ${year + 543}`;
+}
+
+function getGraceEndMs(period: CountingPeriod): number {
+  return period.supervisorGraceEndDate
+    ? (period.supervisorGraceEndDate as import("firebase/firestore").Timestamp)
+        .toDate()
+        .getTime()
+    : period.graceEndDate.toDate().getTime();
+}
+
+async function getPeriodsForContext(
+  companyId: string,
+  date: Date = new Date(),
+): Promise<CountingPeriod[]> {
+  const year = date.getFullYear();
+  const prevYear = date.getMonth() === 0 ? year - 1 : year;
+  const yearsToQuery = year === prevYear ? [year] : [year, prevYear];
+
+  const q = query(
+    collection(db, COLLECTION_NAME),
+    where("companyId", "==", companyId),
+    where("year", "in", yearsToQuery),
+  );
+
+  const snapshot = await getDocs(q);
+  return snapshot.docs.map(
+    (d) => ({ id: d.id, ...d.data() }) as CountingPeriod,
+  );
+}
+
+function getCurrentPeriodFromPeriods(
+  periods: CountingPeriod[],
+  date: Date = new Date(),
+): CountingPeriod | null {
+  const nowMs = date.getTime();
+  let activePeriod: CountingPeriod | null = null;
+  let gracePeriod: CountingPeriod | null = null;
+
+  for (const period of periods) {
+    const startMs = period.startDate.toDate().getTime();
+    const endMs = period.endDate.toDate().getTime();
+    const graceEndMs = getGraceEndMs(period);
+
+    if (nowMs >= startMs && nowMs <= endMs) {
+      activePeriod = period;
+      break;
+    }
+
+    if (nowMs > endMs && nowMs <= graceEndMs) {
+      gracePeriod = period;
+    }
+  }
+
+  return activePeriod ?? gracePeriod ?? null;
+}
+
+function getDisplayPeriodFromPeriods(
+  periods: CountingPeriod[],
+  date: Date = new Date(),
+): CountingPeriod | null {
+  const year = date.getFullYear();
+  const month = date.getMonth() + 1;
+  const half = getCurrentHalf(date);
+
+  return (
+    periods.find(
+      (period) =>
+        period.year === year && period.month === month && period.half === half,
+    ) ?? null
+  );
+}
+
+function buildEffectivePeriodFromPeriod(
+  period: CountingPeriod,
+  options?: {
+    isLateSubmission?: boolean;
+    isTemporaryOverride?: boolean;
+  },
+): EffectiveCountingPeriod {
+  const identity = getPeriodIdentityFromPeriod(period);
+  return {
+    ...identity,
+    year: period.year,
+    month: period.month,
+    half: period.half,
+    label: getPeriodLabel(period),
+    isLateSubmission: options?.isLateSubmission ?? false,
+    isTemporaryOverride: options?.isTemporaryOverride ?? false,
+  };
+}
+
+function buildEffectivePeriodFromOverride(
+  override: CountingUploadOverride,
+): EffectiveCountingPeriod | null {
+  if (
+    !override.targetPeriodKey ||
+    !override.targetYear ||
+    !override.targetMonth ||
+    !override.targetHalf
+  ) {
+    return null;
+  }
+
+  return {
+    periodId: override.targetPeriodKey,
+    periodMonth: getPeriodIdentity(
+      override.targetYear,
+      override.targetMonth,
+      override.targetHalf,
+    ).periodMonth,
+    periodHalf: override.targetHalf,
+    year: override.targetYear,
+    month: override.targetMonth,
+    half: override.targetHalf,
+    label:
+      override.targetPeriodLabel ||
+      getPeriodLabelFromParts(
+        override.targetYear,
+        override.targetMonth,
+        override.targetHalf,
+      ),
+    isLateSubmission: true,
+    isTemporaryOverride: true,
+  };
+}
+
 // ==================== Core Service Functions ====================
 
 /**
@@ -75,51 +286,16 @@ export async function getCurrentPeriod(
   companyId: string,
   date: Date = new Date(),
 ): Promise<CountingPeriod | null> {
-  const now = date;
-  const year = now.getFullYear();
+  const periods = await getPeriodsForContext(companyId, date);
+  return getCurrentPeriodFromPeriods(periods, date);
+}
 
-  // Fetch this month AND previous month periods so we can detect cross-month grace
-  const prevYear = now.getMonth() === 0 ? year - 1 : year;
-
-  const yearsToQuery = year === prevYear ? [year] : [year, prevYear];
-
-  const q = query(
-    collection(db, COLLECTION_NAME),
-    where("companyId", "==", companyId),
-    where("year", "in", yearsToQuery),
-  );
-
-  const snapshot = await getDocs(q);
-  const periods = snapshot.docs.map(
-    (d) => ({ id: d.id, ...d.data() }) as CountingPeriod,
-  );
-
-  const nowMs = now.getTime();
-  let activePeriod: CountingPeriod | null = null;
-  let gracePeriod: CountingPeriod | null = null;
-
-  for (const period of periods) {
-    const startMs = period.startDate.toDate().getTime();
-    const endMs = period.endDate.toDate().getTime();
-    // Supervisor can extend grace period via supervisorGraceEndDate field
-    const graceEndMs = period.supervisorGraceEndDate
-      ? (
-          period.supervisorGraceEndDate as import("firebase/firestore").Timestamp
-        )
-          .toDate()
-          .getTime()
-      : period.graceEndDate.toDate().getTime();
-
-    if (nowMs >= startMs && nowMs <= endMs) {
-      activePeriod = period;
-      break; // active period takes priority
-    }
-    if (nowMs > endMs && nowMs <= graceEndMs) {
-      gracePeriod = period; // keep most recent grace period found
-    }
-  }
-
-  return activePeriod ?? gracePeriod ?? null;
+export async function getDisplayPeriod(
+  companyId: string,
+  date: Date = new Date(),
+): Promise<CountingPeriod | null> {
+  const periods = await getPeriodsForContext(companyId, date);
+  return getDisplayPeriodFromPeriods(periods, date);
 }
 
 /**
@@ -177,6 +353,64 @@ export function getUploadStatusForDate(
   return "closed";
 }
 
+async function getActiveUploadOverride(
+  companyId: string,
+  date: Date = new Date(),
+  actorContext?: UploadActorContext,
+): Promise<CountingUploadOverride | null> {
+  const overrideRef = doc(db, UPLOAD_OVERRIDE_COLLECTION, companyId);
+  const overrideSnap = await getDoc(overrideRef);
+
+  if (!overrideSnap.exists()) {
+    return null;
+  }
+
+  const override = overrideSnap.data() as CountingUploadOverride;
+
+  if (!override.enabled || !override.endAt) {
+    return null;
+  }
+
+  const nowMs = date.getTime();
+  const startMs = override.startAt?.toDate().getTime() ?? 0;
+  const endMs = override.endAt.toDate().getTime();
+
+  if (nowMs < startMs || nowMs > endMs) {
+    return null;
+  }
+
+  if (
+    override.allowedUserIds?.length &&
+    (!actorContext?.userId ||
+      !override.allowedUserIds.includes(actorContext.userId))
+  ) {
+    return null;
+  }
+
+  return override;
+}
+
+function formatUploadOverrideMessage(override: CountingUploadOverride): string {
+  const parts: string[] = [];
+
+  if (override.endAt) {
+    parts.push(
+      `🟢 เปิดรับรูปชั่วคราวถึง ${override.endAt
+        .toDate()
+        .toLocaleString("th-TH", {
+          dateStyle: "short",
+          timeStyle: "short",
+        })}`,
+    );
+  }
+
+  if (override.reason?.trim()) {
+    parts.push(`เหตุผล: ${override.reason.trim()}`);
+  }
+
+  return parts.join(" • ");
+}
+
 /**
  * Check if a user can upload photos right now
  * Returns { canUpload, status, message }
@@ -184,14 +418,29 @@ export function getUploadStatusForDate(
 export async function canUploadPhoto(
   companyId: string,
   date: Date = new Date(),
+  actorContext?: UploadActorContext,
 ): Promise<{
   canUpload: boolean;
   status: UploadStatus;
   message: string;
   isLateSubmission: boolean;
+  isTemporaryOverride?: boolean;
 }> {
-  const period = await getCurrentPeriod(companyId, date);
+  const [period, uploadOverride] = await Promise.all([
+    getCurrentPeriod(companyId, date),
+    getActiveUploadOverride(companyId, date, actorContext),
+  ]);
   const status = getUploadStatusForDate(date, period);
+
+  if (uploadOverride) {
+    return {
+      canUpload: true,
+      status: "open",
+      message: formatUploadOverrideMessage(uploadOverride),
+      isLateSubmission: status !== "open",
+      isTemporaryOverride: true,
+    };
+  }
 
   switch (status) {
     case "locked":
@@ -236,6 +485,51 @@ export async function canUploadPhoto(
         isLateSubmission: false,
       };
   }
+}
+
+export async function getEffectiveCountingPeriod(
+  companyId: string,
+  date: Date = new Date(),
+  actorContext?: UploadActorContext,
+): Promise<EffectiveCountingPeriod | null> {
+  const [periods, uploadOverride] = await Promise.all([
+    getPeriodsForContext(companyId, date),
+    getActiveUploadOverride(companyId, date, actorContext),
+  ]);
+
+  const overridePeriod = uploadOverride
+    ? buildEffectivePeriodFromOverride(uploadOverride)
+    : null;
+  if (overridePeriod) {
+    return overridePeriod;
+  }
+
+  const currentPeriod = getCurrentPeriodFromPeriods(periods, date);
+  const uploadStatus = getUploadStatusForDate(date, currentPeriod);
+
+  if (uploadStatus === "grace" && currentPeriod) {
+    return buildEffectivePeriodFromPeriod(currentPeriod, {
+      isLateSubmission: true,
+      isTemporaryOverride: false,
+    });
+  }
+
+  const displayPeriod = getDisplayPeriodFromPeriods(periods, date);
+  if (displayPeriod) {
+    return buildEffectivePeriodFromPeriod(displayPeriod, {
+      isLateSubmission: false,
+      isTemporaryOverride: false,
+    });
+  }
+
+  if (currentPeriod) {
+    return buildEffectivePeriodFromPeriod(currentPeriod, {
+      isLateSubmission: uploadStatus !== "open",
+      isTemporaryOverride: false,
+    });
+  }
+
+  return null;
 }
 
 /**

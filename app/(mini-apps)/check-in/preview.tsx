@@ -29,11 +29,16 @@ export default function CheckInPreviewScreen() {
     watermarkData: string;
     type: string; // "check-in" or "check-out"
     selectedShift?: string;
+    selectedBranchId?: string;
+    selectedBranchName?: string;
   }>();
 
   const checkInType = (params.type as "check-in" | "check-out") || "check-in";
   const isCheckIn = checkInType === "check-in";
   const selectedShift = params.selectedShift || undefined;
+  const effectiveBranchId = params.selectedBranchId || user?.branchId || "";
+  const effectiveBranchName =
+    params.selectedBranchName || user?.branchName || "";
 
   const [isProcessing, setIsProcessing] = useState(false);
 
@@ -72,8 +77,8 @@ export default function CheckInPreviewScreen() {
         userEmail: user.email || "",
         companyId: user.companyId || "",
         companyName: user.companyName || "",
-        branchId: user.branchId || "",
-        branchName: user.branchName || "",
+        branchId: effectiveBranchId,
+        branchName: effectiveBranchName,
         type: checkInType,
         imageUrl: imageUrl,
         selectedShift: selectedShift,
@@ -303,7 +308,7 @@ export default function CheckInPreviewScreen() {
               สาขา:
             </Text>
             <Text style={[styles.infoValue, { color: colors.text }]}>
-              {user?.branchName || "-"}
+              {effectiveBranchName || "-"}
             </Text>
           </View>
         </View>

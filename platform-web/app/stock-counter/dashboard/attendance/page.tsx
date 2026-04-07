@@ -682,22 +682,64 @@ export default function AttendancePage() {
                   </div>
                 )}
 
-                {selectedCheckIn.watermarkData?.coordinates && (
-                  <div className="p-4 bg-gray-50 dark:bg-gray-700/50 rounded-xl col-span-2">
-                    <p className="text-sm text-gray-500 dark:text-gray-400 mb-1">
-                      พิกัด GPS
-                    </p>
-                    <p className="font-medium text-gray-900 dark:text-white text-sm">
-                      {selectedCheckIn.watermarkData.coordinates.latitude.toFixed(
-                        6,
-                      )}
-                      ,{" "}
-                      {selectedCheckIn.watermarkData.coordinates.longitude.toFixed(
-                        6,
-                      )}
-                    </p>
-                  </div>
-                )}
+                {selectedCheckIn.watermarkData?.coordinates &&
+                  (() => {
+                    let lat = Number(
+                      selectedCheckIn.watermarkData.coordinates!.latitude,
+                    );
+                    let lng = Number(
+                      selectedCheckIn.watermarkData.coordinates!.longitude,
+                    );
+                    // Fallback: parse from location string e.g. "13.75321, 100.65760"
+                    if (
+                      (isNaN(lat) || isNaN(lng) || (lat === 0 && lng === 0)) &&
+                      selectedCheckIn.watermarkData.location
+                    ) {
+                      const parts = selectedCheckIn.watermarkData.location
+                        .split(",")
+                        .map((s: string) => parseFloat(s.trim()));
+                      if (
+                        parts.length === 2 &&
+                        !isNaN(parts[0]) &&
+                        !isNaN(parts[1])
+                      ) {
+                        lat = parts[0];
+                        lng = parts[1];
+                      }
+                    }
+                    if (isNaN(lat) || isNaN(lng) || (lat === 0 && lng === 0))
+                      return null;
+                    return (
+                      <div className="col-span-2">
+                        <p className="text-sm text-gray-500 dark:text-gray-400 mb-2 flex items-center gap-1">
+                          <MapPin className="w-3 h-3 text-red-500" />{" "}
+                          ตำแหน่งที่เช็คอิน
+                        </p>
+                        <div className="rounded-lg overflow-hidden border border-gray-200 dark:border-gray-700">
+                          <iframe
+                            src={`https://www.openstreetmap.org/export/embed.html?bbox=${lng - 0.005},${lat - 0.005},${lng + 0.005},${lat + 0.005}&layer=mapnik&marker=${lat},${lng}`}
+                            width="100%"
+                            height="240"
+                            className="block"
+                            loading="lazy"
+                          />
+                          <div className="flex items-center justify-between px-3 py-2 bg-gray-50 dark:bg-gray-800 text-xs text-gray-500 dark:text-gray-400">
+                            <span>
+                              {lat.toFixed(5)}, {lng.toFixed(5)}
+                            </span>
+                            <a
+                              href={`https://www.google.com/maps?q=${lat},${lng}`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="flex items-center gap-1 text-blue-600 hover:text-blue-700 font-medium"
+                            >
+                              <MapPin className="w-3 h-3" /> เปิดใน Google Maps
+                            </a>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })()}
               </div>
             </div>
           </div>

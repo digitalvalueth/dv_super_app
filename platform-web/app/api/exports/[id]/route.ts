@@ -9,6 +9,39 @@ const toThaiISO = (date: Date): string => {
   return thai.toISOString();
 };
 
+// Normalize slash-format date strings to DD/MM/YYYY
+// Handles: "1/3/26" → "01/03/2026", already "01/03/2026" → unchanged
+// Other formats (e.g. "08-JAN-0026") are returned as-is
+function normalizeDateStr(val: unknown): unknown {
+  if (typeof val !== "string") return val;
+  const s = val.trim();
+
+  // Already DD/MM/YYYY
+  if (/^\d{2}\/\d{2}\/\d{4}$/.test(s)) return s;
+
+  // D/M/YY or D/M/YYYY
+  const slashMatch = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})$/);
+  if (slashMatch) {
+    const dd = slashMatch[1].padStart(2, "0");
+    const mm = slashMatch[2].padStart(2, "0");
+    let yyyy = parseInt(slashMatch[3], 10);
+    if (yyyy < 100) yyyy += 2000;
+    return `${dd}/${mm}/${yyyy}`;
+  }
+
+  return val;
+}
+
+function normalizeDatesInRows(
+  rows: Record<string, unknown>[],
+): Record<string, unknown>[] {
+  return rows.map((row) => {
+    const dateKey = Object.keys(row).find((k) => k.toLowerCase() === "date");
+    if (!dateKey) return row;
+    return { ...row, [dateKey]: normalizeDateStr(row[dateKey]) };
+  });
+}
+
 // GET /api/exports/[id] — fetch export detail including all row data
 export async function GET(
   _req: NextRequest,
@@ -59,7 +92,7 @@ export async function GET(
         id: docSnap.id,
         exportedAt: d.exportedAt?.toDate?.().toISOString() || null,
         confirmedAt: d.confirmedAt ? toThaiISO(d.confirmedAt.toDate()) : null,
-        data: rowData,
+        data: normalizeDatesInRows(rowData),
         storagePath: undefined,
         storageUrl: undefined,
       },

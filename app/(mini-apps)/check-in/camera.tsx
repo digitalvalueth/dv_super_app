@@ -29,11 +29,15 @@ export default function CheckInCameraScreen() {
   const params = useLocalSearchParams<{
     type?: string; // "check-in" or "check-out"
     selectedShift?: string;
+    selectedBranchId?: string;
+    selectedBranchName?: string;
   }>();
 
   const checkInType = (params.type as "check-in" | "check-out") || "check-in";
   const isCheckIn = checkInType === "check-in";
   const selectedShift = params.selectedShift;
+  const selectedBranchId = params.selectedBranchId || "";
+  const selectedBranchName = params.selectedBranchName || "";
 
   const [permission, requestPermission] = useCameraPermissions();
   const [facing, setFacing] = useState<"back" | "front">("back");
@@ -78,7 +82,7 @@ export default function CheckInCameraScreen() {
       const watermarkPromise = createWatermarkMetadata(
         user?.name || "Unknown",
         user?.uid || "",
-        user?.branchName || "",
+        selectedBranchName || user?.branchName || "",
         undefined,
         undefined,
         prefetchedLocation ?? undefined,
@@ -107,6 +111,8 @@ export default function CheckInCameraScreen() {
           watermarkData: JSON.stringify(watermarkData),
           type: checkInType,
           selectedShift: selectedShift || "",
+          selectedBranchId: selectedBranchId || "",
+          selectedBranchName: selectedBranchName || "",
         },
       });
     } catch (error) {
@@ -122,6 +128,8 @@ export default function CheckInCameraScreen() {
     prefetchedLocation,
     prefetchedServerTime,
     selectedShift,
+    selectedBranchId,
+    selectedBranchName,
   ]);
 
   const handlePickImage = useCallback(async () => {
@@ -145,7 +153,7 @@ export default function CheckInCameraScreen() {
       const watermarkData = await createWatermarkMetadata(
         user?.name || "Unknown",
         user?.uid || "",
-        user?.branchName || "",
+        selectedBranchName || user?.branchName || "",
         undefined,
         undefined,
         prefetchedLocation ?? undefined,
@@ -161,6 +169,8 @@ export default function CheckInCameraScreen() {
           watermarkData: JSON.stringify(watermarkData),
           type: checkInType,
           selectedShift: selectedShift || "",
+          selectedBranchId: selectedBranchId || "",
+          selectedBranchName: selectedBranchName || "",
         },
       });
     } catch (error) {
@@ -249,8 +259,8 @@ export default function CheckInCameraScreen() {
             {isCheckIn ? "ลงเวลาเข้างาน" : "ลงเวลาเลิกงาน"}
           </Text>
           <Text style={styles.headerSubtitle}>
-            {user?.branchName
-              ? `สาขา: ${user.branchName}`
+            {selectedBranchName || user?.branchName
+              ? `สาขา: ${selectedBranchName || user?.branchName}`
               : "ถ่ายรูปยืนยันพร้อมบูธของคุณ"}
           </Text>
         </View>

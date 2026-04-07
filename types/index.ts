@@ -12,6 +12,8 @@ export interface User {
   branchId?: string; // Optional until admin assigns
   branchCode?: string;
   branchName?: string;
+  branchIds?: string[]; // Multiple branches support
+  branchNames?: Record<string, string>; // branchId → branchName map
   role?: UserRole; // Optional until admin assigns
   supervisorId?: string; // ID of supervisor (for employees)
   supervisorName?: string; // Name of supervisor
@@ -188,9 +190,15 @@ export interface CountingSession {
   companyId: string;
   branchId: string;
 
+  // Counting period attribution
+  periodId?: string; // e.g. 2026-03-H2
+  periodMonth?: string; // e.g. 2026-03
+  periodHalf?: CountingPeriodHalf;
+
   // Product info
   productName?: string;
   productSKU?: string;
+  barcode?: string;
   branchName?: string;
 
   // User info
@@ -270,6 +278,7 @@ export interface ProductWithAssignment extends Omit<Product, "status"> {
   currentCountQty?: number;
   variance?: number;
   lastCountedAt?: Timestamp | null;
+  assignmentBranchId?: string; // Which branch this assignment belongs to
 }
 
 // ==================== API Response Types ====================
@@ -562,6 +571,35 @@ export interface SupplementSession {
   reviewedAt?: Timestamp;
   createdAt: Timestamp;
   updatedAt?: Timestamp;
+}
+
+// ==================== Shop Count Confirmed (PAShopCount ITP) ====================
+
+export interface ShopCountConfirmed {
+  id: string; // docId = {branchId}_{productId}_{periodId}
+
+  // Period
+  periodId: string; // e.g. "2026-03-H1"
+  periodHalf: 1 | 2;
+  periodMonth: string; // e.g. "2026-03"
+
+  // PAShopCount fields
+  submissionId: string; // reference to countingSessions doc
+  locationId: string; // branchId
+  counterId: string; // userId
+  counterName: string;
+  countDate: Timestamp;
+  item: string; // productId e.g. "SK-C-250"
+  barcode: string;
+  paTotalQty: number;
+  paSellQty: null;
+  paTestQty: null;
+
+  // Metadata
+  confirmedBy: string;
+  confirmedAt: Timestamp;
+  source: FinalCountSource;
+  originalSessionId: string;
 }
 
 // ==================== Prompt Management ====================

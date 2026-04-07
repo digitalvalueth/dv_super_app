@@ -162,6 +162,7 @@ export default function HistoryScreen() {
         productSKU: session.productSKU || "",
         productImage: session.imageUrl || session.imageURL || "",
         beforeQty: session.beforeCountQty?.toString() || "0",
+        productBarcode: session.barcode || "",
       },
     });
   };

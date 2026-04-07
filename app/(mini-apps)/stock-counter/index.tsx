@@ -1,7 +1,7 @@
 import { trackAppUsage } from "@/services/app-usage.service";
 import {
   canUploadPhoto,
-  getCurrentPeriod,
+  getDisplayPeriod,
   getPeriodLabel,
 } from "@/services/counting-period.service";
 import { useAuthStore } from "@/stores/auth.store";
@@ -81,13 +81,17 @@ export default function StockCounterIndex() {
     async function checkPeriod() {
       if (!user?.companyId) return;
       try {
-        const result = await canUploadPhoto(user.companyId);
+        const [result, period] = await Promise.all([
+          canUploadPhoto(user.companyId, undefined, { userId: user.uid }),
+          getDisplayPeriod(user.companyId),
+        ]);
         setUploadStatus(result.status);
         setPeriodMessage(result.message);
 
-        const period = await getCurrentPeriod(user.companyId);
         if (period) {
           setPeriodLabel(getPeriodLabel(period));
+        } else {
+          setPeriodLabel(null);
         }
       } catch {
         // ไม่มี period ก็ผ่านไปได้

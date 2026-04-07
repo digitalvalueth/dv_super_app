@@ -67,50 +67,12 @@ export async function POST(request: NextRequest) {
     // Build message string (format per ITP spec)
     const messageString = buildQueueMessage(body);
 
-    // Check if Azure Queue is configured
-    const connectionString = process.env.AZURE_STORAGE_CONNECTION_STRING;
-    const queueName = process.env.AZURE_QUEUE_NAME || "ShopReceiveQueue";
-
-    if (!connectionString) {
-      // Not configured — return the message for debugging
-      return NextResponse.json({
-        success: false,
-        warning:
-          "Azure Queue not configured — AZURE_STORAGE_CONNECTION_STRING is missing",
-        message: messageString,
-        hint: "ติดตั้ง @azure/storage-queue แล้วตั้ง AZURE_STORAGE_CONNECTION_STRING",
-      });
-    }
-
-    // Dynamic import to avoid error if package not installed
-    try {
-      // @ts-expect-error — @azure/storage-queue is optional, installed in Phase 2
-      const { QueueClient } = await import("@azure/storage-queue");
-      const queueClient = new QueueClient(connectionString, queueName);
-      await queueClient.createIfNotExists();
-
-      // Send message (base64 encoded)
-      const encodedMessage = Buffer.from(messageString).toString("base64");
-      const sendResult = await queueClient.sendMessage(encodedMessage);
-
-      return NextResponse.json({
-        success: true,
-        messageId: sendResult.messageId,
-        queueName,
-        messagePreview: messageString.slice(0, 200) + "...",
-      });
-    } catch (importErr: unknown) {
-      const msg =
-        importErr instanceof Error ? importErr.message : String(importErr);
-      return NextResponse.json(
-        {
-          error: "Azure Queue SDK not available",
-          details: msg,
-          hint: "Run: npm install @azure/storage-queue",
-        },
-        { status: 501 },
-      );
-    }
+    // Azure Queue removed — return message for debugging
+    return NextResponse.json({
+      success: false,
+      warning: "Azure Queue not configured",
+      message: messageString,
+    });
   } catch (error: unknown) {
     const msg = error instanceof Error ? error.message : String(error);
     console.error("[PhithanQueue] Error:", msg);

@@ -19,6 +19,8 @@ export interface User {
   branchId?: string;
   branchCode?: string;
   branchName?: string;
+  branchIds?: string[]; // All branch IDs this user belongs to (multi-branch support)
+  branchNames?: Record<string, string>; // Map of branchId to branchName
   managedBranchIds?: string[]; // For managers who control multiple branches
   supervisorId?: string; // ID of supervisor (for employees)
   supervisorName?: string; // Name of supervisor
@@ -146,6 +148,9 @@ export interface CountingSession {
   companyId: string;
   branchId: string;
   branchName?: string;
+  periodId?: string; // e.g. 2026-03-H2
+  periodMonth?: string; // e.g. 2026-03
+  periodHalf?: 1 | 2;
   productId: string;
   productName?: string;
   productSKU?: string;
@@ -387,6 +392,37 @@ export interface Shipment {
   notes?: string;
   createdAt?: Date;
   updatedAt?: Date;
+}
+
+// ==================== Shop Count Confirmed (PAShopCount ITP) ====================
+
+export type FinalCountSource = "ai" | "employee" | "custom";
+
+export interface ShopCountConfirmed {
+  id: string; // docId = {branchId}_{productId}_{periodId}
+
+  // Period
+  periodId: string; // e.g. "2026-03-H1"
+  periodHalf: 1 | 2;
+  periodMonth: string; // e.g. "2026-03"
+
+  // PAShopCount fields
+  submissionId: string; // reference to countingSessions doc
+  locationId: string; // branchId
+  counterId: string; // userId
+  counterName: string;
+  countDate: Date;
+  item: string; // productId e.g. "SK-C-250"
+  barcode: string;
+  paTotalQty: number;
+  paSellQty: null;
+  paTestQty: null;
+
+  // Metadata
+  confirmedBy: string;
+  confirmedAt: Date;
+  source: FinalCountSource;
+  originalSessionId: string;
 }
 
 export type DeliveryReceiveStatus = "received" | "verified" | "issue";

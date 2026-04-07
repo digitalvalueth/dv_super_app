@@ -1,0 +1,162 @@
+openapi: 3.1.0
+info:
+  title: PHITHAN-EOD Import API
+  version: 1.0.0
+  description: |
+    API สำหรับรับข้อมูล End-of-Day (EOD) จากระบบ Phithan
+    เพื่อนำมาเทียบกับผลการนับสต็อกในระบบ Stock Counter
+
+servers:
+  - url: https://app.fittbsa.com
+    description: Production
+  - url: https://uat-app.fittbsa.com
+    description: Sandbox
+  - url: http://localhost:3000
+    description: Local
+
+security:
+  - ApiKeyAuth: []
+
+paths:
+  /api/phithan-eod:
+    post:
+      summary: Submit PHITHAN EOD data
+      operationId: createPhithanEod
+      tags:
+        - PHITHAN EOD
+      description: |
+        ส่งข้อมูล EOD จากระบบ Phithan เข้ามาเก็บใน Firestore collection `phithanEodImports`
+
+        **ส่ง field อะไรก็ได้** ภายใน `data` array — ระบบจะเก็บทั้งหมดโดยไม่ตรวจ schema
+        Field ที่ required คือ `branchCode` และ `data`
+
+        **POST ซ้ำ = overwrite** — ระบบจะใช้ `branchCode` ต้นฉบับเป็น Firestore document ID
+        เช่น `WL 597` จะยังเป็นหัว document ว่า `WL 597`
+
+        ภายใน document ระบบจะ normalize field `branchCode` และ `data.LocationID`
+        ให้เหลือเลขล้วน เช่น `597`
+        ดังนั้น POST ซ้ำสาขาเดิม = อัปเดตข้อมูลล่าสุดทับของเก่าทันที
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - branchCode
+                - data
+              properties:
+                branchCode:
+                  type: string
+                  description: รหัสสาขาจากต้นทาง ระบบจะใช้ค่านี้เป็น Firestore document ID เช่น `WL 256`
+                  example: "WL 256"
+                data:
+                  description: |
+                    ข้อมูล EOD — รองรับ 2 รูปแบบ:
+                    - **Object** ที่มี `details` array ข้างใน (รูปแบบที่เพื่อนส่ง)
+                    - **Array** ของ record โดยตรง
+                    ส่ง field อะไรก็ได้ ระบบเก็บทั้งหมด
+                  oneOf:
+                    - type: object
+                      additionalProperties: true
+                      description: Object ที่มี details array ข้างใน
+                    - type: array
+                      minItems: 1
+                      items:
+                        type: object
+                        additionalProperties: true
+              additionalProperties: true
+            example:
+              branchCode: "LP 5064"
+              data:
+                EOD_Date_MAX: "2026-03-31T00:00:00Z"
+                Location: "Tesco Lotus Pharmacy Krabi(5064)"
+                LocationID: "LP 5064"
+                details:
+                  - Barcode: "8859109851462"
+                    EOD_Date: "2026-03-31T00:00:00Z"
+                    EOD_Qty: 8
+                    ID: 145103
+                    Item: "SK-C-246"
+                  - Barcode: "8859109851486"
+                    EOD_Date: "2026-03-31T00:00:00Z"
+                    EOD_Qty: 0
+                    ID: 145104
+                    Item: "SK-C-248"
+      responses:
+        "201":
+          description: EOD data received and stored successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    type: object
+                    properties:
+                      id:
+                        type: string
+                        description: Firestore document ID จาก branchCode ต้นฉบับ
+                        example: "WL 256"
+                      branchCode:
+                        type: string
+                        example: "256"
+                      sourceBranchCode:
+                        type: string
+                        description: รหัสสาขาต้นฉบับก่อน normalize
+                        example: "WL 256"
+                      recordCount:
+                        type: integer
+                        description: จำนวน record ที่รับเข้ามา
+                        example: 2
+                      receivedAt:
+                        type: string
+                        format: date-time
+                        example: "2026-04-02T10:00:00.000+07:00"
+                      overwritten:
+                        type: boolean
+                        description: true ถ้าเป็นการ overwrite doc เดิม
+                        example: false
+              example:
+                success: true
+                data:
+                  id: "WL 256"
+                  branchCode: "256"
+                  sourceBranchCode: "WL 256"
+                  recordCount: 2
+                  receivedAt: "2026-04-02T10:00:00.000+07:00"
+                  overwritten: false
+        "400":
+          description: Validation error
+          content:
+            application/json:
+              example:
+                success: false
+                error:
+                  error: Bad Request
+                  message: "`branchCode` and `data` (object or array) are required"
+                  code: VALIDATION_ERROR
+        "401":
+          description: Missing or invalid API Key
+          content:
+            application/json:
+              example:
+                success: false
+                error:
+                  error: Unauthorized
+                  message: "Missing or invalid API Key. Please provide X-API-Key header."
+                  code: AUTH_INVALID_KEY
+
+components:
+  securitySchemes:
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-API-Key
+      description: |
+        ขอ API Key ได้จากทีม FITTBSA
+        **Sandbox:** ใช้สำหรับทดสอบ
+        **Production:** ใช้สำหรับ production จริง

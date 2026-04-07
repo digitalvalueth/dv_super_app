@@ -8,6 +8,7 @@ import {
   getOrFetch,
   removeCache,
 } from "@/services/cache.service";
+import { getEffectiveCountingPeriod } from "@/services/counting-period.service";
 import { useAuthStore } from "@/stores/auth.store";
 import { useTheme } from "@/stores/theme.store";
 import { Ionicons } from "@expo/vector-icons";
@@ -154,6 +155,12 @@ export default function HomeScreen() {
     [],
   );
   const [recentApps, setRecentApps] = useState<MiniApp[]>([]);
+  const [selectedBranchId, setSelectedBranchId] = useState<string>(
+    user?.branchId ?? "",
+  );
+  const [selectedBranchName, setSelectedBranchName] = useState<string>(
+    user?.branchName ?? "",
+  );
 
   // Load recent apps from storage
   const loadRecentApps = useCallback(async () => {
@@ -176,6 +183,32 @@ export default function HomeScreen() {
     }
   }, [user?.uid]);
 
+  // Sync selectedBranchId when user data first loads (e.g. after cold start)
+  useEffect(() => {
+    if (user?.branchId && !selectedBranchId) {
+      setSelectedBranchId(user.branchId);
+      setSelectedBranchName(user.branchName ?? "");
+    }
+  }, [user?.branchId]);
+
+  const handleSelectBranch = useCallback(
+    (bId: string, bName: string) => {
+      if (bId === selectedBranchId) return;
+      // Clear old data immediately so stale stats don't show
+      setStats({
+        totalCounted: 0,
+        completedToday: 0,
+        pendingReview: 0,
+        totalProducts: 0,
+        discrepancy: 0,
+      });
+      setRecentActivities([]);
+      setSelectedBranchId(bId);
+      setSelectedBranchName(bName);
+    },
+    [selectedBranchId],
+  );
+
   // Save app usage to storage
   const saveAppUsage = async (appId: string) => {
     await trackAppUsage(appId, user?.uid);
@@ -190,13 +223,14 @@ export default function HomeScreen() {
 
   const fetchDashboardData = useCallback(
     async (forceRefresh = false) => {
-      if (!user?.companyId || !user?.branchId) {
+      if (!user?.companyId || !user?.branchId || !user?.uid) {
         setLoading(false);
         return;
       }
 
       try {
-        const branchId = user.branchId;
+        const branchId = selectedBranchId || user.branchId;
+        const userId = user.uid;
         const cacheKey = CacheKeys.dashboardStats(branchId);
 
         // Use cache with 5 minute TTL
@@ -206,16 +240,52 @@ export default function HomeScreen() {
             const today = new Date();
             today.setHours(0, 0, 0, 0);
 
-            // Fetch counting sessions - OPTIMIZED: filter by branchId
+            const now = new Date();
+            const fallbackMonth = now.getMonth() + 1; // 1-12
+            const fallbackYear = now.getFullYear();
+            const fallbackHalf: 1 | 2 = now.getDate() <= 15 ? 1 : 2;
+
+            const effectivePeriod = await getEffectiveCountingPeriod(
+              user.companyId,
+              now,
+              { userId },
+            );
+            const targetMonth = effectivePeriod?.month ?? fallbackMonth;
+            const targetYear = effectivePeriod?.year ?? fallbackYear;
+            const targetHalf = effectivePeriod?.half ?? fallbackHalf;
+            const periodMonth = `${targetYear}-${String(targetMonth).padStart(2, "0")}`;
+
+            // ── 1. Assignment data (source of truth for products + counted) ──
+            // NOTE: branchId filter is applied client-side to avoid composite index
+            const assignmentsQuery = query(
+              collection(db, "assignments"),
+              where("userId", "==", userId),
+              where("month", "==", targetMonth),
+              where("year", "==", targetYear),
+              where("half", "==", targetHalf),
+            );
+            const assignmentsSnapshot = await getDocs(assignmentsQuery);
+
+            let totalProducts = 0;
+            let totalCounted = 0;
+            assignmentsSnapshot.forEach((doc) => {
+              const d = doc.data();
+              // Filter by selected branch client-side
+              if (d.branchId && d.branchId !== branchId) return;
+              totalProducts += (d.productIds || []).length;
+              totalCounted += (d.completedProductIds || []).length;
+            });
+
+            // ── 2. Sessions for pending-review count + today activity ──
             const sessionsQuery = query(
               collection(db, "countingSessions"),
+              where("userId", "==", userId),
               where("branchId", "==", branchId),
               orderBy("createdAt", "desc"),
-              limit(30),
+              limit(50),
             );
             const sessionsSnapshot = await getDocs(sessionsQuery);
 
-            let totalCounted = 0;
             let completedToday = 0;
             let pendingReview = 0;
             let totalDiscrepancy = 0;
@@ -223,9 +293,10 @@ export default function HomeScreen() {
 
             sessionsSnapshot.forEach((doc) => {
               const data = doc.data();
-              const createdAt = data.createdAt?.toDate();
+              // Skip sessions from other periods (if periodMonth exists on doc)
+              if (data.periodMonth && data.periodMonth !== periodMonth) return;
 
-              totalCounted++;
+              const createdAt = data.createdAt?.toDate();
 
               if (createdAt && createdAt >= today) {
                 if (data.status === "completed" || data.status === "approved") {
@@ -233,10 +304,7 @@ export default function HomeScreen() {
                 }
               }
 
-              if (
-                data.status === "pending-review" ||
-                data.status === "pending"
-              ) {
+              if (data.status === "pending-review") {
                 pendingReview++;
               }
 
@@ -255,19 +323,12 @@ export default function HomeScreen() {
               }
             });
 
-            // Fetch total products - OPTIMIZED: filter by branchId
-            const productsQuery = query(
-              collection(db, "products"),
-              where("branchId", "==", branchId),
-            );
-            const productsSnapshot = await getDocs(productsQuery);
-
             return {
               stats: {
                 totalCounted,
                 completedToday,
                 pendingReview,
-                totalProducts: productsSnapshot.size,
+                totalProducts,
                 discrepancy: totalDiscrepancy,
               },
               activities,
@@ -286,18 +347,20 @@ export default function HomeScreen() {
         setRefreshing(false);
       }
     },
-    [user?.companyId, user?.branchId],
+    [user?.companyId, user?.branchId, user?.uid, selectedBranchId],
   );
 
   useEffect(() => {
-    fetchDashboardData(false);
+    // Force refresh when branch changes so cache from old branch isn't reused
+    fetchDashboardData(true);
   }, [fetchDashboardData]);
 
   const onRefresh = useCallback(() => {
     setRefreshing(true);
     // Force refresh - bypass cache
-    if (user?.branchId) {
-      removeCache(CacheKeys.dashboardStats(user.branchId));
+    const cacheTargetBranch = selectedBranchId || user?.branchId;
+    if (cacheTargetBranch) {
+      removeCache(CacheKeys.dashboardStats(cacheTargetBranch));
     }
     fetchDashboardData(true);
   }, [fetchDashboardData, user?.branchId]);
@@ -439,6 +502,46 @@ export default function HomeScreen() {
                 )}
               </View>
             </View>
+
+            {/* Branch selector chips — visible only for multi-branch users */}
+            {(user?.branchIds?.length ?? 0) > 1 && (
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={styles.branchChipsRow}
+                style={{ marginTop: 12, marginBottom: 4 }}
+              >
+                {user!.branchIds!.map((bId) => {
+                  const bName = user?.branchNames?.[bId] ?? bId;
+                  const isActive = bId === selectedBranchId;
+                  return (
+                    <TouchableOpacity
+                      key={bId}
+                      activeOpacity={0.75}
+                      style={[
+                        styles.branchChip,
+                        isActive && styles.branchChipActive,
+                      ]}
+                      onPress={() => handleSelectBranch(bId, bName)}
+                    >
+                      <Ionicons
+                        name="business-outline"
+                        size={11}
+                        color={isActive ? "#1D4ED8" : "rgba(255,255,255,0.85)"}
+                      />
+                      <Text
+                        style={[
+                          styles.branchChipText,
+                          isActive && styles.branchChipTextActive,
+                        ]}
+                      >
+                        {bName}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </ScrollView>
+            )}
 
             {/* Quick Stats in Banner */}
             <View style={styles.bannerStats}>
@@ -936,6 +1039,36 @@ const styles = StyleSheet.create({
     width: 1,
     height: 36,
     backgroundColor: "rgba(255,255,255,0.15)",
+  },
+  branchChipsRow: {
+    flexDirection: "row",
+    gap: 8,
+    paddingHorizontal: 2,
+  },
+  branchChip: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
+    paddingHorizontal: 12,
+    paddingVertical: 5,
+    borderRadius: 20,
+    borderWidth: 1.5,
+    borderColor: "rgba(255,255,255,0.55)",
+    backgroundColor: "rgba(255,255,255,0.15)",
+    marginRight: 8,
+  },
+  branchChipActive: {
+    backgroundColor: "#fff",
+    borderColor: "#fff",
+  },
+  branchChipText: {
+    color: "rgba(255,255,255,0.9)",
+    fontSize: 12,
+    fontWeight: "600",
+  },
+  branchChipTextActive: {
+    color: "#1D4ED8",
+    fontWeight: "700",
   },
   section: {
     marginBottom: 24,

@@ -96,16 +96,25 @@ export async function POST(request: NextRequest) {
 
     if (!existingUserSnapshot.empty) {
       const existingUser = existingUserSnapshot.docs[0].data();
-      // Only block if the user is already a member of this specific company
+      // Only block if the user is already a member of this specific company AND branch
       if (
         existingUser.companyId &&
         effectiveCompanyId &&
         existingUser.companyId === effectiveCompanyId
       ) {
-        return NextResponse.json(
-          { error: "ผู้ใช้นี้เป็นสมาชิกของบริษัทนี้อยู่แล้ว" },
-          { status: 409 },
-        );
+        // If branchId is specified, check if user is already in that branch
+        const userBranchIds: string[] = Array.isArray(existingUser.branchIds)
+          ? existingUser.branchIds
+          : existingUser.branchId
+            ? [existingUser.branchId]
+            : [];
+        if (!branchId || userBranchIds.includes(branchId)) {
+          return NextResponse.json(
+            { error: "ผู้ใช้นี้เป็นสมาชิกของบริษัทนี้อยู่แล้ว" },
+            { status: 409 },
+          );
+        }
+        // User is in the company but not in this branch → allow invitation
       }
       // User exists but not in this company → allow invitation to proceed
     }
@@ -119,9 +128,12 @@ export async function POST(request: NextRequest) {
       .get();
 
     if (!existingInvitationSnapshot.empty) {
-      // Only block if the pending invitation is for the same company
+      // Only block if the pending invitation is for the same company AND branch
       const existingInv = existingInvitationSnapshot.docs[0].data();
-      if (existingInv.companyId === effectiveCompanyId) {
+      if (
+        existingInv.companyId === effectiveCompanyId &&
+        (!branchId || existingInv.branchId === branchId)
+      ) {
         return NextResponse.json(
           { error: "มีคำเชิญที่รอการตอบรับอยู่แล้วสำหรับอีเมลนี้ในบริษัทนี้" },
           { status: 409 },
