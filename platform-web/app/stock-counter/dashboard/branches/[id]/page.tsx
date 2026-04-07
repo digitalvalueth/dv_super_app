@@ -137,17 +137,24 @@ export default function BranchDetailPage() {
 
       const companyId = branchData.companyId;
 
-      // Fetch users in this branch
-      const usersQuery = query(
-        collection(db, "users"),
-        where("branchId", "==", branchId),
-      );
-      const usersSnapshot = await getDocs(usersQuery);
+      // Fetch users in this branch (by primary branchId OR branchIds array)
+      const [usersSnapshot1, usersSnapshot2] = await Promise.all([
+        getDocs(
+          query(collection(db, "users"), where("branchId", "==", branchId)),
+        ),
+        getDocs(
+          query(
+            collection(db, "users"),
+            where("branchIds", "array-contains", branchId),
+          ),
+        ),
+      ]);
 
-      const usersData: UserWithAssignments[] = [];
-      usersSnapshot.forEach((docSnap) => {
+      const usersMap = new Map<string, UserWithAssignments>();
+      [...usersSnapshot1.docs, ...usersSnapshot2.docs].forEach((docSnap) => {
+        if (usersMap.has(docSnap.id)) return;
         const data = docSnap.data() as any;
-        usersData.push({
+        usersMap.set(docSnap.id, {
           id: docSnap.id,
           uid: data.uid,
           email: data.email,
@@ -161,6 +168,7 @@ export default function BranchDetailPage() {
           updatedAt: data.updatedAt?.toDate(),
         });
       });
+      const usersData: UserWithAssignments[] = Array.from(usersMap.values());
 
       // Fetch assignments for each user
       const assignmentsQuery = query(
@@ -299,7 +307,11 @@ export default function BranchDetailPage() {
   };
 
   // Check if assignment exists for selected month/year/half
-  const checkExistingAssignment = (month: number, year: number, half: 1 | 2) => {
+  const checkExistingAssignment = (
+    month: number,
+    year: number,
+    half: 1 | 2,
+  ) => {
     if (!selectedUser) return;
 
     const existing = selectedUser.assignments?.find(
@@ -311,7 +323,9 @@ export default function BranchDetailPage() {
     );
 
     if (existing) {
-      toast.warning(`มีการมอบหมายงานสำหรับเดือนนี้ รอบ ${half} แล้ว กำลังโหลดข้อมูล...`);
+      toast.warning(
+        `มีการมอบหมายงานสำหรับเดือนนี้ รอบ ${half} แล้ว กำลังโหลดข้อมูล...`,
+      );
       setExistingAssignment(existing);
       setSelectedAssignmentId(existing.id);
       setAssignmentForm((prev) => ({
@@ -510,7 +524,12 @@ export default function BranchDetailPage() {
         const existingUser = usersSnapshot.docs[0];
         const existingUserData = existingUser.data();
 
-        if (existingUserData.branchId === branchId) {
+        const existingBranchIds: string[] = existingUserData.branchIds?.length
+          ? existingUserData.branchIds
+          : existingUserData.branchId
+            ? [existingUserData.branchId]
+            : [];
+        if (existingBranchIds.includes(branchId)) {
           toast.error("ผู้ใช้นี้อยู่ในสาขานี้แล้ว");
           setSendingInvite(false);
           return;
@@ -1083,7 +1102,11 @@ export default function BranchDetailPage() {
                     onChange={(e) => {
                       const month = parseInt(e.target.value);
                       setAssignmentForm((prev) => ({ ...prev, month }));
-                      checkExistingAssignment(month, assignmentForm.year, assignmentForm.half);
+                      checkExistingAssignment(
+                        month,
+                        assignmentForm.year,
+                        assignmentForm.half,
+                      );
                     }}
                     className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm focus:ring-2 focus:ring-blue-500"
                   >
@@ -1098,7 +1121,11 @@ export default function BranchDetailPage() {
                     onChange={(e) => {
                       const year = parseInt(e.target.value);
                       setAssignmentForm((prev) => ({ ...prev, year }));
-                      checkExistingAssignment(assignmentForm.month, year, assignmentForm.half);
+                      checkExistingAssignment(
+                        assignmentForm.month,
+                        year,
+                        assignmentForm.half,
+                      );
                     }}
                     className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm focus:ring-2 focus:ring-blue-500"
                   >
@@ -1116,7 +1143,11 @@ export default function BranchDetailPage() {
                     onChange={(e) => {
                       const half = parseInt(e.target.value) as 1 | 2;
                       setAssignmentForm((prev) => ({ ...prev, half }));
-                      checkExistingAssignment(assignmentForm.month, assignmentForm.year, half);
+                      checkExistingAssignment(
+                        assignmentForm.month,
+                        assignmentForm.year,
+                        half,
+                      );
                     }}
                     className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm focus:ring-2 focus:ring-blue-500"
                   >

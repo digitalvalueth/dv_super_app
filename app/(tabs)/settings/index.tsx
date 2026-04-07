@@ -466,19 +466,38 @@ export default function ProfileScreen() {
                 </Text>
               </View>
 
-              {user?.branchId && (
-                <View
-                  style={[
-                    styles.infoBadge,
-                    { backgroundColor: "#f59e0b" + "20" },
-                  ]}
-                >
-                  <Ionicons name="location" size={14} color="#f59e0b" />
-                  <Text style={[styles.infoBadgeText, { color: "#f59e0b" }]}>
-                    {branchName || user?.branchCode || user?.branchId}
-                  </Text>
-                </View>
-              )}
+              {(user?.branchIds?.length ?? 0) > 1
+                ? user.branchIds!.map((bId) => (
+                    <View
+                      key={bId}
+                      style={[
+                        styles.infoBadge,
+                        { backgroundColor: "#f59e0b" + "20" },
+                      ]}
+                    >
+                      <Ionicons name="location" size={14} color="#f59e0b" />
+                      <Text
+                        style={[styles.infoBadgeText, { color: "#f59e0b" }]}
+                      >
+                        {user.branchNames?.[bId] || bId}
+                      </Text>
+                    </View>
+                  ))
+                : user?.branchId && (
+                    <View
+                      style={[
+                        styles.infoBadge,
+                        { backgroundColor: "#f59e0b" + "20" },
+                      ]}
+                    >
+                      <Ionicons name="location" size={14} color="#f59e0b" />
+                      <Text
+                        style={[styles.infoBadgeText, { color: "#f59e0b" }]}
+                      >
+                        {branchName || user?.branchCode || user?.branchId}
+                      </Text>
+                    </View>
+                  )}
             </View>
           )}
         </View>

@@ -5,6 +5,7 @@ interface CheckInState {
   // Today's status
   todayCheckIn: CheckIn | null;
   todayCheckOut: CheckIn | null;
+  allTodayCheckIns: CheckIn[]; // All today's records across all branches
 
   // History
   history: CheckIn[];
@@ -17,6 +18,7 @@ interface CheckInState {
   // Actions
   setTodayCheckIn: (checkIn: CheckIn | null) => void;
   setTodayCheckOut: (checkOut: CheckIn | null) => void;
+  setAllTodayCheckIns: (items: CheckIn[]) => void;
   setHistory: (history: CheckIn[]) => void;
   setLoading: (loading: boolean) => void;
   setSubmitting: (submitting: boolean) => void;
@@ -28,6 +30,7 @@ interface CheckInState {
 export const useCheckInStore = create<CheckInState>((set) => ({
   todayCheckIn: null,
   todayCheckOut: null,
+  allTodayCheckIns: [],
   history: [],
   loading: false,
   submitting: false,
@@ -36,6 +39,8 @@ export const useCheckInStore = create<CheckInState>((set) => ({
   setTodayCheckIn: (checkIn) => set({ todayCheckIn: checkIn }),
 
   setTodayCheckOut: (checkOut) => set({ todayCheckOut: checkOut }),
+
+  setAllTodayCheckIns: (items) => set({ allTodayCheckIns: items }),
 
   setHistory: (history) => set({ history, loading: false }),
 
@@ -51,6 +56,7 @@ export const useCheckInStore = create<CheckInState>((set) => ({
     set({
       todayCheckIn: null,
       todayCheckOut: null,
+      allTodayCheckIns: [],
       history: [],
       loading: false,
       submitting: false,

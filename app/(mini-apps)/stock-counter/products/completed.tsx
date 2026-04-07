@@ -1,4 +1,11 @@
 import { getProductCountingSessions } from "@/services/counting.service";
+import {
+  EodDetail,
+  findEodDetailByBarcode,
+  getEodForBranchId,
+  getEodForUser,
+} from "@/services/eod.service";
+import { useAuthStore } from "@/stores/auth.store";
 import { useTheme } from "@/stores/theme.store";
 import { CountingSession } from "@/types";
 import { formatTimestamp } from "@/utils/watermark";
@@ -21,11 +28,14 @@ import { SafeAreaView } from "react-native-safe-area-context";
 export default function CompletedProductScreen() {
   const params = useLocalSearchParams();
   const { colors, isDark } = useTheme();
+  const user = useAuthStore((state) => state.user);
   const [isLoading, setIsLoading] = useState(true);
   const [sessions, setSessions] = useState<CountingSession[]>([]);
   const [imageLoading, setImageLoading] = useState(true);
   const [imageError, setImageError] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const [eodDetail, setEodDetail] = useState<EodDetail | null>(null);
+  const [eodLoading, setEodLoading] = useState(false);
 
   const productId = params.productId as string;
   const productName = params.productName as string;
@@ -34,11 +44,26 @@ export default function CompletedProductScreen() {
   const beforeQty = params.beforeQty as string;
   const assignmentId = params.assignmentId as string;
   const productBarcode = params.productBarcode as string;
+  const assignmentBranchId = params.assignmentBranchId as string | undefined;
 
   useEffect(() => {
     loadCountingSessions();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [productId]);
+
+  // Fetch EOD data for this product's barcode
+  useEffect(() => {
+    if (!user || !productBarcode) return;
+    setEodLoading(true);
+    // Use assignment's branchId for EOD lookup (supports multi-branch employees)
+    const eodPromise = assignmentBranchId
+      ? getEodForBranchId(assignmentBranchId)
+      : getEodForUser(user);
+    eodPromise
+      .then((eod) => setEodDetail(findEodDetailByBarcode(eod, productBarcode)))
+      .catch(() => {})
+      .finally(() => setEodLoading(false));
+  }, [user, productBarcode, assignmentBranchId]);
 
   const loadCountingSessions = async () => {
     try {
@@ -319,10 +344,16 @@ export default function CompletedProductScreen() {
                   <Text
                     style={[styles.statLabel, { color: colors.textSecondary }]}
                   >
-                    จำนวนเดิม
+                    {eodDetail?.EOD_Date
+                      ? `ณ ${new Date(eodDetail.EOD_Date).toLocaleDateString("th-TH", { day: "numeric", month: "short" })}`
+                      : "จำนวนเดิม"}
                   </Text>
                   <Text style={[styles.statValue, { color: colors.text }]}>
-                    {latestSession.beforeCountQty || beforeQty || 0}
+                    {eodLoading
+                      ? "..."
+                      : eodDetail?.EOD_Qty != null
+                        ? eodDetail.EOD_Qty
+                        : latestSession.beforeCountQty || beforeQty || 0}
                   </Text>
                 </View>
                 <View
@@ -342,12 +373,18 @@ export default function CompletedProductScreen() {
                   style={[
                     styles.statBox,
                     {
-                      backgroundColor:
-                        latestSession.variance > 0
-                          ? "#EF444420"
-                          : latestSession.variance < 0
-                            ? "#10B98120"
-                            : colors.border,
+                      backgroundColor: (() => {
+                        const diff =
+                          eodDetail != null
+                            ? (latestSession.currentCountQty ?? 0) -
+                              (eodDetail.EOD_Qty ?? 0)
+                            : -latestSession.variance;
+                        return diff > 0
+                          ? "#10B98120"
+                          : diff < 0
+                            ? "#EF444420"
+                            : colors.border;
+                      })(),
                     },
                   ]}
                 >
@@ -355,12 +392,18 @@ export default function CompletedProductScreen() {
                     style={[
                       styles.statLabel,
                       {
-                        color:
-                          latestSession.variance > 0
-                            ? "#EF4444"
-                            : latestSession.variance < 0
-                              ? "#10B981"
-                              : colors.textSecondary,
+                        color: (() => {
+                          const diff =
+                            eodDetail != null
+                              ? (latestSession.currentCountQty ?? 0) -
+                                (eodDetail.EOD_Qty ?? 0)
+                              : -latestSession.variance;
+                          return diff > 0
+                            ? "#10B981"
+                            : diff < 0
+                              ? "#EF4444"
+                              : colors.textSecondary;
+                        })(),
                       },
                     ]}
                   >
@@ -370,21 +413,29 @@ export default function CompletedProductScreen() {
                     style={[
                       styles.statValue,
                       {
-                        color:
-                          latestSession.variance > 0
-                            ? "#EF4444"
-                            : latestSession.variance < 0
-                              ? "#10B981"
-                              : colors.textSecondary,
+                        color: (() => {
+                          const diff =
+                            eodDetail != null
+                              ? (latestSession.currentCountQty ?? 0) -
+                                (eodDetail.EOD_Qty ?? 0)
+                              : -latestSession.variance;
+                          return diff > 0
+                            ? "#10B981"
+                            : diff < 0
+                              ? "#EF4444"
+                              : colors.textSecondary;
+                        })(),
                       },
                     ]}
                   >
-                    {latestSession.variance > 0
-                      ? "-"
-                      : latestSession.variance < 0
-                        ? "+"
-                        : ""}
-                    {Math.abs(latestSession.variance)}
+                    {(() => {
+                      const diff =
+                        eodDetail != null
+                          ? (latestSession.currentCountQty ?? 0) -
+                            (eodDetail.EOD_Qty ?? 0)
+                          : -latestSession.variance;
+                      return `${diff > 0 ? "+" : ""}${diff}`;
+                    })()}
                   </Text>
                 </View>
               </View>

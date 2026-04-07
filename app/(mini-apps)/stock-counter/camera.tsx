@@ -32,6 +32,7 @@ export default function CameraScreen() {
     productBarcode?: string;
     assignmentId?: string;
     beforeQty?: string;
+    assignmentBranchId?: string;
     existingSessionId?: string;
     isSupplementMode?: string; // "true" when opening from history ถ่ายเพิ่ม
     originalSessionId?: string; // original countingSession id for supplement
@@ -100,7 +101,7 @@ export default function CameraScreen() {
 
       // Take photo — no base64 here, just get the URI fast
       const photo = await cameraRef.current.takePictureAsync({
-        quality: 0.7,
+        quality: 0.82, // Balanced quality — good enough for barcode, faster than 0.9
       });
 
       if (!photo?.uri) {
@@ -123,6 +124,7 @@ export default function CameraScreen() {
           productBarcode: params.productBarcode,
           assignmentId: params.assignmentId,
           beforeQty: params.beforeQty,
+          assignmentBranchId: params.assignmentBranchId || "",
           existingSessionId: params.existingSessionId || "",
           nativeScannedBarcode: scannedBarcode || "", // barcode read by native scanner (100% accurate)
           isSupplementMode: params.isSupplementMode || "",
@@ -136,6 +138,7 @@ export default function CameraScreen() {
     } finally {
       setIsCapturing(false);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isCapturing, user, params, prefetchedLocation]);
 
   const handlePickImage = useCallback(async () => {
@@ -201,6 +204,7 @@ export default function CameraScreen() {
           productBarcode: params.productBarcode,
           assignmentId: params.assignmentId,
           beforeQty: params.beforeQty,
+          assignmentBranchId: params.assignmentBranchId || "",
           existingSessionId: params.existingSessionId || "",
           nativeScannedBarcode: scannedBarcode || "",
           isSupplementMode: params.isSupplementMode || "",
@@ -212,6 +216,7 @@ export default function CameraScreen() {
       console.error("Error picking image:", error);
       Alert.alert("เกิดข้อผิดพลาด", "ไม่สามารถเลือกรูปภาพได้");
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user, params]);
 
   const toggleFlash = () => {
@@ -281,7 +286,6 @@ export default function CameraScreen() {
             "upc_e",
             "code128",
             "code39",
-            "qr",
           ],
         }}
       />

@@ -7,6 +7,12 @@ import {
   updateAssignmentStatus,
   uploadCountingImage,
 } from "@/services/counting.service";
+import {
+  EodDetail,
+  findEodDetailByBarcode,
+  getEodForBranchId,
+  getEodForUser,
+} from "@/services/eod.service";
 import { writeShopCountConfirmed } from "@/services/shopCountConfirmed.service";
 import { useAuthStore } from "@/stores/auth.store";
 import { useTheme } from "@/stores/theme.store";
@@ -14,7 +20,7 @@ import { formatTimestamp, WatermarkData } from "@/utils/watermark";
 import { Ionicons } from "@expo/vector-icons";
 import { Image } from "expo-image";
 import { router, useLocalSearchParams } from "expo-router";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -41,6 +47,7 @@ export default function ResultScreen() {
     watermarkData?: string;
     assignmentId?: string;
     beforeQty?: string;
+    assignmentBranchId?: string;
     barcodeMatchStatus?: string;
     userReportedCount?: string;
     disputeRemark?: string;
@@ -50,6 +57,24 @@ export default function ResultScreen() {
   }>();
 
   const isSupplemental = params.isSupplemental === "true";
+  const [eodDetail, setEodDetail] = useState<EodDetail | null>(null);
+  const [eodLoading, setEodLoading] = useState(false);
+
+  // Fetch EOD data for the correct branch + product barcode
+  useEffect(() => {
+    if (!user || !params.productBarcode) return;
+    setEodLoading(true);
+    // Use assignment's branchId for EOD lookup (supports multi-branch employees)
+    const eodPromise = params.assignmentBranchId
+      ? getEodForBranchId(params.assignmentBranchId)
+      : getEodForUser(user);
+    eodPromise
+      .then((eod) =>
+        setEodDetail(findEodDetailByBarcode(eod, params.productBarcode!)),
+      )
+      .catch(() => {})
+      .finally(() => setEodLoading(false));
+  }, [user, params.productBarcode, params.assignmentBranchId]);
 
   const barcodeCount = parseInt(params.barcodeCount || "0", 10);
   const processingTime = parseInt(params.processingTime || "0", 10);
@@ -120,11 +145,16 @@ export default function ResultScreen() {
 
         const sessionStatus = hasDispute ? "mismatch" : "completed";
 
+        const eodQty = eodDetail?.EOD_Qty ?? beforeQty;
+        const eodDiscrepancy = Math.abs(barcodeCount - eodQty);
+
         await updateDoc(doc(db, "countingSessions", params.sessionId), {
           status: sessionStatus,
           finalCount: barcodeCount,
           manualCount: barcodeCount,
           barcode: params.productBarcode || "",
+          standardCount: eodQty,
+          discrepancy: eodDiscrepancy,
           ...(effectivePeriod && {
             periodId: effectivePeriod.periodId,
             periodMonth: effectivePeriod.periodMonth,
@@ -230,8 +260,8 @@ export default function ResultScreen() {
         aiCount: barcodeCount,
         manualCount: barcodeCount,
         finalCount: barcodeCount,
-        standardCount: beforeQty,
-        discrepancy: Math.abs(variance),
+        standardCount: eodDetail?.EOD_Qty ?? beforeQty,
+        discrepancy: Math.abs(barcodeCount - (eodDetail?.EOD_Qty ?? beforeQty)),
         status: newSessionStatus,
         ...(isLate && { isLate: true }),
         ...(isSupplemental && { isSupplemental: true }),
@@ -409,6 +439,134 @@ export default function ResultScreen() {
             ⚡ ประมวลผลใน {processingTime}ms
           </Text>
         </View>
+
+        {/* EOD Comparison */}
+        {(eodDetail || eodLoading) && (
+          <View style={[styles.resultCard, { backgroundColor: colors.card }]}>
+            <Text style={[styles.cardTitle, { color: colors.text }]}>
+              📊 เปรียบเทียบสินค้า ณ วันที่ EOD
+            </Text>
+            {eodLoading ? (
+              <ActivityIndicator size="small" color={colors.primary} />
+            ) : eodDetail ? (
+              <>
+                <View style={{ flexDirection: "row", gap: 12, width: "100%" }}>
+                  <View
+                    style={{
+                      flex: 1,
+                      backgroundColor: "#3b82f620",
+                      borderRadius: 12,
+                      padding: 12,
+                      alignItems: "center",
+                    }}
+                  >
+                    <Text
+                      style={{
+                        fontSize: 12,
+                        color: "#3b82f6",
+                        marginBottom: 4,
+                      }}
+                    >
+                      {eodDetail.EOD_Date
+                        ? `ณ ${new Date(eodDetail.EOD_Date).toLocaleDateString("th-TH", { day: "numeric", month: "short", year: "numeric" })}`
+                        : "จำนวน EOD"}
+                    </Text>
+                    <Text
+                      style={{
+                        fontSize: 28,
+                        fontWeight: "700",
+                        color: "#3b82f6",
+                      }}
+                    >
+                      {(eodDetail.EOD_Qty ?? 0).toLocaleString()}
+                    </Text>
+                  </View>
+                  <View
+                    style={{
+                      flex: 1,
+                      backgroundColor: colors.primary + "15",
+                      borderRadius: 12,
+                      padding: 12,
+                      alignItems: "center",
+                    }}
+                  >
+                    <Text
+                      style={{
+                        fontSize: 12,
+                        color: colors.primary,
+                        marginBottom: 4,
+                      }}
+                    >
+                      นับได้
+                    </Text>
+                    <Text
+                      style={{
+                        fontSize: 28,
+                        fontWeight: "700",
+                        color: colors.primary,
+                      }}
+                    >
+                      {barcodeCount}
+                    </Text>
+                  </View>
+                  {(() => {
+                    const diff = barcodeCount - (eodDetail.EOD_Qty ?? 0);
+                    const diffColor =
+                      diff > 0 ? "#10b981" : diff < 0 ? "#ef4444" : "#6b7280";
+                    return (
+                      <View
+                        style={{
+                          flex: 1,
+                          backgroundColor: diffColor + "20",
+                          borderRadius: 12,
+                          padding: 12,
+                          alignItems: "center",
+                        }}
+                      >
+                        <Text
+                          style={{
+                            fontSize: 12,
+                            color: diffColor,
+                            marginBottom: 4,
+                          }}
+                        >
+                          ผลต่าง
+                        </Text>
+                        <Text
+                          style={{
+                            fontSize: 28,
+                            fontWeight: "700",
+                            color: diffColor,
+                          }}
+                        >
+                          {diff > 0 ? "+" : ""}
+                          {diff}
+                        </Text>
+                      </View>
+                    );
+                  })()}
+                </View>
+                {eodDetail.EOD_Date && (
+                  <Text
+                    style={{
+                      fontSize: 11,
+                      color: colors.textSecondary,
+                      marginTop: 4,
+                    }}
+                  >
+                    ข้อมูล EOD:{" "}
+                    {new Date(eodDetail.EOD_Date).toLocaleDateString("th-TH", {
+                      weekday: "short",
+                      day: "numeric",
+                      month: "long",
+                      year: "numeric",
+                    })}
+                  </Text>
+                )}
+              </>
+            ) : null}
+          </View>
+        )}
 
         {/* Image Preview */}
         <View style={[styles.imageCard, { backgroundColor: colors.card }]}>

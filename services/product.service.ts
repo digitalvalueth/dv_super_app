@@ -244,33 +244,40 @@ export const subscribeToProductsWithAssignments = (
       });
 
       const assignmentsRef = collection(db, "assignments");
+      // NOTE: filter by (userId, month, year) only — skip `half` in the server query
+      // to avoid needing a composite index AND to handle assignments with missing/wrong half.
+      // We filter by half client-side below.
       const q = query(
         assignmentsRef,
         where("userId", "==", userId),
         where("month", "==", targetMonth),
         where("year", "==", targetYear),
-        where("half", "==", targetHalf),
       );
+
+      let snapshotGeneration = 0;
 
       assignmentUnsubscribe = onSnapshot(
         q,
         async (snapshot) => {
+          const myGeneration = ++snapshotGeneration;
           console.log(`📋 Assignments updated: ${snapshot.size} items`);
 
           if (snapshot.empty) {
             console.log("⚠️ No assignments found");
-            onUpdate([]);
+            if (myGeneration === snapshotGeneration) onUpdate([]);
             return;
           }
 
           const products: ProductWithAssignment[] = [];
 
           // Collect all product IDs and their assignment info
+          // Key = productId__branchId to support same product in multiple branches
           const productAssignmentMap = new Map<
             string,
             {
               assignmentId: string;
               userId: string;
+              branchId: string;
               isCompleted: boolean;
               isInProgress: boolean;
               isNotAvailable: boolean;
@@ -279,17 +286,31 @@ export const subscribeToProductsWithAssignments = (
 
           for (const assignmentDoc of snapshot.docs) {
             const assignment = assignmentDoc.data();
+
+            // Client-side half filter — include if half matches OR if half is missing (legacy docs)
+            const assignmentHalf = assignment.half;
+            if (
+              assignmentHalf !== undefined &&
+              assignmentHalf !== null &&
+              assignmentHalf !== targetHalf
+            ) {
+              continue;
+            }
+
             const assignmentId = assignmentDoc.id;
             const productIds = assignment.productIds || [];
             const completedProductIds = assignment.completedProductIds || [];
             const inProgressProductIds = assignment.inProgressProductIds || [];
             const notAvailableProductIds =
               assignment.notAvailableProductIds || [];
+            const assignmentBranchId = assignment.branchId || "";
 
             for (const productId of productIds) {
-              productAssignmentMap.set(productId, {
+              const mapKey = `${productId}__${assignmentBranchId}`;
+              productAssignmentMap.set(mapKey, {
                 assignmentId,
                 userId: assignment.userId,
+                branchId: assignmentBranchId,
                 isCompleted: completedProductIds.includes(productId),
                 isInProgress: inProgressProductIds.includes(productId),
                 isNotAvailable: notAvailableProductIds.includes(productId),
@@ -298,7 +319,14 @@ export const subscribeToProductsWithAssignments = (
           }
 
           // OPTIMIZED: Batch fetch products (max 30 per batch due to Firestore 'in' limit)
-          const allProductIds = Array.from(productAssignmentMap.keys());
+          // Collect unique product IDs (strip branch suffix from composite keys)
+          const allProductIds = Array.from(
+            new Set(
+              Array.from(productAssignmentMap.keys()).map(
+                (k) => k.split("__")[0],
+              ),
+            ),
+          );
           const batchSize = 30;
           const batches = [];
 
@@ -331,49 +359,53 @@ export const subscribeToProductsWithAssignments = (
                   continue;
                 }
 
-                const assignmentInfo = productAssignmentMap.get(
-                  productData.productId,
+                // Find all branch entries for this product in the assignment map
+                const matchingEntries = Array.from(
+                  productAssignmentMap.entries(),
+                ).filter(([key]) =>
+                  key.startsWith(`${productData.productId}__`),
                 );
 
-                if (!assignmentInfo) continue;
+                for (const [, assignmentInfo] of matchingEntries) {
+                  // Determine status
+                  let status:
+                    | "pending"
+                    | "in_progress"
+                    | "completed"
+                    | "not_available" = "pending";
+                  if (assignmentInfo.isCompleted) {
+                    status = "completed";
+                  } else if (assignmentInfo.isNotAvailable) {
+                    status = "not_available";
+                  } else if (assignmentInfo.isInProgress) {
+                    status = "in_progress";
+                  }
 
-                // Determine status
-                let status:
-                  | "pending"
-                  | "in_progress"
-                  | "completed"
-                  | "not_available" = "pending";
-                if (assignmentInfo.isCompleted) {
-                  status = "completed";
-                } else if (assignmentInfo.isNotAvailable) {
-                  status = "not_available";
-                } else if (assignmentInfo.isInProgress) {
-                  status = "in_progress";
-                }
-
-                products.push({
-                  id: productDoc.id,
-                  productId: productData.productId,
-                  name: productData.name,
-                  sku: productData.productId,
-                  barcode: productData.barcode,
-                  description: productData.description,
-                  category: productData.category,
-                  companyId: productData.companyId,
-                  branchId: productData.branchId,
-                  imageUrl: productData.imageUrl || productData.imageURL,
-                  createdAt: productData.createdAt?.toDate() || new Date(),
-                  updatedAt: productData.updatedAt?.toDate() || new Date(),
-                  status: status,
-                  assignmentStatus: status,
-                  beforeCountQty: productData.beforeCount || 0,
-                  assignment: {
-                    id: assignmentInfo.assignmentId,
-                    userId: assignmentInfo.userId,
+                  products.push({
+                    id: productDoc.id,
                     productId: productData.productId,
+                    name: productData.name,
+                    sku: productData.productId,
+                    barcode: productData.barcode,
+                    description: productData.description,
+                    category: productData.category,
+                    companyId: productData.companyId,
+                    branchId: productData.branchId,
+                    assignmentBranchId: assignmentInfo.branchId,
+                    imageUrl: productData.imageUrl || productData.imageURL,
+                    createdAt: productData.createdAt?.toDate() || new Date(),
+                    updatedAt: productData.updatedAt?.toDate() || new Date(),
                     status: status,
-                  } as any,
-                });
+                    assignmentStatus: status,
+                    beforeCountQty: productData.beforeCount || 0,
+                    assignment: {
+                      id: assignmentInfo.assignmentId,
+                      userId: assignmentInfo.userId,
+                      productId: productData.productId,
+                      status: status,
+                    } as any,
+                  });
+                }
               }
             } catch (error) {
               console.error(`❌ Error fetching product batch:`, error);
@@ -381,7 +413,41 @@ export const subscribeToProductsWithAssignments = (
           }
 
           console.log(`✅ Loaded ${products.length} products with assignments`);
-          onUpdate(products);
+
+          // Deduplicate by (productId + branchId) so the same product in different
+          // branches is kept as separate entries (supports multi-branch users).
+          // Within the same branch, keep the highest-priority status.
+          const statusPriority = {
+            completed: 4,
+            not_available: 3,
+            in_progress: 2,
+            pending: 1,
+          };
+          const deduped = new Map<string, (typeof products)[0]>();
+          for (const p of products) {
+            const key = `${p.productId || p.id}__${p.assignmentBranchId || p.branchId || ""}`;
+            const existing = deduped.get(key);
+            if (!existing) {
+              deduped.set(key, p);
+            } else {
+              const existingPriority =
+                statusPriority[
+                  existing.status as keyof typeof statusPriority
+                ] || 0;
+              const newPriority =
+                statusPriority[p.status as keyof typeof statusPriority] || 0;
+              if (newPriority > existingPriority) {
+                deduped.set(key, p);
+              }
+            }
+          }
+          const dedupedProducts = Array.from(deduped.values());
+          console.log(
+            `🔍 Deduplicated: ${products.length} → ${dedupedProducts.length} products`,
+          );
+          // Discard stale async results (race condition guard)
+          if (myGeneration !== snapshotGeneration) return;
+          onUpdate(dedupedProducts);
         },
         (error) => {
           console.error("❌ Error in products listener:", error);

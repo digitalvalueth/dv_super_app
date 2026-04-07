@@ -3,6 +3,12 @@ import {
   getProductCountingSessions,
   markProductNotAvailable,
 } from "@/services/counting.service";
+import {
+  EodDetail,
+  findEodDetailByBarcode,
+  getEodForBranchId,
+  getEodForUser,
+} from "@/services/eod.service";
 import { useAuthStore } from "@/stores/auth.store";
 import { useTheme } from "@/stores/theme.store";
 import { CountingSession } from "@/types";
@@ -59,6 +65,8 @@ export default function ProductDetailsScreen() {
   const [countingSessions, setCountingSessions] = useState<CountingSession[]>(
     [],
   );
+  const [eodDetail, setEodDetail] = useState<EodDetail | null>(null);
+  const [eodLoading, setEodLoading] = useState(false);
 
   const productId = params.productId as string;
   const productName = params.productName as string;
@@ -68,6 +76,7 @@ export default function ProductDetailsScreen() {
   const assignmentId = params.assignmentId as string;
   const productBarcode = params.productBarcode as string;
   const isSupplemental = params.isSupplemental as string | undefined;
+  const assignmentBranchId = params.assignmentBranchId as string | undefined;
 
   useEffect(() => {
     checkPermissions();
@@ -75,6 +84,24 @@ export default function ProductDetailsScreen() {
     fetchCountingSessions();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [productId]);
+
+  useEffect(() => {
+    if (!user || !productBarcode) return;
+    setEodLoading(true);
+    // Use assignment's branchId for EOD lookup (supports multi-branch employees)
+    const eodPromise = assignmentBranchId
+      ? getEodForBranchId(assignmentBranchId)
+      : getEodForUser(user);
+    eodPromise
+      .then((eod) => {
+        if (eod) {
+          setEodDetail(findEodDetailByBarcode(eod, productBarcode));
+        }
+      })
+      .catch(console.error)
+      .finally(() => setEodLoading(false));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [assignmentBranchId, user?.branchCode, user?.branchId, productBarcode]);
 
   const fetchCountingSessions = async () => {
     if (!productId) return;
@@ -153,6 +180,7 @@ export default function ProductDetailsScreen() {
         productBarcode,
         assignmentId,
         beforeQty,
+        assignmentBranchId: assignmentBranchId || "",
         latitude: location?.coords.latitude,
         longitude: location?.coords.longitude,
         existingSessionId: pendingSession?.id || "",
@@ -250,6 +278,7 @@ export default function ProductDetailsScreen() {
             productBarcode,
             assignmentId,
             beforeQty,
+            assignmentBranchId: assignmentBranchId || "",
             existingSessionId: pendingSession?.id || "",
           },
         });
@@ -362,11 +391,17 @@ export default function ProductDetailsScreen() {
                 color={colors.textSecondary}
               />
               <Text style={[styles.infoLabel, { color: colors.textSecondary }]}>
-                จำนวนเดิม
+                {eodDetail?.EOD_Date
+                  ? `จำนวนสินค้า ณ ${new Date(eodDetail.EOD_Date).toLocaleDateString("th-TH", { day: "numeric", month: "short", year: "numeric" })}`
+                  : "จำนวนเดิม"}
               </Text>
             </View>
             <Text style={[styles.infoValue, { color: colors.text }]}>
-              {beforeQty || "0"} ชิ้น
+              {eodLoading
+                ? "..."
+                : eodDetail != null
+                  ? `${eodDetail.EOD_Qty} ชิ้น`
+                  : `${beforeQty || "0"} ชิ้น`}
             </Text>
           </View>
 

@@ -2,14 +2,15 @@ import { trackAppUsage } from "@/services/app-usage.service";
 import {
   getAttendanceSettings,
   getTodayCheckIn,
+  getTodayCheckInsAll,
 } from "@/services/checkin.service";
 import { useAuthStore } from "@/stores/auth.store";
 import { useCheckInStore } from "@/stores/checkin.store";
 import { useTheme } from "@/stores/theme.store";
 import { Ionicons } from "@expo/vector-icons";
 import * as Notifications from "expo-notifications";
-import { router } from "expo-router";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { router, useFocusEffect } from "expo-router";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -29,8 +30,10 @@ export default function CheckInIndex() {
   const {
     todayCheckIn,
     todayCheckOut,
+    allTodayCheckIns,
     setTodayCheckIn,
     setTodayCheckOut,
+    setAllTodayCheckIns,
     loading,
     setLoading,
   } = useCheckInStore();
@@ -41,6 +44,9 @@ export default function CheckInIndex() {
   const [workShifts, setWorkShifts] = useState<string[]>([]);
   const [selectedShift, setSelectedShift] = useState<string | null>(null);
   const [showShiftPicker, setShowShiftPicker] = useState(false);
+  const [showBranchPicker, setShowBranchPicker] = useState(false);
+  const [selectedBranchId, setSelectedBranchId] = useState<string>("");
+  const [selectedBranchName, setSelectedBranchName] = useState<string>("");
   const [nowTime, setNowTime] = useState(new Date());
   const lastReminderKeyRef = useRef<string | null>(null);
 
@@ -51,13 +57,31 @@ export default function CheckInIndex() {
       setLoading(true);
 
       // Load today's check-in and check-out
-      const [checkIn, checkOut] = await Promise.all([
-        getTodayCheckIn(user.uid, "check-in"),
-        getTodayCheckIn(user.uid, "check-out"),
-      ]);
-
-      setTodayCheckIn(checkIn);
-      setTodayCheckOut(checkOut);
+      if ((user.branchIds?.length ?? 0) > 1) {
+        const all = await getTodayCheckInsAll(user.uid);
+        setAllTodayCheckIns(all);
+        setTodayCheckIn(
+          all.find(
+            (r) => r.type === "check-in" && r.branchId === user.branchId,
+          ) ??
+            all.find((r) => r.type === "check-in") ??
+            null,
+        );
+        setTodayCheckOut(
+          all.find(
+            (r) => r.type === "check-out" && r.branchId === user.branchId,
+          ) ??
+            all.find((r) => r.type === "check-out") ??
+            null,
+        );
+      } else {
+        const [checkIn, checkOut] = await Promise.all([
+          getTodayCheckIn(user.uid, "check-in"),
+          getTodayCheckIn(user.uid, "check-out"),
+        ]);
+        setTodayCheckIn(checkIn);
+        setTodayCheckOut(checkOut);
+      }
 
       if (user.companyId) {
         const settings = await getAttendanceSettings(
@@ -86,13 +110,19 @@ export default function CheckInIndex() {
     user?.branchId,
     setTodayCheckIn,
     setTodayCheckOut,
+    setAllTodayCheckIns,
     setLoading,
   ]);
 
   useEffect(() => {
     trackAppUsage("check-in", user?.uid);
-    loadTodayStatus();
-  }, [loadTodayStatus, user?.uid]);
+  }, [user?.uid]);
+
+  useFocusEffect(
+    useCallback(() => {
+      loadTodayStatus();
+    }, [loadTodayStatus]),
+  );
 
   useEffect(() => {
     const interval = setInterval(() => {
@@ -108,20 +138,93 @@ export default function CheckInIndex() {
     setRefreshing(false);
   }, [loadTodayStatus]);
 
-  const handleCheckIn = () => {
-    if (workShifts.length > 1) {
-      setShowShiftPicker(true);
+  const isMultiBranch = (user?.branchIds?.length ?? 0) > 1;
+
+  const branchStatuses = useMemo(() => {
+    if (!isMultiBranch) return null;
+    return (user?.branchIds ?? []).map((bId) => {
+      const bName = user?.branchNames?.[bId] || bId;
+      const checkIn =
+        allTodayCheckIns.find(
+          (r) => r.type === "check-in" && r.branchId === bId,
+        ) ?? null;
+      const checkOut =
+        allTodayCheckIns.find(
+          (r) => r.type === "check-out" && r.branchId === bId,
+        ) ?? null;
+      return { branchId: bId, branchName: bName, checkIn, checkOut };
+    });
+  }, [isMultiBranch, user, allTodayCheckIns]);
+
+  const handleBranchAction = (
+    branchId: string,
+    branchName: string,
+    type: "check-in" | "check-out",
+  ) => {
+    if (type === "check-in") {
+      if (workShifts.length > 1) {
+        setSelectedBranchId(branchId);
+        setSelectedBranchName(branchName);
+        setShowShiftPicker(true);
+      } else {
+        goToCameraWithShift(
+          workShifts[0] || workStartTime,
+          branchId,
+          branchName,
+        );
+      }
     } else {
-      goToCameraWithShift(workShifts[0] || workStartTime);
+      router.push({
+        pathname: "/(mini-apps)/check-in/camera",
+        params: {
+          type: "check-out",
+          selectedBranchId: branchId,
+          selectedBranchName: branchName,
+        },
+      });
     }
   };
 
-  const goToCameraWithShift = (shift: string) => {
+  const handleCheckIn = () => {
+    if (isMultiBranch) {
+      setShowBranchPicker(true);
+    } else if (workShifts.length > 1) {
+      setShowShiftPicker(true);
+    } else {
+      goToCameraWithShift(
+        workShifts[0] || workStartTime,
+        user?.branchId || "",
+        user?.branchName || "",
+      );
+    }
+  };
+
+  const goToCameraWithShift = (
+    shift: string,
+    branchId: string,
+    branchName: string,
+  ) => {
     setShowShiftPicker(false);
     router.push({
       pathname: "/(mini-apps)/check-in/camera",
-      params: { type: "check-in", selectedShift: shift },
+      params: {
+        type: "check-in",
+        selectedShift: shift,
+        selectedBranchId: branchId,
+        selectedBranchName: branchName,
+      },
     });
+  };
+
+  const handleBranchSelected = (branchId: string, branchName: string) => {
+    setSelectedBranchId(branchId);
+    setSelectedBranchName(branchName);
+    setShowBranchPicker(false);
+    if (workShifts.length > 1) {
+      setShowShiftPicker(true);
+    } else {
+      goToCameraWithShift(workShifts[0] || workStartTime, branchId, branchName);
+    }
   };
   const handleCheckOut = () => {
     // If checking out before the scheduled end time, confirm first
@@ -149,7 +252,11 @@ export default function CheckInIndex() {
             onPress: () =>
               router.push({
                 pathname: "/(mini-apps)/check-in/camera",
-                params: { type: "check-out" },
+                params: {
+                  type: "check-out",
+                  selectedBranchId: todayCheckIn?.branchId || "",
+                  selectedBranchName: todayCheckIn?.branchName || "",
+                },
               }),
           },
         ],
@@ -158,7 +265,11 @@ export default function CheckInIndex() {
     }
     router.push({
       pathname: "/(mini-apps)/check-in/camera",
-      params: { type: "check-out" },
+      params: {
+        type: "check-out",
+        selectedBranchId: todayCheckIn?.branchId || "",
+        selectedBranchName: todayCheckIn?.branchName || "",
+      },
     });
   };
 
@@ -357,270 +468,479 @@ export default function CheckInIndex() {
                 />
                 <Text
                   style={[styles.branchName, { color: colors.textSecondary }]}
+                  numberOfLines={2}
                 >
-                  {user?.branchName || "ไม่ระบุสาขา"}
+                  {(user?.branchIds?.length ?? 0) > 1
+                    ? user!
+                        .branchIds!.map((id) => user?.branchNames?.[id] || id)
+                        .join(" • ")
+                    : user?.branchName || "ไม่ระบุสาขา"}
                 </Text>
               </View>
             </View>
           </View>
         </View>
 
-        {/* Status Card */}
-        <View
-          style={[
-            styles.statusCard,
-            {
-              backgroundColor: isDark ? colors.card : "#F9FAFB",
-              borderColor: isDark ? colors.border : "#E5E7EB",
-            },
-          ]}
-        >
-          <Text style={[styles.statusTitle, { color: colors.text }]}>
-            สถานะวันนี้
-          </Text>
-
-          {loading ? (
-            <ActivityIndicator
-              size="large"
-              color={colors.primary}
-              style={{ marginVertical: 20 }}
-            />
-          ) : (
-            <View style={styles.statusGrid}>
-              {/* Check-in Status */}
-              <View style={styles.statusItem}>
+        {/* Multi-branch: per-branch status cards with inline actions */}
+        {isMultiBranch && (
+          <>
+            {loading ? (
+              <ActivityIndicator
+                size="large"
+                color={colors.primary}
+                style={{ marginVertical: 20 }}
+              />
+            ) : (
+              branchStatuses!.map((bs) => (
                 <View
+                  key={bs.branchId}
                   style={[
-                    styles.statusIcon,
+                    styles.branchStatusCard,
                     {
-                      backgroundColor: hasCheckedIn
-                        ? todayCheckIn?.isLate
-                          ? "#FEF3C7"
-                          : "#D1FAE5"
-                        : "#F3F4F6",
+                      backgroundColor: isDark ? colors.card : "#F9FAFB",
+                      borderColor: isDark ? colors.border : "#E5E7EB",
                     },
                   ]}
                 >
-                  <Ionicons
-                    name={hasCheckedIn ? "checkmark-circle" : "time-outline"}
-                    size={32}
-                    color={
-                      hasCheckedIn
-                        ? todayCheckIn?.isLate
-                          ? "#F59E0B"
-                          : "#10B981"
-                        : "#9CA3AF"
-                    }
-                  />
-                </View>
-                <Text style={[styles.statusLabel, { color: colors.text }]}>
-                  เข้างาน
-                </Text>
-                {hasCheckedIn ? (
-                  <>
+                  <View style={styles.branchStatusHeader}>
+                    <Ionicons
+                      name="storefront-outline"
+                      size={16}
+                      color={colors.primary}
+                    />
                     <Text
-                      style={[styles.statusTime, { color: colors.primary }]}
+                      style={[styles.branchStatusTitle, { color: colors.text }]}
                     >
-                      {formatTime(todayCheckIn?.createdAt)}
+                      {bs.branchName}
                     </Text>
-                    {todayCheckIn?.isLate && (
-                      <Text style={styles.lateText}>
-                        สาย {todayCheckIn.lateMinutes} นาที
+                    {bs.checkIn && bs.checkOut && (
+                      <View style={styles.branchDoneBadge}>
+                        <Text style={styles.branchDoneBadgeText}>
+                          ครบแล้ว ✓
+                        </Text>
+                      </View>
+                    )}
+                  </View>
+                  <View style={styles.statusGrid}>
+                    <View style={styles.statusItem}>
+                      <View
+                        style={[
+                          styles.statusIcon,
+                          {
+                            backgroundColor: bs.checkIn
+                              ? bs.checkIn.isLate
+                                ? "#FEF3C7"
+                                : "#D1FAE5"
+                              : "#F3F4F6",
+                          },
+                        ]}
+                      >
+                        <Ionicons
+                          name={
+                            bs.checkIn ? "checkmark-circle" : "time-outline"
+                          }
+                          size={28}
+                          color={
+                            bs.checkIn
+                              ? bs.checkIn.isLate
+                                ? "#F59E0B"
+                                : "#10B981"
+                              : "#9CA3AF"
+                          }
+                        />
+                      </View>
+                      <Text
+                        style={[styles.statusLabel, { color: colors.text }]}
+                      >
+                        เข้างาน
+                      </Text>
+                      {bs.checkIn ? (
+                        <>
+                          <Text
+                            style={[
+                              styles.statusTime,
+                              { color: colors.primary },
+                            ]}
+                          >
+                            {formatTime(bs.checkIn.createdAt)}
+                          </Text>
+                          {bs.checkIn.isLate && (
+                            <Text style={styles.lateText}>
+                              สาย {bs.checkIn.lateMinutes} นาที
+                            </Text>
+                          )}
+                        </>
+                      ) : (
+                        <Text
+                          style={[
+                            styles.statusPending,
+                            { color: colors.textSecondary },
+                          ]}
+                        >
+                          ยังไม่ลงเวลา
+                        </Text>
+                      )}
+                    </View>
+                    <View style={styles.statusItem}>
+                      <View
+                        style={[
+                          styles.statusIcon,
+                          {
+                            backgroundColor: bs.checkOut
+                              ? "#D1FAE5"
+                              : "#F3F4F6",
+                          },
+                        ]}
+                      >
+                        <Ionicons
+                          name={
+                            bs.checkOut ? "checkmark-circle" : "log-out-outline"
+                          }
+                          size={28}
+                          color={bs.checkOut ? "#10B981" : "#9CA3AF"}
+                        />
+                      </View>
+                      <Text
+                        style={[styles.statusLabel, { color: colors.text }]}
+                      >
+                        เลิกงาน
+                      </Text>
+                      {bs.checkOut ? (
+                        <Text
+                          style={[styles.statusTime, { color: colors.primary }]}
+                        >
+                          {formatTime(bs.checkOut.createdAt)}
+                        </Text>
+                      ) : (
+                        <Text
+                          style={[
+                            styles.statusPending,
+                            { color: colors.textSecondary },
+                          ]}
+                        >
+                          ยังไม่ลงเวลา
+                        </Text>
+                      )}
+                    </View>
+                  </View>
+                  {!bs.checkIn ? (
+                    <TouchableOpacity
+                      style={[
+                        styles.branchActionBtn,
+                        { backgroundColor: colors.primary },
+                      ]}
+                      onPress={() =>
+                        handleBranchAction(
+                          bs.branchId,
+                          bs.branchName,
+                          "check-in",
+                        )
+                      }
+                    >
+                      <Ionicons name="log-in-outline" size={18} color="#fff" />
+                      <Text style={styles.branchActionBtnText}>
+                        ลงเวลาเข้างาน
+                      </Text>
+                    </TouchableOpacity>
+                  ) : !bs.checkOut ? (
+                    <TouchableOpacity
+                      style={[
+                        styles.branchActionBtn,
+                        { backgroundColor: "#374151" },
+                      ]}
+                      onPress={() =>
+                        handleBranchAction(
+                          bs.branchId,
+                          bs.branchName,
+                          "check-out",
+                        )
+                      }
+                    >
+                      <Ionicons name="log-out-outline" size={18} color="#fff" />
+                      <Text style={styles.branchActionBtnText}>
+                        ลงเวลาเลิกงาน
+                      </Text>
+                    </TouchableOpacity>
+                  ) : null}
+                </View>
+              ))
+            )}
+          </>
+        )}
+
+        {/* Single-branch: status card + countdown + shift preview + action buttons */}
+        {!isMultiBranch && (
+          <>
+            {/* Status Card */}
+            <View
+              style={[
+                styles.statusCard,
+                {
+                  backgroundColor: isDark ? colors.card : "#F9FAFB",
+                  borderColor: isDark ? colors.border : "#E5E7EB",
+                },
+              ]}
+            >
+              <Text style={[styles.statusTitle, { color: colors.text }]}>
+                สถานะวันนี้
+              </Text>
+
+              {loading ? (
+                <ActivityIndicator
+                  size="large"
+                  color={colors.primary}
+                  style={{ marginVertical: 20 }}
+                />
+              ) : (
+                <View style={styles.statusGrid}>
+                  {/* Check-in Status */}
+                  <View style={styles.statusItem}>
+                    <View
+                      style={[
+                        styles.statusIcon,
+                        {
+                          backgroundColor: hasCheckedIn
+                            ? todayCheckIn?.isLate
+                              ? "#FEF3C7"
+                              : "#D1FAE5"
+                            : "#F3F4F6",
+                        },
+                      ]}
+                    >
+                      <Ionicons
+                        name={
+                          hasCheckedIn ? "checkmark-circle" : "time-outline"
+                        }
+                        size={32}
+                        color={
+                          hasCheckedIn
+                            ? todayCheckIn?.isLate
+                              ? "#F59E0B"
+                              : "#10B981"
+                            : "#9CA3AF"
+                        }
+                      />
+                    </View>
+                    <Text style={[styles.statusLabel, { color: colors.text }]}>
+                      เข้างาน
+                    </Text>
+                    {hasCheckedIn ? (
+                      <>
+                        <Text
+                          style={[styles.statusTime, { color: colors.primary }]}
+                        >
+                          {formatTime(todayCheckIn?.createdAt)}
+                        </Text>
+                        {todayCheckIn?.isLate && (
+                          <Text style={styles.lateText}>
+                            สาย {todayCheckIn.lateMinutes} นาที
+                          </Text>
+                        )}
+                      </>
+                    ) : (
+                      <Text
+                        style={[
+                          styles.statusPending,
+                          { color: colors.textSecondary },
+                        ]}
+                      >
+                        ยังไม่ลงเวลา
                       </Text>
                     )}
-                  </>
-                ) : (
-                  <Text
-                    style={[
-                      styles.statusPending,
-                      { color: colors.textSecondary },
-                    ]}
-                  >
-                    ยังไม่ลงเวลา
-                  </Text>
-                )}
-              </View>
+                  </View>
 
-              {/* Check-out Status */}
-              <View style={styles.statusItem}>
-                <View
-                  style={[
-                    styles.statusIcon,
-                    {
-                      backgroundColor: hasCheckedOut ? "#D1FAE5" : "#F3F4F6",
-                    },
-                  ]}
-                >
-                  <Ionicons
-                    name={
-                      hasCheckedOut ? "checkmark-circle" : "log-out-outline"
-                    }
-                    size={32}
-                    color={hasCheckedOut ? "#10B981" : "#9CA3AF"}
-                  />
+                  {/* Check-out Status */}
+                  <View style={styles.statusItem}>
+                    <View
+                      style={[
+                        styles.statusIcon,
+                        {
+                          backgroundColor: hasCheckedOut
+                            ? "#D1FAE5"
+                            : "#F3F4F6",
+                        },
+                      ]}
+                    >
+                      <Ionicons
+                        name={
+                          hasCheckedOut ? "checkmark-circle" : "log-out-outline"
+                        }
+                        size={32}
+                        color={hasCheckedOut ? "#10B981" : "#9CA3AF"}
+                      />
+                    </View>
+                    <Text style={[styles.statusLabel, { color: colors.text }]}>
+                      เลิกงาน
+                    </Text>
+                    {hasCheckedOut ? (
+                      <Text
+                        style={[styles.statusTime, { color: colors.primary }]}
+                      >
+                        {formatTime(todayCheckOut?.createdAt)}
+                      </Text>
+                    ) : (
+                      <Text
+                        style={[
+                          styles.statusPending,
+                          { color: colors.textSecondary },
+                        ]}
+                      >
+                        ยังไม่ลงเวลา
+                      </Text>
+                    )}
+                  </View>
                 </View>
-                <Text style={[styles.statusLabel, { color: colors.text }]}>
-                  เลิกงาน
-                </Text>
-                {hasCheckedOut ? (
-                  <Text style={[styles.statusTime, { color: colors.primary }]}>
-                    {formatTime(todayCheckOut?.createdAt)}
-                  </Text>
-                ) : (
-                  <Text
-                    style={[
-                      styles.statusPending,
-                      { color: colors.textSecondary },
-                    ]}
-                  >
-                    ยังไม่ลงเวลา
-                  </Text>
-                )}
-              </View>
+              )}
             </View>
-          )}
-        </View>
 
-        {/* Action Buttons */}
-        {shouldShowCountdown && (
-          <View
-            style={[
-              styles.countdownCard,
-              {
-                backgroundColor:
-                  minutesToCheckout > 0
-                    ? isDark
-                      ? "#1F2937"
-                      : "#EFF6FF"
-                    : isDark
-                      ? "#3F1D1D"
-                      : "#FEF2F2",
-                borderColor:
-                  minutesToCheckout > 0
-                    ? isDark
-                      ? "#374151"
-                      : "#BFDBFE"
-                    : isDark
-                      ? "#7F1D1D"
-                      : "#FECACA",
-              },
-            ]}
-          >
-            <Ionicons
-              name={minutesToCheckout > 0 ? "time-outline" : "alarm-outline"}
-              size={22}
-              color={minutesToCheckout > 0 ? "#2563EB" : "#DC2626"}
-            />
-            <View style={styles.countdownContent}>
-              <Text
+            {/* Action Buttons */}
+            {shouldShowCountdown && (
+              <View
                 style={[
-                  styles.countdownTitle,
-                  { color: minutesToCheckout > 0 ? "#1E40AF" : "#991B1B" },
-                ]}
-              >
-                {minutesToCheckout > 0
-                  ? `เหลืออีก ${minutesToCheckout} นาที ถึงเวลาเลิกงาน`
-                  : "ถึงเวลาเลิกงานแล้ว"}
-              </Text>
-              <Text
-                style={[
-                  styles.countdownSubtitle,
-                  { color: minutesToCheckout > 0 ? "#3B82F6" : "#DC2626" },
-                ]}
-              >
-                เวลาเลิกงานตั้งไว้ {effectiveWorkEndTime} น.
-              </Text>
-            </View>
-          </View>
-        )}
-
-        {/* Inline Shift Preview - shows selected shift after check-in */}
-        {workShifts.length > 1 && !hasCheckedIn && (
-          <View
-            style={[
-              styles.shiftPreviewCard,
-              {
-                backgroundColor: isDark ? colors.card : "#F0FDF4",
-                borderColor: isDark ? colors.border : "#BBF7D0",
-              },
-            ]}
-          >
-            <Ionicons name="time-outline" size={18} color="#16A34A" />
-            <Text style={[styles.shiftPreviewText, { color: "#16A34A" }]}>
-              เลือกกะก่อนลงเวลา — กดปุ่มด้านล่างเพื่อเลือก
-            </Text>
-          </View>
-        )}
-
-        <View style={styles.actionContainer}>
-          {/* Check-in Button */}
-          <TouchableOpacity
-            style={[
-              styles.actionButton,
-              {
-                backgroundColor: hasCheckedIn ? "#E5E7EB" : colors.primary,
-              },
-            ]}
-            onPress={handleCheckIn}
-            disabled={hasCheckedIn}
-          >
-            <View style={styles.actionButtonContent}>
-              <Ionicons
-                name="log-in-outline"
-                size={32}
-                color={hasCheckedIn ? "#9CA3AF" : "#FFFFFF"}
-              />
-              <Text
-                style={[
-                  styles.actionButtonText,
-                  { color: hasCheckedIn ? "#9CA3AF" : "#FFFFFF" },
-                ]}
-              >
-                {hasCheckedIn ? "ลงเวลาเข้าแล้ว" : "ลงเวลาเข้างาน"}
-              </Text>
-            </View>
-          </TouchableOpacity>
-
-          {/* Check-out Button */}
-          <TouchableOpacity
-            style={[
-              styles.actionButton,
-              {
-                backgroundColor:
-                  !hasCheckedIn || hasCheckedOut
-                    ? "#E5E7EB"
-                    : isDark
-                      ? "#374151"
-                      : "#374151",
-              },
-            ]}
-            onPress={handleCheckOut}
-            disabled={!hasCheckedIn || hasCheckedOut}
-          >
-            <View style={styles.actionButtonContent}>
-              <Ionicons
-                name="log-out-outline"
-                size={32}
-                color={!hasCheckedIn || hasCheckedOut ? "#9CA3AF" : "#FFFFFF"}
-              />
-              <Text
-                style={[
-                  styles.actionButtonText,
+                  styles.countdownCard,
                   {
-                    color:
-                      !hasCheckedIn || hasCheckedOut ? "#9CA3AF" : "#FFFFFF",
+                    backgroundColor:
+                      minutesToCheckout > 0
+                        ? isDark
+                          ? "#1F2937"
+                          : "#EFF6FF"
+                        : isDark
+                          ? "#3F1D1D"
+                          : "#FEF2F2",
+                    borderColor:
+                      minutesToCheckout > 0
+                        ? isDark
+                          ? "#374151"
+                          : "#BFDBFE"
+                        : isDark
+                          ? "#7F1D1D"
+                          : "#FECACA",
                   },
                 ]}
               >
-                {hasCheckedOut
-                  ? "ลงเวลาออกแล้ว"
-                  : !hasCheckedIn
-                    ? "ต้องเข้างานก่อน"
-                    : "ลงเวลาเลิกงาน"}
-              </Text>
+                <Ionicons
+                  name={
+                    minutesToCheckout > 0 ? "time-outline" : "alarm-outline"
+                  }
+                  size={22}
+                  color={minutesToCheckout > 0 ? "#2563EB" : "#DC2626"}
+                />
+                <View style={styles.countdownContent}>
+                  <Text
+                    style={[
+                      styles.countdownTitle,
+                      { color: minutesToCheckout > 0 ? "#1E40AF" : "#991B1B" },
+                    ]}
+                  >
+                    {minutesToCheckout > 0
+                      ? `เหลืออีก ${minutesToCheckout} นาที ถึงเวลาเลิกงาน`
+                      : "ถึงเวลาเลิกงานแล้ว"}
+                  </Text>
+                  <Text
+                    style={[
+                      styles.countdownSubtitle,
+                      { color: minutesToCheckout > 0 ? "#3B82F6" : "#DC2626" },
+                    ]}
+                  >
+                    เวลาเลิกงานตั้งไว้ {effectiveWorkEndTime} น.
+                  </Text>
+                </View>
+              </View>
+            )}
+
+            {/* Inline Shift Preview - shows selected shift after check-in */}
+            {workShifts.length > 1 && !hasCheckedIn && (
+              <View
+                style={[
+                  styles.shiftPreviewCard,
+                  {
+                    backgroundColor: isDark ? colors.card : "#F0FDF4",
+                    borderColor: isDark ? colors.border : "#BBF7D0",
+                  },
+                ]}
+              >
+                <Ionicons name="time-outline" size={18} color="#16A34A" />
+                <Text style={[styles.shiftPreviewText, { color: "#16A34A" }]}>
+                  เลือกกะก่อนลงเวลา — กดปุ่มด้านล่างเพื่อเลือก
+                </Text>
+              </View>
+            )}
+
+            <View style={styles.actionContainer}>
+              {/* Check-in Button */}
+              <TouchableOpacity
+                style={[
+                  styles.actionButton,
+                  {
+                    backgroundColor: hasCheckedIn ? "#E5E7EB" : colors.primary,
+                  },
+                ]}
+                onPress={handleCheckIn}
+                disabled={hasCheckedIn}
+              >
+                <View style={styles.actionButtonContent}>
+                  <Ionicons
+                    name="log-in-outline"
+                    size={32}
+                    color={hasCheckedIn ? "#9CA3AF" : "#FFFFFF"}
+                  />
+                  <Text
+                    style={[
+                      styles.actionButtonText,
+                      { color: hasCheckedIn ? "#9CA3AF" : "#FFFFFF" },
+                    ]}
+                  >
+                    {hasCheckedIn ? "ลงเวลาเข้าแล้ว" : "ลงเวลาเข้างาน"}
+                  </Text>
+                </View>
+              </TouchableOpacity>
+
+              {/* Check-out Button */}
+              <TouchableOpacity
+                style={[
+                  styles.actionButton,
+                  {
+                    backgroundColor:
+                      !hasCheckedIn || hasCheckedOut
+                        ? "#E5E7EB"
+                        : isDark
+                          ? "#374151"
+                          : "#374151",
+                  },
+                ]}
+                onPress={handleCheckOut}
+                disabled={!hasCheckedIn || hasCheckedOut}
+              >
+                <View style={styles.actionButtonContent}>
+                  <Ionicons
+                    name="log-out-outline"
+                    size={32}
+                    color={
+                      !hasCheckedIn || hasCheckedOut ? "#9CA3AF" : "#FFFFFF"
+                    }
+                  />
+                  <Text
+                    style={[
+                      styles.actionButtonText,
+                      {
+                        color:
+                          !hasCheckedIn || hasCheckedOut
+                            ? "#9CA3AF"
+                            : "#FFFFFF",
+                      },
+                    ]}
+                  >
+                    {hasCheckedOut
+                      ? "ลงเวลาออกแล้ว"
+                      : !hasCheckedIn
+                        ? "ต้องเข้างานก่อน"
+                        : "ลงเวลาเลิกงาน"}
+                  </Text>
+                </View>
+              </TouchableOpacity>
             </View>
-          </TouchableOpacity>
-        </View>
+          </>
+        )}
 
         {/* Info Card */}
         <View
@@ -648,6 +968,89 @@ export default function CheckInIndex() {
           </View>
         </View>
       </ScrollView>
+
+      {/* Branch Picker Modal */}
+      <Modal
+        visible={showBranchPicker}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setShowBranchPicker(false)}
+      >
+        <TouchableOpacity
+          style={styles.modalBackdrop}
+          activeOpacity={1}
+          onPress={() => setShowBranchPicker(false)}
+        />
+        <View
+          style={[
+            styles.shiftSheet,
+            { backgroundColor: isDark ? colors.card : "#FFFFFF" },
+          ]}
+        >
+          <View style={styles.shiftSheetHandle} />
+          <Text style={[styles.shiftSheetTitle, { color: colors.text }]}>
+            เลือกสาขาที่จะลงเวลา
+          </Text>
+          <Text
+            style={[styles.shiftSheetSubtitle, { color: colors.textSecondary }]}
+          >
+            คุณสังกัดหลายสาขา — กรุณาเลือกสาขาที่คุณทำงานวันนี้
+          </Text>
+          <View style={styles.shiftList}>
+            {(user?.branchIds ?? []).map((bId) => {
+              const bName = user?.branchNames?.[bId] || bId;
+              return (
+                <TouchableOpacity
+                  key={bId}
+                  style={[
+                    styles.shiftItem,
+                    {
+                      backgroundColor: isDark ? colors.background : "#F9FAFB",
+                      borderColor: colors.border,
+                    },
+                  ]}
+                  onPress={() => handleBranchSelected(bId, bName)}
+                >
+                  <View
+                    style={[
+                      styles.shiftIconBg,
+                      { backgroundColor: colors.primary + "15" },
+                    ]}
+                  >
+                    <Ionicons
+                      name="storefront-outline"
+                      size={22}
+                      color={colors.primary}
+                    />
+                  </View>
+                  <View style={styles.shiftItemText}>
+                    <Text
+                      style={[styles.shiftTimeText, { color: colors.text }]}
+                    >
+                      {bName}
+                    </Text>
+                  </View>
+                  <Ionicons
+                    name="chevron-forward"
+                    size={20}
+                    color={colors.textSecondary}
+                  />
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+          <TouchableOpacity
+            style={[styles.shiftCancelButton, { borderColor: colors.border }]}
+            onPress={() => setShowBranchPicker(false)}
+          >
+            <Text
+              style={[styles.shiftCancelText, { color: colors.textSecondary }]}
+            >
+              ยกเลิก
+            </Text>
+          </TouchableOpacity>
+        </View>
+      </Modal>
 
       {/* Shift Picker Modal */}
       <Modal
@@ -695,7 +1098,13 @@ export default function CheckInIndex() {
                       borderColor: colors.border,
                     },
                   ]}
-                  onPress={() => goToCameraWithShift(shift)}
+                  onPress={() =>
+                    goToCameraWithShift(
+                      shift,
+                      selectedBranchId || user?.branchId || "",
+                      selectedBranchName || user?.branchName || "",
+                    )
+                  }
                 >
                   <View
                     style={[
@@ -1007,5 +1416,47 @@ const styles = StyleSheet.create({
   shiftCancelText: {
     fontSize: 16,
     fontWeight: "500",
+  },
+  branchStatusCard: {
+    borderRadius: 14,
+    borderWidth: 1,
+    padding: 16,
+    marginBottom: 12,
+  },
+  branchStatusHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    marginBottom: 14,
+  },
+  branchStatusTitle: {
+    fontSize: 15,
+    fontWeight: "600",
+    flex: 1,
+  },
+  branchDoneBadge: {
+    backgroundColor: "#D1FAE5",
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 10,
+  },
+  branchDoneBadgeText: {
+    color: "#059669",
+    fontSize: 12,
+    fontWeight: "600",
+  },
+  branchActionBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    paddingVertical: 12,
+    borderRadius: 10,
+    marginTop: 12,
+  },
+  branchActionBtnText: {
+    color: "#fff",
+    fontSize: 15,
+    fontWeight: "600",
   },
 });

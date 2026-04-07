@@ -45,6 +45,7 @@ export default function UsersPage() {
   const [selectedUser, setSelectedUser] = useState<User | null>(null);
   const [showEditModal, setShowEditModal] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [branchSearch, setBranchSearch] = useState("");
   const [editForm, setEditForm] = useState({
     name: "",
     role: "employee" as
@@ -56,6 +57,7 @@ export default function UsersPage() {
       | "staff",
     companyId: "",
     branchId: "",
+    branchIds: [] as string[],
     status: "active" as "pending" | "active" | "inactive" | "suspended",
   });
 
@@ -121,6 +123,8 @@ export default function UsersPage() {
           branchId: data.branchId,
           branchCode: data.branchCode || "",
           branchName: data.branchName || "",
+          branchIds: data.branchIds || null,
+          branchNames: data.branchNames || null,
           photoURL: data.photoURL,
           status: data.status,
           createdAt: data.createdAt?.toDate(),
@@ -187,14 +191,23 @@ export default function UsersPage() {
   const editModalBranches = branches.filter(
     (branch) => !editForm.companyId || branch.companyId === editForm.companyId,
   );
+  const editModalBranchesFiltered = branchSearch.trim()
+    ? editModalBranches.filter((b) =>
+        b.name.toLowerCase().includes(branchSearch.toLowerCase()),
+      )
+    : editModalBranches;
 
   const handleEditUser = (user: User) => {
     setSelectedUser(user);
+    setBranchSearch("");
+    const existingBranchIds: string[] =
+      (user as any).branchIds || (user.branchId ? [user.branchId] : []);
     setEditForm({
       name: user.name || "",
       role: user.role || "employee",
       companyId: user.companyId || "",
       branchId: user.branchId || "",
+      branchIds: existingBranchIds,
       status: user.status || "active",
     });
     setShowEditModal(true);
@@ -204,10 +217,20 @@ export default function UsersPage() {
     if (!selectedUser) return;
 
     try {
-      const selectedBranch = branches.find((b) => b.id === editForm.branchId);
+      // Primary branch = first selected (or legacy single)
+      const primaryBranchId =
+        editForm.branchIds[0] || editForm.branchId || null;
+      const selectedBranch = branches.find((b) => b.id === primaryBranchId);
       const selectedCompany = companies.find(
         (c) => c.id === editForm.companyId,
       );
+
+      // Build branchNames map from selected branch IDs
+      const branchNames: Record<string, string> = {};
+      editForm.branchIds.forEach((id) => {
+        const b = branches.find((br) => br.id === id);
+        if (b) branchNames[id] = b.name;
+      });
 
       await updateDoc(doc(db, "users", selectedUser.id), {
         name: editForm.name,
@@ -215,8 +238,10 @@ export default function UsersPage() {
         companyId: editForm.companyId || null,
         companyName: selectedCompany?.name || null,
         companyCode: selectedCompany?.code || null,
-        branchId: editForm.branchId || null,
+        branchId: primaryBranchId,
         branchName: selectedBranch?.name || null,
+        branchIds: editForm.branchIds.length > 0 ? editForm.branchIds : null,
+        branchNames: editForm.branchIds.length > 0 ? branchNames : null,
         status: editForm.status,
         updatedAt: serverTimestamp(),
       });
@@ -455,7 +480,27 @@ export default function UsersPage() {
                     <RoleBadge role={user.role} />
                   </td>
                   <td className="hidden lg:table-cell px-6 py-4 text-sm text-gray-900 dark:text-gray-100">
-                    {user.branchName || "-"}
+                    {(() => {
+                      const ids: string[] | null = (user as any).branchIds;
+                      const names: Record<string, string> | null = (user as any)
+                        .branchNames;
+                      if (ids && ids.length > 0) {
+                        const labels = ids.map((id) => names?.[id] || id);
+                        return (
+                          <div className="flex flex-wrap gap-1">
+                            {labels.map((label, i) => (
+                              <span
+                                key={i}
+                                className="inline-block px-2 py-0.5 bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 rounded text-xs"
+                              >
+                                {label}
+                              </span>
+                            ))}
+                          </div>
+                        );
+                      }
+                      return user.branchName || "-";
+                    })()}
                   </td>
                   <td className="px-4 lg:px-6 py-4">
                     <StatusBadge status={user.status} />
@@ -579,7 +624,7 @@ export default function UsersPage() {
                           {editForm.role === "supervisor" && "หัวหน้างาน"}
                           {editForm.role === "manager" && "ผู้จัดการสาขา"}
                           {editForm.role === "employee" && "พนักงาน"}
-                          {editForm.role === "staff" && "พนักงาน"}
+                          {editForm.role === "staff" && "พนักงาน (Part-time)"}
                         </div>
                         <p className="text-xs text-yellow-600 dark:text-yellow-400 mt-1">
                           ⚠️ ไม่สามารถเปลี่ยนบทบาทของตัวเองได้
@@ -618,7 +663,7 @@ export default function UsersPage() {
                           <option value="employee">พนักงาน</option>
                         )}
                         {allowedRoles.includes("staff") && (
-                          <option value="staff">พนักงาน</option>
+                          <option value="staff">พนักงาน (Part-time)</option>
                         )}
                       </select>
                     )}
@@ -639,10 +684,12 @@ export default function UsersPage() {
                       <select
                         value={editForm.companyId}
                         onChange={(e) => {
+                          setBranchSearch("");
                           setEditForm({
                             ...editForm,
                             companyId: e.target.value,
-                            branchId: "", // รีเซ็ตสาขาเมื่อเปลี่ยนบริษัท
+                            branchId: "",
+                            branchIds: [],
                           });
                         }}
                         className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
@@ -663,26 +710,93 @@ export default function UsersPage() {
                   <div>
                     <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                       สาขา
+                      {editForm.branchIds.length > 1 && (
+                        <span className="ml-2 text-xs text-blue-600 dark:text-blue-400 font-normal">
+                          ({editForm.branchIds.length} สาขา)
+                        </span>
+                      )}
                     </label>
-                    <select
-                      value={editForm.branchId}
-                      onChange={(e) =>
-                        setEditForm({ ...editForm, branchId: e.target.value })
-                      }
-                      className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-                      disabled={!editForm.companyId && isSuperAdmin}
-                    >
-                      <option value="">ไม่ระบุ</option>
-                      {editModalBranches.map((branch) => (
-                        <option key={branch.id} value={branch.id}>
-                          {branch.name}
-                        </option>
-                      ))}
-                    </select>
-                    {isSuperAdmin && !editForm.companyId && (
-                      <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                    {isSuperAdmin && !editForm.companyId ? (
+                      <p className="text-xs text-gray-500 dark:text-gray-400">
                         เลือกบริษัทก่อนเพื่อดูสาขา
                       </p>
+                    ) : editModalBranches.length === 0 ? (
+                      <p className="text-xs text-gray-500 dark:text-gray-400">
+                        ไม่พบสาขาในบริษัทนี้
+                      </p>
+                    ) : (
+                      <div className="border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 overflow-hidden">
+                        {/* Search box */}
+                        <div className="flex items-center gap-2 px-3 py-2 border-b border-gray-200 dark:border-gray-600 bg-gray-50 dark:bg-gray-800">
+                          <svg
+                            className="w-4 h-4 text-gray-400 shrink-0"
+                            fill="none"
+                            stroke="currentColor"
+                            strokeWidth={2}
+                            viewBox="0 0 24 24"
+                          >
+                            <circle cx="11" cy="11" r="8" />
+                            <path d="m21 21-4.35-4.35" />
+                          </svg>
+                          <input
+                            type="text"
+                            placeholder={`ค้นหาจาก ${editModalBranches.length} สาขา...`}
+                            value={branchSearch}
+                            onChange={(e) => setBranchSearch(e.target.value)}
+                            className="flex-1 text-sm bg-transparent outline-none text-gray-900 dark:text-white placeholder-gray-400"
+                          />
+                          {branchSearch && (
+                            <button
+                              onClick={() => setBranchSearch("")}
+                              className="text-gray-400 hover:text-gray-600 text-xs"
+                            >
+                              ✕
+                            </button>
+                          )}
+                        </div>
+                        {/* Branch list */}
+                        <div className="divide-y divide-gray-100 dark:divide-gray-600 max-h-48 overflow-y-auto">
+                          {editModalBranchesFiltered.length === 0 ? (
+                            <p className="px-3 py-3 text-sm text-gray-400">
+                              ไม่พบสาขาที่ค้นหา
+                            </p>
+                          ) : (
+                            editModalBranchesFiltered.map((branch) => {
+                              const checked = editForm.branchIds.includes(
+                                branch.id,
+                              );
+                              return (
+                                <div
+                                  key={branch.id}
+                                  onClick={() => {
+                                    const next = checked
+                                      ? editForm.branchIds.filter(
+                                          (id) => id !== branch.id,
+                                        )
+                                      : [...editForm.branchIds, branch.id];
+                                    setEditForm((prev) => ({
+                                      ...prev,
+                                      branchIds: next,
+                                      branchId: next[0] || "",
+                                    }));
+                                  }}
+                                  className="flex items-center gap-3 px-3 py-2 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-600 select-none"
+                                >
+                                  <input
+                                    type="checkbox"
+                                    checked={checked}
+                                    readOnly
+                                    className="w-4 h-4 accent-blue-600 pointer-events-none"
+                                  />
+                                  <span className="text-sm text-gray-900 dark:text-gray-100">
+                                    {branch.name}
+                                  </span>
+                                </div>
+                              );
+                            })
+                          )}
+                        </div>
+                      </div>
                     )}
                   </div>
 

@@ -30,7 +30,11 @@ paths:
         **ส่ง field อะไรก็ได้** ภายใน `data` array — ระบบจะเก็บทั้งหมดโดยไม่ตรวจ schema
         Field ที่ required คือ `branchCode` และ `data`
 
-        **POST ซ้ำ = overwrite** — ระบบใช้ `branchCode` เป็น Firestore document ID
+        **POST ซ้ำ = overwrite** — ระบบจะใช้ `branchCode` ต้นฉบับเป็น Firestore document ID
+        เช่น `WL 597` จะยังเป็นหัว document ว่า `WL 597`
+
+        ภายใน document ระบบจะ normalize field `branchCode` และ `data.LocationID`
+        ให้เหลือเลขล้วน เช่น `597`
         ดังนั้น POST ซ้ำสาขาเดิม = อัปเดตข้อมูลล่าสุดทับของเก่าทันที
       requestBody:
         required: true
@@ -44,8 +48,8 @@ paths:
               properties:
                 branchCode:
                   type: string
-                  description: รหัสสาขา — ใช้เป็น Firestore document ID (POST ซ้ำ = overwrite)
-                  example: "256"
+                  description: รหัสสาขาจากต้นทาง ระบบจะใช้ค่านี้เป็น Firestore document ID เช่น `WL 256`
+                  example: "WL 256"
                 data:
                   description: |
                     ข้อมูล EOD — รองรับ 2 รูปแบบ:
@@ -95,11 +99,15 @@ paths:
                     properties:
                       id:
                         type: string
-                        description: Firestore document ID (= branchCode ที่ส่งมา)
-                        example: "256"
+                        description: Firestore document ID จาก branchCode ต้นฉบับ
+                        example: "WL 256"
                       branchCode:
                         type: string
                         example: "256"
+                      sourceBranchCode:
+                        type: string
+                        description: รหัสสาขาต้นฉบับก่อน normalize
+                        example: "WL 256"
                       recordCount:
                         type: integer
                         description: จำนวน record ที่รับเข้ามา
@@ -115,8 +123,9 @@ paths:
               example:
                 success: true
                 data:
-                  id: "256"
+                  id: "WL 256"
                   branchCode: "256"
+                  sourceBranchCode: "WL 256"
                   recordCount: 2
                   receivedAt: "2026-04-02T10:00:00.000+07:00"
                   overwritten: false
