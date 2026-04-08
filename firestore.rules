@@ -446,6 +446,30 @@ service cloud.firestore {
       // Only admin SDK (server-side) can write — no client writes
       allow write: if false;
     }
+
+    // ==================== APP CONFIG COLLECTION ====================
+    match /appConfig/{configId} {
+      // Authenticated users can read app config (gemini key, prompt mapping, etc.)
+      allow read: if isAuthenticated();
+      // Only admin/super_admin can write config
+      allow write: if hasAnyRole(['admin', 'super_admin']);
+    }
+
+    // ==================== PROMPT TEMPLATES COLLECTION ====================
+    match /promptTemplates/{promptId} {
+      // Authenticated users can read prompts (mobile needs active prompts)
+      allow read: if isAuthenticated();
+      // Only admin/super_admin can manage prompts
+      allow create, update, delete: if hasAnyRole(['admin', 'super_admin']);
+    }
+
+    // ==================== PROMPT USAGE LOGS COLLECTION ====================
+    match /promptUsageLogs/{logId} {
+      // Admin/super_admin can read usage stats
+      allow read: if hasAnyRole(['admin', 'super_admin']);
+      // Authenticated users can create usage logs (mobile logs each AI call)
+      allow create: if isAuthenticated();
+    }
     
     // ==================== DEFAULT DENY ====================
     // Deny all other access by default
