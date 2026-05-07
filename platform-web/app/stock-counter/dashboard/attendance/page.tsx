@@ -41,6 +41,14 @@ export default function AttendancePage() {
     format(new Date(), "yyyy-MM-dd"),
   );
   const [searchTerm, setSearchTerm] = useState("");
+  // userId → baCode lookup
+  const [userBaCodeMap, setUserBaCodeMap] = useState<Record<string, string>>(
+    {},
+  );
+  // userId → fullName lookup
+  const [userFullNameMap, setUserFullNameMap] = useState<
+    Record<string, string>
+  >({});
 
   // Stats
   const [stats, setStats] = useState({
@@ -52,6 +60,7 @@ export default function AttendancePage() {
 
   useEffect(() => {
     if (!userData) return;
+    fetchUserBaCodeMap();
     fetchCheckIns();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [userData, filterDate]);
@@ -60,6 +69,31 @@ export default function AttendancePage() {
     applyFilters();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [checkIns, filterType, searchTerm]);
+
+  const fetchUserBaCodeMap = async () => {
+    if (!userData) return;
+    try {
+      const usersQ = userData.companyId
+        ? query(
+            collection(db, "users"),
+            where("companyId", "==", userData.companyId),
+          )
+        : query(collection(db, "users"));
+      const snap = await getDocs(usersQ);
+      const map: Record<string, string> = {};
+      const nameMap: Record<string, string> = {};
+      snap.forEach((d) => {
+        const data = d.data() as any;
+        const uid = data.uid || d.id;
+        if (data.baCode) map[uid] = data.baCode;
+        if (data.fullName) nameMap[uid] = data.fullName;
+      });
+      setUserBaCodeMap(map);
+      setUserFullNameMap(nameMap);
+    } catch (err) {
+      console.error("Error fetching user baCode map:", err);
+    }
+  };
 
   const fetchCheckIns = async () => {
     if (!userData) return;
@@ -480,8 +514,21 @@ export default function AttendancePage() {
                         )}
                         <div>
                           <p className="font-medium text-gray-900 dark:text-white">
-                            {checkIn.userName}
+                            {userFullNameMap[checkIn.userId] ||
+                              checkIn.userName}
                           </p>
+                          {userFullNameMap[checkIn.userId] &&
+                            userFullNameMap[checkIn.userId] !==
+                              checkIn.userName && (
+                              <p className="text-xs text-gray-500 dark:text-gray-400">
+                                ({checkIn.userName})
+                              </p>
+                            )}
+                          {userBaCodeMap[checkIn.userId] && (
+                            <p className="text-xs font-mono text-blue-600 dark:text-blue-400">
+                              รหัส: {userBaCodeMap[checkIn.userId]}
+                            </p>
+                          )}
                           <p className="text-sm text-gray-500 dark:text-gray-400">
                             {checkIn.userEmail}
                           </p>

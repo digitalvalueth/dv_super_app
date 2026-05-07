@@ -53,6 +53,12 @@ export default function TabLayout() {
     return <Redirect href="/(login)" />;
   }
 
+  // If admin disabled the account — show the blocked screen before signing out
+  if (user?.status === "inactive" || user?.status === "suspended") {
+    console.log("🚫 TabLayout - Account disabled, redirecting");
+    return <Redirect href="/pending-approval" />;
+  }
+
   // Allow users without company/branch to enter tabs
   // They will see a message to check notifications for invitations
   if (!loading && user && (!user.companyId || !user.branchId)) {

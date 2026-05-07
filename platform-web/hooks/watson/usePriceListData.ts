@@ -1,5 +1,6 @@
 "use client";
 
+import { parseWatsonDate } from "@/lib/parse-watson-date";
 import {
   clearCurrentPriceList,
   getCurrentPriceList,
@@ -20,101 +21,6 @@ import {
   PricePeriod,
 } from "@/types/watson/pricelist";
 import { useCallback, useEffect, useMemo, useState } from "react";
-
-// Month name abbreviations for parsing Watson date formats
-const MONTH_MAP: Record<string, number> = {
-  jan: 0,
-  feb: 1,
-  mar: 2,
-  apr: 3,
-  may: 4,
-  jun: 5,
-  jul: 6,
-  aug: 7,
-  sep: 8,
-  oct: 9,
-  nov: 10,
-  dec: 11,
-  january: 0,
-  february: 1,
-  march: 2,
-  april: 3,
-  june: 5,
-  july: 6,
-  august: 7,
-  september: 8,
-  october: 9,
-  november: 10,
-  december: 11,
-};
-
-/**
- * Parse Watson Invoice date formats robustly.
- * Handles: "01-JAN-0026", "06-JAN-0026", "1/6/2026", "31/1/26", Excel serial numbers.
- * Watson uses 2-digit year suffix of Buddhist Era: 0026 = BE 2569 = CE 2026.
- * Short D/M/YY format: "31/1/26" → day=31, month=1, year=2026
- */
-function parseWatsonDate(dateVal: unknown): Date | null {
-  if (dateVal === null || dateVal === undefined) return null;
-
-  if (typeof dateVal === "number") {
-    // Excel serial date
-    const excelEpoch = new Date(1899, 11, 30);
-    return new Date(excelEpoch.getTime() + dateVal * 86400000);
-  }
-
-  if (typeof dateVal !== "string") return null;
-  const trimmed = String(dateVal).trim();
-  if (!trimmed) return null;
-
-  // Pattern 1: DD-MMM-00YY or DD-MMM-YYYY (Watson Invoice format)
-  // e.g. "01-JAN-0026", "06-JAN-0026", "25-DEC-2025"
-  const watsonMatch = trimmed.match(/^(\d{1,2})-(\w{3,9})-(\d{2,4})$/i);
-  if (watsonMatch) {
-    const day = parseInt(watsonMatch[1], 10);
-    const monthStr = watsonMatch[2].toLowerCase();
-    let year = parseInt(watsonMatch[3], 10);
-    const month = MONTH_MAP[monthStr];
-    if (month !== undefined) {
-      // Handle Watson 00YY format: 0026 → 2026, 0025 → 2025
-      if (year < 100) {
-        year += 2000;
-      }
-      return new Date(year, month, day);
-    }
-  }
-
-  // Pattern 2: D/M/YY (Thai short format, 2-digit year)
-  // e.g. "31/1/26" → Jan 31 2026, "9/2/26" → Feb 9 2026
-  // Must check before M/D/YYYY to avoid ambiguity. Identified by 2-digit year.
-  const dmyShortMatch = trimmed.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2})$/);
-  if (dmyShortMatch) {
-    const day = parseInt(dmyShortMatch[1], 10);
-    const month = parseInt(dmyShortMatch[2], 10) - 1;
-    const year = 2000 + parseInt(dmyShortMatch[3], 10);
-    if (day >= 1 && day <= 31 && month >= 0 && month <= 11) {
-      return new Date(year, month, day);
-    }
-  }
-
-  // Pattern 3: D/M/YYYY or DD/MM/YYYY (format from excel-parser, 4-digit year)
-  // e.g. "08/01/2026", "1/2/2026"
-  const dmyMatch = trimmed.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
-  if (dmyMatch) {
-    const day = parseInt(dmyMatch[1], 10);
-    const month = parseInt(dmyMatch[2], 10) - 1;
-    const year = parseInt(dmyMatch[3], 10);
-    return new Date(year, month, day);
-  }
-
-  // Fallback: try native Date.parse
-  const parsed = new Date(trimmed);
-  if (!isNaN(parsed.getTime())) {
-    return parsed;
-  }
-
-  return null;
-}
 
 /**
  * Normalize a Date to midnight local time for date-only comparison.

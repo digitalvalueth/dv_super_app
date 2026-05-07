@@ -62,6 +62,13 @@ export default function MiniAppsLayout() {
           title: "Supervisor",
         }}
       />
+      <Stack.Screen
+        name="daily-sale"
+        options={{
+          headerShown: false,
+          title: "บันทึกยอดขาย",
+        }}
+      />
     </Stack>
   );
 }

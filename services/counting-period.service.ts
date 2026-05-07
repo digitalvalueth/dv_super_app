@@ -6,12 +6,12 @@ import type {
   UploadStatus,
 } from "@/types";
 import {
-  addDoc,
   collection,
   doc,
   getDoc,
   getDocs,
   query,
+  setDoc,
   Timestamp,
   updateDoc,
   where,
@@ -544,13 +544,14 @@ export async function generatePeriods(
   for (let month = 1; month <= 12; month++) {
     const lastDay = getLastDayOfMonth(year, month);
 
-    // Half 1: วันที่ 2-15 (วันที่ 1 = lock)
+    // Half 1: วันที่ 2-15 (วันที่ 1 = lock) — deterministic ID prevents duplicates
     const half1Start = createDate(year, month, 2);
     const half1End = createDate(year, month, 15);
     const half1LockDate = createDate(year, month, 1);
     const half1GraceEnd = addDays(half1End, GRACE_PERIOD_DAYS);
 
-    const half1Doc = await addDoc(collection(db, COLLECTION_NAME), {
+    const h1Id = `${companyId}_${year}_${month}_H1`;
+    await setDoc(doc(db, COLLECTION_NAME, h1Id), {
       companyId,
       year,
       month,
@@ -562,15 +563,16 @@ export async function generatePeriods(
       status: "active" as CountingPeriodStatus,
       createdAt: Timestamp.now(),
     });
-    createdIds.push(half1Doc.id);
+    createdIds.push(h1Id);
 
-    // Half 2: วันที่ 17-lastDay (วันที่ 16 = lock)
+    // Half 2: วันที่ 17-lastDay (วันที่ 16 = lock) — deterministic ID prevents duplicates
     const half2Start = createDate(year, month, 17);
     const half2End = createDate(year, month, lastDay);
     const half2LockDate = createDate(year, month, 16);
     const half2GraceEnd = addDays(half2End, GRACE_PERIOD_DAYS);
 
-    const half2Doc = await addDoc(collection(db, COLLECTION_NAME), {
+    const h2Id = `${companyId}_${year}_${month}_H2`;
+    await setDoc(doc(db, COLLECTION_NAME, h2Id), {
       companyId,
       year,
       month,
@@ -582,7 +584,7 @@ export async function generatePeriods(
       status: "active" as CountingPeriodStatus,
       createdAt: Timestamp.now(),
     });
-    createdIds.push(half2Doc.id);
+    createdIds.push(h2Id);
   }
 
   return createdIds;

@@ -59,6 +59,12 @@ export default function EmployeeBehaviorPage() {
   const [filterRisk, setFilterRisk] = useState<string>("all");
   const [selectedEmployee, setSelectedEmployee] =
     useState<EmployeeBehaviorReport | null>(null);
+  const [userFullNameMap, setUserFullNameMap] = useState<
+    Record<string, string>
+  >({});
+  const [userBaCodeMap, setUserBaCodeMap] = useState<Record<string, string>>(
+    {},
+  );
 
   const reports = useMemo((): EmployeeBehaviorReport[] => {
     const sessions = allSessions.filter((s) => {
@@ -183,6 +189,30 @@ export default function EmployeeBehaviorPage() {
 
   useEffect(() => {
     if (!userData) return;
+    const fetchUserInfoMaps = async () => {
+      try {
+        const usersQ = userData.companyId
+          ? query(
+              collection(db, "users"),
+              where("companyId", "==", userData.companyId),
+            )
+          : query(collection(db, "users"));
+        const snap = await getDocs(usersQ);
+        const fullNameMap: Record<string, string> = {};
+        const baCodeMap: Record<string, string> = {};
+        snap.forEach((d) => {
+          const data = d.data() as any;
+          const uid = data.uid || d.id;
+          if (data.fullName) fullNameMap[uid] = data.fullName;
+          if (data.baCode) baCodeMap[uid] = data.baCode;
+        });
+        setUserFullNameMap(fullNameMap);
+        setUserBaCodeMap(baCodeMap);
+      } catch (err) {
+        console.error("Error fetching user info maps:", err);
+      }
+    };
+    fetchUserInfoMaps();
     fetchBehaviorData();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [userData]);
@@ -474,8 +504,20 @@ export default function EmployeeBehaviorPage() {
                       </div>
                       <div>
                         <p className="font-medium text-gray-900">
-                          {report.userName}
+                          {userFullNameMap[report.userId] || report.userName}
                         </p>
+                        {userFullNameMap[report.userId] &&
+                          userFullNameMap[report.userId] !==
+                            report.userName && (
+                            <p className="text-xs text-gray-500">
+                              ({report.userName})
+                            </p>
+                          )}
+                        {userBaCodeMap[report.userId] && (
+                          <p className="text-xs font-mono text-blue-600">
+                            รหัส: {userBaCodeMap[report.userId]}
+                          </p>
+                        )}
                         <p className="text-sm text-gray-500">
                           {report.userEmail}
                         </p>
@@ -555,7 +597,14 @@ export default function EmployeeBehaviorPage() {
             <div className="p-6 border-b">
               <div className="flex items-center justify-between">
                 <h2 className="text-xl font-semibold">
-                  รายละเอียด: {selectedEmployee.userName}
+                  รายละเอียด:{" "}
+                  {userFullNameMap[selectedEmployee.userId] ||
+                    selectedEmployee.userName}
+                  {userBaCodeMap[selectedEmployee.userId] && (
+                    <span className="ml-2 text-sm font-mono text-blue-600">
+                      ({userBaCodeMap[selectedEmployee.userId]})
+                    </span>
+                  )}
                 </h2>
                 <button
                   onClick={() => setSelectedEmployee(null)}

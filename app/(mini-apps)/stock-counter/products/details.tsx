@@ -12,10 +12,9 @@ import {
 import { useAuthStore } from "@/stores/auth.store";
 import { useTheme } from "@/stores/theme.store";
 import { CountingSession } from "@/types";
-import { createWatermarkMetadata, validateImageExif } from "@/utils/watermark";
 import { Ionicons } from "@expo/vector-icons";
+import { Camera } from "expo-camera";
 import { Image } from "expo-image";
-import * as ImagePicker from "expo-image-picker";
 import * as Location from "expo-location";
 import { router, useLocalSearchParams } from "expo-router";
 import { addDoc, collection, serverTimestamp } from "firebase/firestore";
@@ -56,7 +55,6 @@ export default function ProductDetailsScreen() {
   const { colors, isDark } = useTheme();
   const { user } = useAuthStore();
   const [hasPermissions, setHasPermissions] = useState(false);
-  const [isPickingImage, setIsPickingImage] = useState(false);
   const [location, setLocation] = useState<Location.LocationObject | null>(
     null,
   );
@@ -107,20 +105,35 @@ export default function ProductDetailsScreen() {
     if (!productId) return;
 
     try {
-      const sessions = await getProductCountingSessions(productId);
+      // กรองด้วย branchId ของ assignment (กันรูปจากสาขาอื่นที่มี SKU เดียวกัน)
+      const branchIdForQuery = assignmentBranchId || user?.branchId;
+      const sessions = await getProductCountingSessions(
+        productId,
+        10,
+        user?.uid,
+        branchIdForQuery,
+      );
 
-      // เฉพาะรูปของ assignment รอบนี้ (ตรง assignmentId)
+      // เฉพาะรูปของ assignment รอบนี้ (ตรง assignmentId + branchId)
       setCountingSessions(
         sessions.filter((s) => {
           const isCurrentAssignment = assignmentId
             ? s.assignmentId === assignmentId
             : true;
           const isCurrentUser = !user?.uid || s.userId === user.uid;
+          const isCurrentBranch = branchIdForQuery
+            ? s.branchId === branchIdForQuery
+            : true;
           const validStatus =
             s.status === "completed" ||
             s.status === "approved" ||
             s.status === "analyzed";
-          return isCurrentAssignment && isCurrentUser && validStatus;
+          return (
+            isCurrentAssignment &&
+            isCurrentUser &&
+            isCurrentBranch &&
+            validStatus
+          );
         }),
       );
     } catch (error) {
@@ -129,13 +142,11 @@ export default function ProductDetailsScreen() {
   };
 
   const checkPermissions = async () => {
-    const cameraStatus = await ImagePicker.requestCameraPermissionsAsync();
-    const mediaStatus = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    const { status: cameraStatus } =
+      await Camera.requestCameraPermissionsAsync();
     const locationStatus = await Location.requestForegroundPermissionsAsync();
 
-    setHasPermissions(
-      cameraStatus.granted && mediaStatus.granted && locationStatus.granted,
-    );
+    setHasPermissions(cameraStatus === "granted" && locationStatus.granted);
   };
 
   const getLocation = async () => {
@@ -187,108 +198,6 @@ export default function ProductDetailsScreen() {
         ...(isSupplemental && { isSupplemental }),
       },
     });
-  };
-
-  const handlePickImage = async () => {
-    if (!hasPermissions) {
-      Alert.alert("ต้องการสิทธิ์", "กรุณาอนุญาตให้เข้าถึงคลังรูปภาพ", [
-        { text: "ยกเลิก", style: "cancel" },
-        { text: "ตั้งค่า", onPress: checkPermissions },
-      ]);
-      return;
-    }
-
-    try {
-      setIsPickingImage(true);
-
-      const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: "images",
-        allowsEditing: false,
-        quality: 0.8,
-        base64: false, // Skip base64 — preview.tsx reads lazily when AI analyzes
-        exif: true, // Required for metadata validation
-      });
-
-      if (!result.canceled && result.assets[0]) {
-        const asset = result.assets[0];
-
-        // --- EXIF validation ---
-        const exifResult = validateImageExif(
-          asset.exif as Record<string, unknown>,
-        );
-
-        if (exifResult.reason === "too_old") {
-          const takenAtStr = exifResult.takenAt
-            ? exifResult.takenAt.toLocaleString("th-TH", {
-                dateStyle: "short",
-                timeStyle: "short",
-              })
-            : "";
-          Alert.alert(
-            "รูปภาพเก่าเกินไป",
-            `รูปนี้ถ่ายเมื่อ ${takenAtStr}\nกรุณาถ่ายรูปใหม่โดยตรงจากกล้องถ่าย`,
-          );
-          return;
-        }
-
-        if (
-          exifResult.reason === "no_exif" ||
-          exifResult.reason === "no_date"
-        ) {
-          Alert.alert(
-            "ไม่อนุญาตให้ใช้ภาพนี้",
-            "รูปนี้ไม่มีข้อมูลวันเวลาถ่าย (อาจเป็น screenshot หรือรูปที่ดาวน์โหลด)\nกรุณาถ่ายรูปใหม่โดยตรงจากกล้องเท่านั้น",
-          );
-          return;
-        }
-
-        // Get watermark metadata — reuse pre-fetched location to avoid extra GPS call
-        const locationOverride = location
-          ? {
-              address: `${location.coords.latitude.toFixed(5)}, ${location.coords.longitude.toFixed(5)}`,
-              coordinates: {
-                latitude: location.coords.latitude,
-                longitude: location.coords.longitude,
-              },
-            }
-          : undefined;
-
-        const watermarkData = await createWatermarkMetadata(
-          user?.name || "Unknown",
-          user?.uid || "",
-          user?.branchName || "",
-          productName,
-          productBarcode,
-          locationOverride,
-        );
-
-        // ถ้ามี pending session อยู่แล้ว ให้ส่ง existingSessionId ไปเพื่ออัพเดทแทนสร้างใหม่
-        const pendingSession = countingSessions.find(
-          (s) => s.status === "pending" || s.status === "analyzed",
-        );
-
-        router.push({
-          pathname: "/(mini-apps)/stock-counter/preview",
-          params: {
-            imageUri: asset.uri,
-            imageBase64: "", // Loaded lazily in preview.tsx when AI analysis runs
-            watermarkData: JSON.stringify(watermarkData),
-            productId,
-            productName,
-            productBarcode,
-            assignmentId,
-            beforeQty,
-            assignmentBranchId: assignmentBranchId || "",
-            existingSessionId: pendingSession?.id || "",
-          },
-        });
-      }
-    } catch (error) {
-      console.error("Error picking image:", error);
-      Alert.alert("เกิดข้อผิดพลาด", "ไม่สามารถเลือกรูปภาพได้");
-    } finally {
-      setIsPickingImage(false);
-    }
   };
 
   return (
@@ -611,26 +520,6 @@ export default function ProductDetailsScreen() {
           <TouchableOpacity
             style={[
               styles.actionButton,
-              styles.secondaryButton,
-              { backgroundColor: colors.card, borderColor: colors.border },
-              isPickingImage && { opacity: 0.6 },
-            ]}
-            onPress={handlePickImage}
-            disabled={isPickingImage}
-          >
-            {isPickingImage ? (
-              <ActivityIndicator size="small" color={colors.primary} />
-            ) : (
-              <Ionicons name="images" size={24} color={colors.primary} />
-            )}
-            <Text style={[styles.secondaryButtonText, { color: colors.text }]}>
-              {isPickingImage ? "กำลังโหลด..." : "เลือกจากคลังรูป"}
-            </Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={[
-              styles.actionButton,
               styles.skipButton,
               { borderColor: colors.border },
             ]}
@@ -690,24 +579,7 @@ export default function ProductDetailsScreen() {
         )}
       </ScrollView>
 
-      {/* Loading Overlay */}
-      {isPickingImage && (
-        <View style={styles.loadingOverlay}>
-          <View
-            style={[styles.loadingContainer, { backgroundColor: colors.card }]}
-          >
-            <ActivityIndicator size="large" color={colors.primary} />
-            <Text style={[styles.loadingText, { color: colors.text }]}>
-              กำลังโหลดรูปภาพ...
-            </Text>
-            <Text
-              style={[styles.loadingSubtext, { color: colors.textSecondary }]}
-            >
-              กรุณารอสักครู่
-            </Text>
-          </View>
-        </View>
-      )}
+      {/* end ScrollView content */}
     </SafeAreaView>
   );
 }

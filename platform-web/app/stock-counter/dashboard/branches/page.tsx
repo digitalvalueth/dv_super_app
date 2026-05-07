@@ -3,8 +3,6 @@
 import { db } from "@/lib/firebase";
 import { useAuthStore } from "@/stores/auth.store";
 import { Branch } from "@/types";
-import { format } from "date-fns";
-import { th } from "date-fns/locale";
 import {
   addDoc,
   collection,
@@ -26,6 +24,7 @@ import {
   Search,
   Shield,
   Trash2,
+  User as UserIcon,
   Users,
 } from "lucide-react";
 import Link from "next/link";
@@ -35,6 +34,9 @@ import { toast } from "sonner";
 interface BranchWithStats extends Branch {
   userCount?: number;
   companyName?: string;
+  sellerCategory?: string;
+  supervisorId?: string;
+  supervisorName?: string;
 }
 
 interface Company {
@@ -43,6 +45,23 @@ interface Company {
   code: string;
 }
 
+interface SupervisorOption {
+  id: string;
+  name: string;
+  email: string;
+}
+
+// Common preset categories — input is free-text but suggestions help consistency
+const SELLER_CATEGORY_PRESETS = [
+  "Lotus",
+  "BigC",
+  "Watson",
+  "Boots",
+  "Tops",
+  "Makro",
+  "7-Eleven",
+];
+
 export default function BranchesPage() {
   const { userData } = useAuthStore();
   const [branches, setBranches] = useState<BranchWithStats[]>([]);
@@ -50,17 +69,26 @@ export default function BranchesPage() {
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
   const [filterCompany, setFilterCompany] = useState<string>("all");
+  const [filterSellerCategory, setFilterSellerCategory] =
+    useState<string>("all");
+  const [filterSupervisor, setFilterSupervisor] = useState<string>("all");
   const [selectedBranch, setSelectedBranch] = useState<BranchWithStats | null>(
     null,
   );
   const [showAddModal, setShowAddModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [supervisors, setSupervisors] = useState<SupervisorOption[]>([]);
   const [formData, setFormData] = useState({
     name: "",
     code: "",
     address: "",
     companyId: "",
+    latitude: "",
+    longitude: "",
+    radiusMeters: "200",
+    sellerCategory: "",
+    supervisorId: "",
   });
 
   // ตรวจสอบว่าเป็น superadmin (ไม่มี companyId) หรือไม่
@@ -110,9 +138,16 @@ export default function BranchesPage() {
               companyId: data.companyId,
               companyName: data.companyName || "",
               name: data.name,
+              code: data.code || undefined,
               address: data.address,
+              latitude: data.latitude,
+              longitude: data.longitude,
+              radiusMeters: data.radiusMeters,
               createdAt: data.createdAt?.toDate(),
               userCount: 0,
+              sellerCategory: data.sellerCategory || "",
+              supervisorId: data.supervisorId || "",
+              supervisorName: data.supervisorName || "",
             };
           },
         );
@@ -176,8 +211,15 @@ export default function BranchesPage() {
           companyId: data.companyId,
           companyName: data.companyName || "",
           name: data.name,
+          code: data.code || undefined,
           address: data.address,
+          latitude: data.latitude,
+          longitude: data.longitude,
+          radiusMeters: data.radiusMeters,
           createdAt: data.createdAt?.toDate(),
+          sellerCategory: data.sellerCategory || "",
+          supervisorId: data.supervisorId || "",
+          supervisorName: data.supervisorName || "",
         });
       });
 
@@ -220,6 +262,33 @@ export default function BranchesPage() {
       });
 
       setBranches(branchesWithStats);
+
+      // Fetch supervisors (admin / manager / supervisor) for assignment dropdown
+      let supervisorsQuery;
+      if (companyId) {
+        supervisorsQuery = query(
+          collection(db, "users"),
+          where("companyId", "==", companyId),
+          where("role", "in", ["supervisor", "manager", "admin"]),
+        );
+      } else {
+        supervisorsQuery = query(
+          collection(db, "users"),
+          where("role", "in", ["supervisor", "manager", "admin"]),
+        );
+      }
+      const supervisorsSnapshot = await getDocs(supervisorsQuery);
+      const supervisorsData: SupervisorOption[] = [];
+      supervisorsSnapshot.forEach((doc) => {
+        const data = doc.data() as any;
+        supervisorsData.push({
+          id: data.uid || doc.id,
+          name:
+            data.fullName || data.name || data.displayName || data.email || "",
+          email: data.email || "",
+        });
+      });
+      setSupervisors(supervisorsData);
     } catch (error) {
       console.error("Error fetching branches:", error);
       toast.error("ไม่สามารถดึงข้อมูลสาขาได้");
@@ -231,9 +300,16 @@ export default function BranchesPage() {
   const filteredBranches = branches.filter((branch) => {
     const matchesSearch =
       branch.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      branch.address?.toLowerCase().includes(searchTerm.toLowerCase());
+      branch.address?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      (branch.code || "").toLowerCase().includes(searchTerm.toLowerCase());
     const matchesCompany =
       filterCompany === "all" || branch.companyId === filterCompany;
+    const matchesSeller =
+      filterSellerCategory === "all" ||
+      (branch.sellerCategory || "") === filterSellerCategory;
+    const matchesSupervisor =
+      filterSupervisor === "all" ||
+      (branch.supervisorId || "") === filterSupervisor;
 
     // Manager/Supervisor เห็นเฉพาะสาขาที่ถูก assign ให้เท่านั้น
     if (userData?.role === "manager" || userData?.role === "supervisor") {
@@ -243,11 +319,27 @@ export default function BranchesPage() {
           ? [userData.branchId]
           : [];
       if (managedIds.length === 0) return false;
-      return matchesSearch && managedIds.includes(branch.id);
+      return (
+        matchesSearch &&
+        matchesSeller &&
+        matchesSupervisor &&
+        managedIds.includes(branch.id)
+      );
     }
 
-    return matchesSearch && matchesCompany;
+    return (
+      matchesSearch && matchesCompany && matchesSeller && matchesSupervisor
+    );
   });
+
+  // Unique sellerCategories present in current branches (for filter dropdown)
+  const availableSellerCategories = Array.from(
+    new Set(
+      branches
+        .map((b) => b.sellerCategory || "")
+        .filter((s): s is string => !!s),
+    ),
+  ).sort();
 
   const handleAddBranch = async () => {
     if (!userData || !formData.name.trim()) {
@@ -267,19 +359,71 @@ export default function BranchesPage() {
     const targetCompany = companies.find((c) => c.id === targetCompanyId);
 
     try {
+      const lat = formData.latitude.trim()
+        ? parseFloat(formData.latitude)
+        : null;
+      const lng = formData.longitude.trim()
+        ? parseFloat(formData.longitude)
+        : null;
+      const rawRadius = formData.radiusMeters.trim()
+        ? parseInt(formData.radiusMeters, 10)
+        : 200;
+      const radius = Math.min(Math.max(rawRadius, 50), 500);
+
+      if ((lat !== null && isNaN(lat)) || (lng !== null && isNaN(lng))) {
+        toast.error("ละติจูด/ลองจิจูดต้องเป็นตัวเลข");
+        return;
+      }
+
+      // ป้องกันรหัสสาขาซ้ำภายในบริษัทเดียวกัน
+      const trimmedCode = formData.code.trim();
+      if (trimmedCode) {
+        const dupSnap = await getDocs(
+          query(
+            collection(db, "branches"),
+            where("companyId", "==", targetCompanyId),
+            where("code", "==", trimmedCode),
+          ),
+        );
+        if (!dupSnap.empty) {
+          toast.error(`รหัสสาขา "${trimmedCode}" มีอยู่แล้วในบริษัทนี้`);
+          return;
+        }
+      }
+
+      const supervisor = supervisors.find(
+        (s) => s.id === formData.supervisorId,
+      );
+
       await addDoc(collection(db, "branches"), {
         companyId: targetCompanyId,
         companyName: targetCompany?.name || "",
         companyCode: targetCompany?.code || "",
         name: formData.name.trim(),
-        code: formData.code.trim() || null,
+        code: trimmedCode || null,
         address: formData.address.trim() || null,
+        latitude: lat,
+        longitude: lng,
+        radiusMeters: radius,
+        sellerCategory: formData.sellerCategory.trim() || null,
+        supervisorId: formData.supervisorId || null,
+        supervisorName: supervisor?.name || null,
         createdAt: serverTimestamp(),
       });
 
       toast.success("เพิ่มสาขาสำเร็จ");
       setShowAddModal(false);
-      setFormData({ name: "", code: "", address: "", companyId: "" });
+      setFormData({
+        name: "",
+        code: "",
+        address: "",
+        companyId: "",
+        latitude: "",
+        longitude: "",
+        radiusMeters: "200",
+        sellerCategory: "",
+        supervisorId: "",
+      });
       fetchData();
     } catch (error) {
       console.error("Error adding branch:", error);
@@ -291,9 +435,15 @@ export default function BranchesPage() {
     setSelectedBranch(branch);
     setFormData({
       name: branch.name,
-      code: "",
+      code: branch.code || "",
       address: branch.address || "",
       companyId: branch.companyId || "",
+      latitude: branch.latitude != null ? String(branch.latitude) : "",
+      longitude: branch.longitude != null ? String(branch.longitude) : "",
+      radiusMeters:
+        branch.radiusMeters != null ? String(branch.radiusMeters) : "200",
+      sellerCategory: branch.sellerCategory || "",
+      supervisorId: branch.supervisorId || "",
     });
     setShowEditModal(true);
   };
@@ -305,16 +455,74 @@ export default function BranchesPage() {
     }
 
     try {
+      const lat = formData.latitude.trim()
+        ? parseFloat(formData.latitude)
+        : null;
+      const lng = formData.longitude.trim()
+        ? parseFloat(formData.longitude)
+        : null;
+      const rawRadius = formData.radiusMeters.trim()
+        ? parseInt(formData.radiusMeters, 10)
+        : 200;
+      const radius = Math.min(Math.max(rawRadius, 50), 500);
+
+      if ((lat !== null && isNaN(lat)) || (lng !== null && isNaN(lng))) {
+        toast.error("ละติจูด/ลองจิจูดต้องเป็นตัวเลข");
+        return;
+      }
+
+      // ป้องกันรหัสสาขาซ้ำ (ยกเว้นตัวเอง)
+      const trimmedCode = formData.code.trim();
+      if (trimmedCode) {
+        const targetCompanyId =
+          selectedBranch.companyId || formData.companyId || "";
+        if (targetCompanyId) {
+          const dupSnap = await getDocs(
+            query(
+              collection(db, "branches"),
+              where("companyId", "==", targetCompanyId),
+              where("code", "==", trimmedCode),
+            ),
+          );
+          const conflict = dupSnap.docs.find((d) => d.id !== selectedBranch.id);
+          if (conflict) {
+            toast.error(`รหัสสาขา "${trimmedCode}" มีอยู่แล้วในบริษัทนี้`);
+            return;
+          }
+        }
+      }
+
+      const supervisor = supervisors.find(
+        (s) => s.id === formData.supervisorId,
+      );
+
       await updateDoc(doc(db, "branches", selectedBranch.id), {
         name: formData.name.trim(),
+        code: trimmedCode || null,
         address: formData.address.trim() || null,
+        latitude: lat,
+        longitude: lng,
+        radiusMeters: radius,
+        sellerCategory: formData.sellerCategory.trim() || null,
+        supervisorId: formData.supervisorId || null,
+        supervisorName: supervisor?.name || null,
         updatedAt: serverTimestamp(),
       });
 
       toast.success("อัปเดตสาขาสำเร็จ");
       setShowEditModal(false);
       setSelectedBranch(null);
-      setFormData({ name: "", code: "", address: "", companyId: "" });
+      setFormData({
+        name: "",
+        code: "",
+        address: "",
+        companyId: "",
+        latitude: "",
+        longitude: "",
+        radiusMeters: "200",
+        sellerCategory: "",
+        supervisorId: "",
+      });
       fetchData();
     } catch (error) {
       console.error("Error updating branch:", error);
@@ -415,6 +623,11 @@ export default function BranchesPage() {
                 companyId: isSuperAdmin
                   ? companies[0]?.id || ""
                   : userData?.companyId || "",
+                latitude: "",
+                longitude: "",
+                radiusMeters: "200",
+                sellerCategory: "",
+                supervisorId: "",
               });
               setShowAddModal(true);
             }}
@@ -487,12 +700,12 @@ export default function BranchesPage() {
 
       {/* Search and Filter */}
       <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-4">
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div className="relative">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+          <div className="relative lg:col-span-2">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
             <input
               type="text"
-              placeholder="ค้นหาชื่อสาขา, ที่อยู่..."
+              placeholder="ค้นหาชื่อสาขา, รหัส, ที่อยู่..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               className="w-full pl-10 pr-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500"
@@ -513,111 +726,191 @@ export default function BranchesPage() {
               ))}
             </select>
           )}
+          <select
+            value={filterSellerCategory}
+            onChange={(e) => setFilterSellerCategory(e.target.value)}
+            className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500"
+          >
+            <option value="all">ทุก Seller Category</option>
+            {availableSellerCategories.map((s) => (
+              <option key={s} value={s}>
+                {s}
+              </option>
+            ))}
+          </select>
+          <select
+            value={filterSupervisor}
+            onChange={(e) => setFilterSupervisor(e.target.value)}
+            className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500"
+          >
+            <option value="all">ทุก Supervisor</option>
+            {supervisors.map((s) => (
+              <option key={s.id} value={s.id}>
+                {s.name}
+              </option>
+            ))}
+          </select>
         </div>
       </div>
 
-      {/* Branches Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-        {filteredBranches.map((branch) => (
-          <div
-            key={branch.id}
-            className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 hover:shadow-lg hover:border-blue-300 dark:hover:border-blue-700 transition-all group relative"
-          >
-            {/* Clickable Card Area */}
-            <Link
-              href={`/stock-counter/dashboard/branches/${branch.id}`}
-              className="block p-5 pb-0"
-            >
-              <div className="flex items-start justify-between mb-4">
-                <div className="p-3 bg-blue-100 dark:bg-blue-900/30 rounded-lg group-hover:bg-blue-200 dark:group-hover:bg-blue-900/50 transition-colors">
-                  <Building2 className="w-6 h-6 text-blue-600 dark:text-blue-400" />
-                </div>
-              </div>
-
-              <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-2 group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors">
-                {branch.name}
-              </h3>
-
-              {/* แสดง company name สำหรับ superadmin */}
-              {isSuperAdmin && branch.companyName && (
-                <div className="flex items-center gap-2 text-sm text-blue-600 dark:text-blue-400 mb-2">
-                  <Factory className="w-4 h-4" />
-                  <span>{branch.companyName}</span>
-                </div>
-              )}
-
-              {branch.address && (
-                <div className="flex items-start gap-2 text-sm text-gray-600 dark:text-gray-400 mb-3">
-                  <MapPin className="w-4 h-4 mt-0.5 shrink-0" />
-                  <span className="line-clamp-2">{branch.address}</span>
-                </div>
-              )}
-            </Link>
-
-            {/* Action Buttons - Stop propagation */}
-            {canManageBranches && (
-              <div className="absolute top-5 right-5 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                <button
-                  onClick={(e) => {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    handleEditBranch(branch);
-                  }}
-                  className="p-2 text-blue-600 bg-white dark:bg-gray-800 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg transition-colors shadow-sm border border-gray-200 dark:border-gray-600"
-                  title="แก้ไข"
+      {/* Branches Table */}
+      <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden">
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead className="bg-gray-50 dark:bg-gray-700">
+              <tr>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
+                  สาขา
+                </th>
+                <th className="hidden md:table-cell px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
+                  รหัส
+                </th>
+                {isSuperAdmin && (
+                  <th className="hidden xl:table-cell px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
+                    บริษัท
+                  </th>
+                )}
+                <th className="hidden lg:table-cell px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
+                  Seller Category
+                </th>
+                <th className="hidden lg:table-cell px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
+                  Supervisor
+                </th>
+                <th className="hidden md:table-cell px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
+                  Geofence
+                </th>
+                <th className="hidden sm:table-cell px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
+                  พนักงาน
+                </th>
+                <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
+                  จัดการ
+                </th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
+              {filteredBranches.map((branch) => (
+                <tr
+                  key={branch.id}
+                  className="hover:bg-gray-50 dark:hover:bg-gray-700"
                 >
-                  <Edit2 className="w-4 h-4" />
-                </button>
+                  <td className="px-4 py-3">
+                    <Link
+                      href={`/stock-counter/dashboard/branches/${branch.id}`}
+                      className="flex items-center gap-3 group"
+                    >
+                      <div className="p-2 bg-blue-100 dark:bg-blue-900/30 rounded-lg shrink-0">
+                        <Building2 className="w-4 h-4 text-blue-600 dark:text-blue-400" />
+                      </div>
+                      <div className="min-w-0">
+                        <p className="font-medium text-gray-900 dark:text-white truncate group-hover:text-blue-600 dark:group-hover:text-blue-400">
+                          {branch.name}
+                        </p>
+                        {branch.address && (
+                          <p className="text-xs text-gray-500 dark:text-gray-400 truncate flex items-center gap-1">
+                            <MapPin className="w-3 h-3 shrink-0" />
+                            <span className="truncate">{branch.address}</span>
+                          </p>
+                        )}
+                      </div>
+                    </Link>
+                  </td>
+                  <td className="hidden md:table-cell px-4 py-3 text-xs font-mono text-gray-700 dark:text-gray-300">
+                    {branch.code || "-"}
+                  </td>
+                  {isSuperAdmin && (
+                    <td className="hidden xl:table-cell px-4 py-3">
+                      <div className="flex items-center gap-1 text-xs text-blue-600 dark:text-blue-400">
+                        <Factory className="w-3.5 h-3.5" />
+                        <span className="truncate max-w-32">
+                          {branch.companyName || "-"}
+                        </span>
+                      </div>
+                    </td>
+                  )}
+                  <td className="hidden lg:table-cell px-4 py-3">
+                    {branch.sellerCategory ? (
+                      <span className="inline-block px-2 py-0.5 rounded bg-purple-50 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300 text-xs">
+                        {branch.sellerCategory}
+                      </span>
+                    ) : (
+                      <span className="text-xs text-gray-400">-</span>
+                    )}
+                  </td>
+                  <td className="hidden lg:table-cell px-4 py-3">
+                    {branch.supervisorName ? (
+                      <div className="flex items-center gap-1 text-xs text-gray-700 dark:text-gray-300">
+                        <UserIcon className="w-3.5 h-3.5 text-gray-400" />
+                        <span className="truncate max-w-32">
+                          {branch.supervisorName}
+                        </span>
+                      </div>
+                    ) : (
+                      <span className="text-xs text-gray-400">-</span>
+                    )}
+                  </td>
+                  <td className="hidden md:table-cell px-4 py-3">
+                    {branch.latitude != null && branch.longitude != null ? (
+                      <span className="text-xs text-green-600 dark:text-green-400">
+                        ✅ {branch.radiusMeters || 200}m
+                      </span>
+                    ) : (
+                      <span className="text-xs text-orange-600 dark:text-orange-400">
+                        ⚠️ ยังไม่ตั้ง
+                      </span>
+                    )}
+                  </td>
+                  <td className="hidden sm:table-cell px-4 py-3">
+                    <div className="flex items-center gap-1 text-xs text-gray-600 dark:text-gray-400">
+                      <Users className="w-3.5 h-3.5" />
+                      {branch.userCount || 0}
+                    </div>
+                  </td>
+                  <td className="px-4 py-3 text-right">
+                    {canManageBranches ? (
+                      <div className="flex items-center justify-end gap-1">
+                        <button
+                          onClick={() => handleEditBranch(branch)}
+                          className="p-1.5 text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg transition-colors"
+                          title="แก้ไข"
+                        >
+                          <Edit2 className="w-4 h-4" />
+                        </button>
+                        <button
+                          onClick={() => {
+                            setSelectedBranch(branch);
+                            setShowDeleteConfirm(true);
+                          }}
+                          className="p-1.5 text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors"
+                          title="ลบ"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
+                    ) : (
+                      <span className="text-xs text-gray-400">-</span>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+
+          {filteredBranches.length === 0 && (
+            <div className="text-center py-12">
+              <Building2 className="w-12 h-12 text-gray-400 mx-auto mb-4" />
+              <p className="text-gray-500 dark:text-gray-400">ไม่พบสาขา</p>
+              {canManageBranches && (
                 <button
-                  onClick={(e) => {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    setSelectedBranch(branch);
-                    setShowDeleteConfirm(true);
-                  }}
-                  className="p-2 text-red-600 bg-white dark:bg-gray-800 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors shadow-sm border border-gray-200 dark:border-gray-600"
-                  title="ลบ"
+                  onClick={() => setShowAddModal(true)}
+                  className="mt-4 text-blue-600 dark:text-blue-400 hover:underline"
                 >
-                  <Trash2 className="w-4 h-4" />
+                  เพิ่มสาขาใหม่
                 </button>
-              </div>
-            )}
-
-            {/* Footer */}
-            <Link
-              href={`/stock-counter/dashboard/branches/${branch.id}`}
-              className="block px-5 pb-5"
-            >
-              <div className="flex items-center justify-between pt-3 border-t border-gray-200 dark:border-gray-700">
-                <div className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400 group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors">
-                  <Users className="w-4 h-4" />
-                  <span>{branch.userCount || 0} พนักงาน</span>
-                </div>
-                <span className="text-xs text-gray-500 dark:text-gray-400">
-                  {branch.createdAt
-                    ? format(branch.createdAt, "dd MMM yyyy", { locale: th })
-                    : "-"}
-                </span>
-              </div>
-            </Link>
-          </div>
-        ))}
-      </div>
-
-      {filteredBranches.length === 0 && (
-        <div className="text-center py-12 bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700">
-          <Building2 className="w-12 h-12 text-gray-400 mx-auto mb-4" />
-          <p className="text-gray-500 dark:text-gray-400">ไม่พบสาขา</p>
-          {canManageBranches && (
-            <button
-              onClick={() => setShowAddModal(true)}
-              className="mt-4 text-blue-600 dark:text-blue-400 hover:underline"
-            >
-              เพิ่มสาขาใหม่
-            </button>
+              )}
+            </div>
           )}
         </div>
-      )}
+      </div>
 
       {/* Add Modal */}
       {showAddModal && (
@@ -691,6 +984,55 @@ export default function BranchesPage() {
                   placeholder="เช่น BKK01"
                   className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
                 />
+                <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                  ℹ️ ระบบจะตรวจสอบรหัสซ้ำภายในบริษัทเดียวกันก่อนบันทึก
+                </p>
+              </div>
+
+              {/* Seller Category */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                  Seller Category (หมวดหมู่ร้านค้า)
+                </label>
+                <input
+                  type="text"
+                  list="seller-category-presets"
+                  value={formData.sellerCategory}
+                  onChange={(e) =>
+                    setFormData({
+                      ...formData,
+                      sellerCategory: e.target.value,
+                    })
+                  }
+                  placeholder="เช่น Lotus, BigC, Watson"
+                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                />
+                <datalist id="seller-category-presets">
+                  {SELLER_CATEGORY_PRESETS.map((s) => (
+                    <option key={s} value={s} />
+                  ))}
+                </datalist>
+              </div>
+
+              {/* Supervisor */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                  Supervisor (หัวหน้างานสาขา)
+                </label>
+                <select
+                  value={formData.supervisorId}
+                  onChange={(e) =>
+                    setFormData({ ...formData, supervisorId: e.target.value })
+                  }
+                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                >
+                  <option value="">-- ไม่ระบุ --</option>
+                  {supervisors.map((s) => (
+                    <option key={s.id} value={s.id}>
+                      {s.name} ({s.email})
+                    </option>
+                  ))}
+                </select>
               </div>
 
               <div>
@@ -707,6 +1049,98 @@ export default function BranchesPage() {
                   className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white resize-none"
                 />
               </div>
+
+              {/* Geofence (lat/lng/radius) */}
+              <div className="border-t border-gray-200 dark:border-gray-700 pt-4">
+                <p className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">
+                  📍 พิกัดสาขา (สำหรับ Geofence)
+                </p>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">
+                      ละติจูด (Latitude)
+                    </label>
+                    <input
+                      type="text"
+                      value={formData.latitude}
+                      onChange={(e) =>
+                        setFormData({ ...formData, latitude: e.target.value })
+                      }
+                      placeholder="13.7563"
+                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">
+                      ลองจิจูด (Longitude)
+                    </label>
+                    <input
+                      type="text"
+                      value={formData.longitude}
+                      onChange={(e) =>
+                        setFormData({ ...formData, longitude: e.target.value })
+                      }
+                      placeholder="100.5018"
+                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm"
+                    />
+                  </div>
+                </div>
+                <div className="mt-2">
+                  <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">
+                    รัศมีอนุญาตเช็คอิน (เมตร)
+                  </label>
+                  <input
+                    type="number"
+                    min={50}
+                    max={500}
+                    value={formData.radiusMeters}
+                    onChange={(e) =>
+                      setFormData({
+                        ...formData,
+                        radiusMeters: e.target.value,
+                      })
+                    }
+                    placeholder="200"
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm"
+                  />
+                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                    📏 รัศมีตั้งได้ 50–500 เมตร (จำกัดสูงสุดไว้เพื่อความแม่นยำ)
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (!navigator.geolocation) {
+                      toast.error("เบราว์เซอร์ไม่รองรับ Geolocation");
+                      return;
+                    }
+                    toast.loading("กำลังขอตำแหน่งปัจจุบัน...");
+                    navigator.geolocation.getCurrentPosition(
+                      (pos) => {
+                        toast.dismiss();
+                        setFormData((f) => ({
+                          ...f,
+                          latitude: pos.coords.latitude.toFixed(6),
+                          longitude: pos.coords.longitude.toFixed(6),
+                        }));
+                        toast.success("ใส่พิกัดปัจจุบันแล้ว");
+                      },
+                      (err) => {
+                        toast.dismiss();
+                        toast.error("ไม่สามารถขอตำแหน่งได้: " + err.message);
+                      },
+                      { enableHighAccuracy: true, timeout: 10000 },
+                    );
+                  }}
+                  className="mt-2 text-xs text-blue-600 dark:text-blue-400 hover:underline"
+                >
+                  📍 ใช้ตำแหน่งปัจจุบันของฉัน
+                </button>
+                <p className="text-xs text-gray-500 dark:text-gray-400 mt-2">
+                  หา lat/lng จาก Google Maps: คลิกขวาที่ตำแหน่ง → คลิกที่พิกัด
+                  จะถูก copy
+                </p>
+              </div>
             </div>
 
             <div className="flex gap-3 mt-6">
@@ -718,6 +1152,11 @@ export default function BranchesPage() {
                     code: "",
                     address: "",
                     companyId: "",
+                    latitude: "",
+                    longitude: "",
+                    radiusMeters: "200",
+                    sellerCategory: "",
+                    supervisorId: "",
                   });
                 }}
                 className="flex-1 px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700"
@@ -771,6 +1210,154 @@ export default function BranchesPage() {
                   className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white resize-none"
                 />
               </div>
+
+              {/* รหัสสาขา (เพิ่มใน edit modal) */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                  รหัสสาขา
+                </label>
+                <input
+                  type="text"
+                  value={formData.code}
+                  onChange={(e) =>
+                    setFormData({ ...formData, code: e.target.value })
+                  }
+                  placeholder="เช่น BKK01"
+                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                />
+                <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                  ℹ️ ระบบจะตรวจสอบรหัสซ้ำภายในบริษัทเดียวกันก่อนบันทึก
+                </p>
+              </div>
+
+              {/* Seller Category (เพิ่มใน edit modal) */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                  Seller Category (หมวดหมู่ร้านค้า)
+                </label>
+                <input
+                  type="text"
+                  list="seller-category-presets"
+                  value={formData.sellerCategory}
+                  onChange={(e) =>
+                    setFormData({
+                      ...formData,
+                      sellerCategory: e.target.value,
+                    })
+                  }
+                  placeholder="เช่น Lotus, BigC, Watson"
+                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                />
+              </div>
+
+              {/* Supervisor (เพิ่มใน edit modal) */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                  Supervisor (หัวหน้างานสาขา)
+                </label>
+                <select
+                  value={formData.supervisorId}
+                  onChange={(e) =>
+                    setFormData({ ...formData, supervisorId: e.target.value })
+                  }
+                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                >
+                  <option value="">-- ไม่ระบุ --</option>
+                  {supervisors.map((s) => (
+                    <option key={s.id} value={s.id}>
+                      {s.name} ({s.email})
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Geofence (lat/lng/radius) */}
+              <div className="border-t border-gray-200 dark:border-gray-700 pt-4">
+                <p className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">
+                  📍 พิกัดสาขา (สำหรับ Geofence)
+                </p>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">
+                      ละติจูด
+                    </label>
+                    <input
+                      type="text"
+                      value={formData.latitude}
+                      onChange={(e) =>
+                        setFormData({ ...formData, latitude: e.target.value })
+                      }
+                      placeholder="13.7563"
+                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">
+                      ลองจิจูด
+                    </label>
+                    <input
+                      type="text"
+                      value={formData.longitude}
+                      onChange={(e) =>
+                        setFormData({ ...formData, longitude: e.target.value })
+                      }
+                      placeholder="100.5018"
+                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm"
+                    />
+                  </div>
+                </div>
+                <div className="mt-2">
+                  <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">
+                    รัศมีอนุญาตเช็คอิน (เมตร)
+                  </label>
+                  <input
+                    type="number"
+                    min={50}
+                    max={500}
+                    value={formData.radiusMeters}
+                    onChange={(e) =>
+                      setFormData({
+                        ...formData,
+                        radiusMeters: e.target.value,
+                      })
+                    }
+                    placeholder="200"
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm"
+                  />
+                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                    📏 รัศมีตั้งได้ 50–500 เมตร (จำกัดสูงสุดไว้เพื่อความแม่นยำ)
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (!navigator.geolocation) {
+                      toast.error("เบราว์เซอร์ไม่รองรับ Geolocation");
+                      return;
+                    }
+                    toast.loading("กำลังขอตำแหน่งปัจจุบัน...");
+                    navigator.geolocation.getCurrentPosition(
+                      (pos) => {
+                        toast.dismiss();
+                        setFormData((f) => ({
+                          ...f,
+                          latitude: pos.coords.latitude.toFixed(6),
+                          longitude: pos.coords.longitude.toFixed(6),
+                        }));
+                        toast.success("ใส่พิกัดปัจจุบันแล้ว");
+                      },
+                      (err) => {
+                        toast.dismiss();
+                        toast.error("ไม่สามารถขอตำแหน่งได้: " + err.message);
+                      },
+                      { enableHighAccuracy: true, timeout: 10000 },
+                    );
+                  }}
+                  className="mt-2 text-xs text-blue-600 dark:text-blue-400 hover:underline"
+                >
+                  📍 ใช้ตำแหน่งปัจจุบันของฉัน
+                </button>
+              </div>
             </div>
 
             <div className="flex gap-3 mt-6">
@@ -783,6 +1370,11 @@ export default function BranchesPage() {
                     code: "",
                     address: "",
                     companyId: "",
+                    latitude: "",
+                    longitude: "",
+                    radiusMeters: "200",
+                    sellerCategory: "",
+                    supervisorId: "",
                   });
                 }}
                 className="flex-1 px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700"

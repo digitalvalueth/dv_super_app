@@ -68,8 +68,19 @@ export default function CompletedProductScreen() {
   const loadCountingSessions = async () => {
     try {
       setIsLoading(true);
-      const data = await getProductCountingSessions(productId);
-      setSessions(data);
+      // กรองด้วย branchId (กันรูปจากสาขาอื่นที่มี SKU เดียวกัน)
+      const branchIdForQuery = assignmentBranchId || user?.branchId;
+      const data = await getProductCountingSessions(
+        productId,
+        10,
+        user?.uid,
+        branchIdForQuery,
+      );
+      // กันเหนียว: filter อีกชั้นเผื่อ caller เก่า
+      const scoped = branchIdForQuery
+        ? data.filter((s) => s.branchId === branchIdForQuery)
+        : data;
+      setSessions(scoped);
     } catch (error) {
       console.error("Error loading counting sessions:", error);
     } finally {

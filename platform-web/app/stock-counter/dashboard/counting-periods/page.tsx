@@ -522,12 +522,12 @@ export default function CountingPeriodsPage() {
       return;
     }
 
-    // Check if already exists
+    // Block if already exists
     if (periods.length > 0) {
-      const confirmed = window.confirm(
-        `ปีนี้มีรอบอยู่แล้ว ${periods.length} รอบ ต้องการสร้างใหม่ทับหรือไม่?`,
+      toast.error(
+        `ปี ${selectedYear} มีรอบการนับอยู่แล้ว ${periods.length} รอบ ไม่สามารถสร้างซ้ำได้`,
       );
-      if (!confirmed) return;
+      return;
     }
 
     setGenerating(true);
@@ -536,8 +536,9 @@ export default function CountingPeriodsPage() {
       for (let month = 1; month <= 12; month++) {
         const lastDay = getLastDayOfMonth(selectedYear, month);
 
-        // Half 1: 2–15
-        await addDoc(collection(db, "countingPeriods"), {
+        // Half 1: 2–15 — use deterministic ID to prevent duplicates
+        const h1Id = `${companyId}_${selectedYear}_${month}_H1`;
+        await setDoc(doc(db, "countingPeriods", h1Id), {
           companyId,
           year: selectedYear,
           month,
@@ -553,8 +554,9 @@ export default function CountingPeriodsPage() {
         });
         created++;
 
-        // Half 2: 17–lastDay
-        await addDoc(collection(db, "countingPeriods"), {
+        // Half 2: 17–lastDay — use deterministic ID to prevent duplicates
+        const h2Id = `${companyId}_${selectedYear}_${month}_H2`;
+        await setDoc(doc(db, "countingPeriods", h2Id), {
           companyId,
           year: selectedYear,
           month,
@@ -661,50 +663,60 @@ export default function CountingPeriodsPage() {
         const user = userDoc.data();
         const userId = userDoc.id;
 
-        // Check if assignment already exists for this month/year/half
-        const existingSnap = await getDocs(
-          query(
-            collection(db, "assignments"),
-            where("userId", "==", userId),
-            where("month", "==", month),
-            where("year", "==", year),
-            where("half", "==", half),
-          ),
-        );
+        // รองรับพนักงานหลายสาขา: ใช้ branchIds array ถ้ามี, fallback เป็น branchId เดียว
+        const empBranchIds: string[] =
+          user.branchIds && user.branchIds.length > 0
+            ? user.branchIds
+            : [user.branchId || ""];
+        const empBranchNames: Record<string, string> = user.branchNames || {};
 
-        if (!existingSnap.empty) {
-          // Reset progress — เริ่มรอบใหม่ พนักงานนับสต็อกใหม่ทั้งหมด
-          await updateDoc(doc(db, "assignments", existingSnap.docs[0].id), {
-            productIds: allProductIds,
-            productCount: allProductIds.length,
-            completedProductIds: [],
-            inProgressProductIds: [],
-            notAvailableProductIds: [],
-            completedCount: 0,
-            status: "pending",
-            updatedAt: serverTimestamp(),
-          });
-          skippedCount++;
-        } else {
-          // Create new assignment
-          await addDoc(collection(db, "assignments"), {
-            userId,
-            userName: user.name || user.displayName || "",
-            userEmail: user.email || "",
-            companyId: user.companyId,
-            branchId: user.branchId || "",
-            branchName: user.branchName || "",
-            productIds: allProductIds,
-            productCount: allProductIds.length,
-            month,
-            year,
-            half,
-            status: "pending",
-            completedCount: 0,
-            createdAt: serverTimestamp(),
-            updatedAt: serverTimestamp(),
-          });
-          assignedCount++;
+        for (const branchId of empBranchIds) {
+          // Check if assignment already exists for this month/year/half/branchId
+          const existingSnap = await getDocs(
+            query(
+              collection(db, "assignments"),
+              where("userId", "==", userId),
+              where("month", "==", month),
+              where("year", "==", year),
+              where("half", "==", half),
+              where("branchId", "==", branchId),
+            ),
+          );
+
+          if (!existingSnap.empty) {
+            // Reset progress — เริ่มรอบใหม่ พนักงานนับสต็อกใหม่ทั้งหมด
+            await updateDoc(doc(db, "assignments", existingSnap.docs[0].id), {
+              productIds: allProductIds,
+              productCount: allProductIds.length,
+              completedProductIds: [],
+              inProgressProductIds: [],
+              notAvailableProductIds: [],
+              completedCount: 0,
+              status: "pending",
+              updatedAt: serverTimestamp(),
+            });
+            skippedCount++;
+          } else {
+            // Create new assignment
+            await addDoc(collection(db, "assignments"), {
+              userId,
+              userName: user.name || user.displayName || "",
+              userEmail: user.email || "",
+              companyId: user.companyId,
+              branchId,
+              branchName: empBranchNames[branchId] || user.branchName || "",
+              productIds: allProductIds,
+              productCount: allProductIds.length,
+              month,
+              year,
+              half,
+              status: "pending",
+              completedCount: 0,
+              createdAt: serverTimestamp(),
+              updatedAt: serverTimestamp(),
+            });
+            assignedCount++;
+          }
         }
       }
 

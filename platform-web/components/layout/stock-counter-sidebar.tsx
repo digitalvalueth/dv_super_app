@@ -1,5 +1,6 @@
 "use client";
 
+import { APP_VERSION } from "@/lib/changelog";
 import { useAuthStore } from "@/stores/auth.store";
 import { useSidebarStore } from "@/stores/sidebar.store";
 import {
@@ -15,15 +16,18 @@ import {
   Clock,
   DollarSign,
   Factory,
+  GitCommit,
   Home,
   LayoutDashboard,
   Mail,
   Menu,
   Package,
+  Receipt,
   Settings,
   Shield,
   Sparkles,
   Truck,
+  Upload,
   Users,
   X,
 } from "lucide-react";
@@ -99,6 +103,20 @@ const navGroups: NavGroup[] = [
         hideForSupervisor: true,
         hideForManager: true,
       },
+      {
+        name: "นำเข้าผู้ใช้ (Excel)",
+        href: "/stock-counter/dashboard/import-users",
+        icon: Upload,
+        hideForSupervisor: true,
+        hideForManager: true,
+      },
+      {
+        name: "นำเข้าสาขา (Excel)",
+        href: "/stock-counter/dashboard/import-branches",
+        icon: Upload,
+        hideForSupervisor: true,
+        hideForManager: true,
+      },
     ],
   },
   {
@@ -170,6 +188,18 @@ const navGroups: NavGroup[] = [
     ],
   },
   {
+    label: "ยอดขายรายวัน",
+    icon: Receipt,
+    collapsible: true,
+    items: [
+      {
+        name: "ภาพรวมยอดขาย",
+        href: "/stock-counter/dashboard/daily-sale",
+        icon: Receipt,
+      },
+    ],
+  },
+  {
     label: "รายงาน & ระบบ",
     icon: BarChart3,
     collapsible: true,
@@ -184,6 +214,11 @@ const navGroups: NavGroup[] = [
         href: "/stock-counter/dashboard/prompts",
         icon: Sparkles,
         adminOnly: true,
+      },
+      {
+        name: "Changelog",
+        href: "/stock-counter/dashboard/changelog",
+        icon: GitCommit,
       },
     ],
   },
@@ -439,9 +474,14 @@ export function StockCounterSidebar() {
               )}
             </button>
             {!collapsed && (
-              <p className="text-xs text-gray-500 dark:text-gray-400 text-center pb-3">
-                © 2026 Digital Value Co., Ltd.
-              </p>
+              <div className="text-center pb-3 space-y-0.5">
+                <p className="text-xs font-semibold text-blue-600 dark:text-blue-400">
+                  v{APP_VERSION}
+                </p>
+                <p className="text-xs text-gray-500 dark:text-gray-400">
+                  © 2026 Digital Value Co., Ltd.
+                </p>
+              </div>
             )}
           </div>
         </div>

@@ -26,6 +26,14 @@ export default function CommissionPage() {
   const [loading, setLoading] = useState(true);
   const [exporting, setExporting] = useState(false);
   const [allSessions, setAllSessions] = useState<CountingSession[]>([]);
+  // userId → baCode lookup
+  const [userBaCodeMap, setUserBaCodeMap] = useState<Record<string, string>>(
+    {},
+  );
+  // userId → fullName lookup
+  const [userFullNameMap, setUserFullNameMap] = useState<
+    Record<string, string>
+  >({});
 
   // Filters – default to current month (yyyy-MM)
   const [filterPeriod, setFilterPeriod] = useState<string>(
@@ -38,9 +46,35 @@ export default function CommissionPage() {
 
   useEffect(() => {
     if (!userData) return;
+    fetchUserBaCodeMap();
     fetchRecords();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [userData]);
+
+  const fetchUserBaCodeMap = async () => {
+    if (!userData) return;
+    try {
+      const usersQ = userData.companyId
+        ? query(
+            collection(db, "users"),
+            where("companyId", "==", userData.companyId),
+          )
+        : query(collection(db, "users"));
+      const snap = await getDocs(usersQ);
+      const map: Record<string, string> = {};
+      const nameMap: Record<string, string> = {};
+      snap.forEach((d) => {
+        const data = d.data() as any;
+        const uid = data.uid || d.id;
+        if (data.baCode) map[uid] = data.baCode;
+        if (data.fullName) nameMap[uid] = data.fullName;
+      });
+      setUserBaCodeMap(map);
+      setUserFullNameMap(nameMap);
+    } catch (err) {
+      console.error("Error fetching user baCode map:", err);
+    }
+  };
 
   const fetchRecords = async () => {
     if (!userData) return;
@@ -582,7 +616,21 @@ export default function CommissionPage() {
                         : "-"}
                     </td>
                     <td className="px-6 py-4 text-sm text-gray-900 dark:text-gray-200">
-                      <div className="font-semibold">{session.userName}</div>
+                      <div className="font-semibold">
+                        {userFullNameMap[session.userId] || session.userName}
+                      </div>
+                      {userFullNameMap[session.userId] &&
+                        userFullNameMap[session.userId] !==
+                          session.userName && (
+                          <div className="text-xs text-gray-500 dark:text-gray-400">
+                            ({session.userName})
+                          </div>
+                        )}
+                      {userBaCodeMap[session.userId] && (
+                        <div className="text-xs font-mono text-blue-600 dark:text-blue-400">
+                          รหัส: {userBaCodeMap[session.userId]}
+                        </div>
+                      )}
                       <div className="text-xs text-gray-500 dark:text-gray-400">
                         {session.userEmail}
                       </div>

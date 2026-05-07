@@ -75,6 +75,11 @@ export async function POST(request: NextRequest) {
       managedBranchIds,
       moduleAccess,
       companyId: bodyCompanyId,
+      // Phithan fields
+      baCode,
+      fullName,
+      seller,
+      supervisorId: bodySupervisorId,
     } = body;
 
     if (!email || !name || !role) {
@@ -193,14 +198,21 @@ export async function POST(request: NextRequest) {
 
     const invitationData: Record<string, any> = {
       email: email.toLowerCase().trim(),
-      name: name.trim(),
+      name: (fullName || name).trim(),
       role: role,
       companyId: effectiveCompanyId,
       companyName: companyName,
       branchName: branchName,
       branchCode: branchCode,
-      supervisorId: senderData.role === "supervisor" ? senderDoc.id : null,
-      supervisorName: senderData.role === "supervisor" ? senderData.name : null,
+      // Supervisor priority: explicit body field > sender (if sender is supervisor)
+      supervisorId:
+        bodySupervisorId ||
+        (senderData.role === "supervisor" ? senderDoc.id : null),
+      supervisorName: bodySupervisorId
+        ? null
+        : senderData.role === "supervisor"
+          ? senderData.name
+          : null,
       token: invitationToken,
       status: "pending",
       expiresAt: expiresAt,
@@ -210,7 +222,25 @@ export async function POST(request: NextRequest) {
       invitedBy: senderUid,
       invitedByName: senderData.name,
       moduleAccess: moduleAccess || [],
+      // Phithan fields
+      baCode: baCode || null,
+      fullName: fullName || null,
+      seller: seller || null,
     };
+
+    // If supervisorId provided, look up supervisor name
+    if (bodySupervisorId) {
+      try {
+        const supDoc = await db.collection("users").doc(bodySupervisorId).get();
+        if (supDoc.exists) {
+          const sd = supDoc.data();
+          invitationData.supervisorName =
+            sd?.fullName || sd?.name || sd?.displayName || sd?.email || null;
+        }
+      } catch {
+        // ignore
+      }
+    }
 
     // Role-specific branch fields
     if (role === "employee") {

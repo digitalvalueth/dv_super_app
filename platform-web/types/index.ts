@@ -24,6 +24,10 @@ export interface User {
   managedBranchIds?: string[]; // For managers who control multiple branches
   supervisorId?: string; // ID of supervisor (for employees)
   supervisorName?: string; // Name of supervisor
+  // Phithan fields
+  baCode?: string; // รหัส BA / Employee ID
+  fullName?: string; // ชื่อ-นามสกุล (TH)
+  seller?: string; // ยี่ห้อ/seller ที่รับผิดชอบ
   moduleAccess?: string[]; // Module IDs this user can access (must be ⊆ company.enabledModules)
   phoneNumber?: string;
   photoURL?: string;
@@ -77,6 +81,10 @@ export interface Branch {
   code?: string;
   address?: string;
   phone?: string;
+  // Geofence (สำหรับตรวจ check-in / รูปถ่ายว่าอยู่ในพื้นที่สาขาจริงหรือไม่)
+  latitude?: number;
+  longitude?: number;
+  radiusMeters?: number; // รัศมีที่ยอมให้เช็คอินได้ (default 200m)
   createdAt?: Date;
   updatedAt?: Date;
 }
@@ -234,6 +242,12 @@ export interface Invitation {
   invitedBy: string;
   invitedByName?: string;
   status: "pending" | "accepted" | "expired";
+  // Phithan fields (ฟอร์มเชิญต้องใส่)
+  baCode?: string; // รหัส BA / Employee ID
+  fullName?: string; // ชื่อ-นามสกุล (TH)
+  seller?: string; // Seller / ยี่ห้อที่รับผิดชอบ
+  supervisorId?: string; // supervisor ที่ดูแล (สำหรับ employee)
+  supervisorName?: string;
   createdAt?: Date;
   expiresAt?: Date;
 }

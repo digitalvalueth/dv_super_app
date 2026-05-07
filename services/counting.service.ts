@@ -271,16 +271,30 @@ export const markProductNotAvailable = async (
 
 /**
  * Get all sessions for a product
+ *
+ * IMPORTANT: Always pass `branchId` when displaying photos for a specific
+ * branch — the same productId (SKU/barcode) can exist across multiple
+ * branches, and without a branch filter, photos taken at branch A will
+ * leak into branch B's view.
  */
 export const getProductCountingSessions = async (
   productId: string,
   limitCount: number = 10,
+  userId?: string,
+  branchId?: string,
 ): Promise<CountingSession[]> => {
   try {
     const sessionsRef = collection(db, "countingSessions");
 
     // Query without orderBy to avoid needing composite index
-    const q = query(sessionsRef, where("productId", "==", productId));
+    const constraints = [where("productId", "==", productId)];
+    if (userId) {
+      constraints.push(where("userId", "==", userId));
+    }
+    if (branchId) {
+      constraints.push(where("branchId", "==", branchId));
+    }
+    const q = query(sessionsRef, ...constraints);
 
     const snapshot = await getDocs(q);
 

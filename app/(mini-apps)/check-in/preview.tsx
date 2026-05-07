@@ -1,10 +1,13 @@
+import { db } from "@/config/firebase";
 import { createCheckIn, uploadCheckInImage } from "@/services/checkin.service";
 import { useAuthStore } from "@/stores/auth.store";
 import { useCheckInStore } from "@/stores/checkin.store";
 import { useTheme } from "@/stores/theme.store";
+import { checkBranchGeofence, formatGeofenceWarning } from "@/utils/geofence";
 import { formatTimestamp, WatermarkData } from "@/utils/watermark";
 import { Ionicons } from "@expo/vector-icons";
 import { router, useLocalSearchParams } from "expo-router";
+import { doc, getDoc } from "firebase/firestore";
 import { useCallback, useMemo, useState } from "react";
 import {
   ActivityIndicator,
@@ -62,6 +65,51 @@ export default function CheckInPreviewScreen() {
       setIsProcessing(true);
       setSubmitting(true);
 
+      // 0. Geofence check (soft warning, doesn't block)
+      if (effectiveBranchId && watermarkData?.coordinates) {
+        try {
+          const branchSnap = await getDoc(
+            doc(db, "branches", effectiveBranchId),
+          );
+          if (branchSnap.exists()) {
+            const b = branchSnap.data() as {
+              latitude?: number;
+              longitude?: number;
+              radiusMeters?: number;
+            };
+            const result = checkBranchGeofence(watermarkData.coordinates, b);
+            if (result.hasBranchCoords && !result.withinRadius) {
+              const proceed = await new Promise<boolean>((resolve) => {
+                Alert.alert(
+                  "อยู่นอกพื้นที่สาขา",
+                  formatGeofenceWarning(result) +
+                    "\n\nต้องการบันทึกการเช็คชื่อต่อหรือไม่?",
+                  [
+                    {
+                      text: "ยกเลิก",
+                      style: "cancel",
+                      onPress: () => resolve(false),
+                    },
+                    {
+                      text: "บันทึกต่อ",
+                      style: "destructive",
+                      onPress: () => resolve(true),
+                    },
+                  ],
+                );
+              });
+              if (!proceed) {
+                setIsProcessing(false);
+                setSubmitting(false);
+                return;
+              }
+            }
+          }
+        } catch (geoErr) {
+          console.warn("Geofence check failed:", geoErr);
+        }
+      }
+
       // 1. Upload image to Firebase Storage
       const checkInIdTemp = `checkin_${Date.now()}`;
       const imageUrl = await uploadCheckInImage(
@@ -118,6 +166,8 @@ export default function CheckInPreviewScreen() {
     isProcessing,
     selectedShift,
     setSubmitting,
+    effectiveBranchId,
+    effectiveBranchName,
   ]);
 
   return (

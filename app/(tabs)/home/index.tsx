@@ -1,7 +1,15 @@
 "use client";
 
+import { NotificationDropdown } from "@/components/notification-dropdown";
 import { db } from "@/config/firebase";
-import { getRecentAppIds, trackAppUsage } from "@/services/app-usage.service";
+
+import {
+  ALL_MINI_APPS,
+  DEFAULT_PINNED_IDS,
+  MiniApp,
+  PIN_STORAGE_KEY,
+  PINNABLE_APPS,
+} from "@/constants/mini-apps";
 import {
   CacheKeys,
   CacheTTL,
@@ -12,9 +20,10 @@ import { getEffectiveCountingPeriod } from "@/services/counting-period.service";
 import { useAuthStore } from "@/stores/auth.store";
 import { useTheme } from "@/stores/theme.store";
 import { Ionicons } from "@expo/vector-icons";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Image } from "expo-image";
 import { LinearGradient } from "expo-linear-gradient";
-import { router, useFocusEffect } from "expo-router";
+import { router } from "expo-router";
 import {
   collection,
   getDocs,
@@ -28,6 +37,7 @@ import {
   ActivityIndicator,
   Alert,
   Dimensions,
+  Modal,
   RefreshControl,
   ScrollView,
   StatusBar,
@@ -47,79 +57,6 @@ import { SafeAreaView } from "react-native-safe-area-context";
 const { width } = Dimensions.get("window");
 const CARD_WIDTH = (width - 48) / 2;
 
-// Mini App definitions
-interface MiniApp {
-  id: string;
-  name: string;
-  description: string;
-  icon: keyof typeof Ionicons.glyphMap;
-  color: string;
-  gradientColors: [string, string];
-  route: string;
-  badge?: number;
-  comingSoon?: boolean;
-}
-
-const MINI_APPS: MiniApp[] = [
-  {
-    id: "stock-counter",
-    name: "นับสต็อก",
-    description: "นับสินค้าด้วย AI",
-    icon: "cube-outline",
-    color: "#3B82F6",
-    gradientColors: ["#3B82F6", "#1D4ED8"],
-    route: "/(mini-apps)/stock-counter",
-  },
-  {
-    id: "delivery-receive",
-    name: "รับสินค้า",
-    description: "รับพัสดุและสินค้า",
-    icon: "cube",
-    color: "#10B981",
-    gradientColors: ["#10B981", "#059669"],
-    route: "/(mini-apps)/delivery-receive",
-  },
-  {
-    id: "check-in",
-    name: "เช็คชื่อ",
-    description: "เช็คชื่อพนักงาน",
-    icon: "finger-print-outline",
-    color: "#6366F1",
-    gradientColors: ["#6366F1", "#4F46E5"],
-    route: "/(mini-apps)/check-in",
-  },
-  {
-    id: "speech-to-text",
-    name: "Speech to Text",
-    description: "แปลงเสียงเป็นข้อความ",
-    icon: "mic-outline",
-    color: "#8B5CF6",
-    gradientColors: ["#8B5CF6", "#6D28D9"],
-    route: "/(mini-apps)/speech-to-text",
-    comingSoon: true,
-  },
-  {
-    id: "reports",
-    name: "รายงาน",
-    description: "ดูสถิติและรายงาน",
-    icon: "bar-chart-outline",
-    color: "#10B981",
-    gradientColors: ["#10B981", "#047857"],
-    route: "/(mini-apps)/reports",
-    comingSoon: true,
-  },
-  {
-    id: "more",
-    name: "เพิ่มเติม",
-    description: "บริการอื่นๆ",
-    icon: "apps-outline",
-    color: "#F59E0B",
-    gradientColors: ["#F59E0B", "#D97706"],
-    route: "/(tabs)/services",
-  },
-];
-
-// Stats interface
 interface DashboardStats {
   totalCounted: number;
   completedToday: number;
@@ -154,7 +91,8 @@ export default function HomeScreen() {
   const [recentActivities, setRecentActivities] = useState<RecentActivity[]>(
     [],
   );
-  const [recentApps, setRecentApps] = useState<MiniApp[]>([]);
+  const [pinnedIds, setPinnedIds] = useState<string[]>(DEFAULT_PINNED_IDS);
+  const [showPinPicker, setShowPinPicker] = useState(false);
   const [selectedBranchId, setSelectedBranchId] = useState<string>(
     user?.branchId ?? "",
   );
@@ -162,26 +100,46 @@ export default function HomeScreen() {
     user?.branchName ?? "",
   );
 
-  // Load recent apps from storage
-  const loadRecentApps = useCallback(async () => {
-    try {
-      const recentIds = await getRecentAppIds(user?.uid);
-      if (recentIds.length > 0) {
-        // Map ids back to MiniApp objects, filter out comingSoon
-        const apps = recentIds
-          .map((id) => MINI_APPS.find((app) => app.id === id))
-          .filter((app): app is MiniApp => !!app && !app.comingSoon)
-          .slice(0, 4); // Max 4 recent apps
-        setRecentApps(apps);
-      } else {
-        // Default to available apps if no history
-        setRecentApps(MINI_APPS.filter((app) => !app.comingSoon).slice(0, 4));
+  // Load pinned apps from storage
+  useEffect(() => {
+    AsyncStorage.getItem(PIN_STORAGE_KEY).then((val) => {
+      if (val) {
+        try {
+          const ids = JSON.parse(val) as string[];
+          if (ids.length > 0) setPinnedIds(ids);
+        } catch {}
       }
-    } catch (error) {
-      console.error("Error loading recent apps:", error);
-      setRecentApps(MINI_APPS.filter((app) => !app.comingSoon).slice(0, 4));
-    }
-  }, [user?.uid]);
+    });
+  }, []);
+
+  const savePinned = useCallback((ids: string[]) => {
+    setPinnedIds(ids);
+    AsyncStorage.setItem(PIN_STORAGE_KEY, JSON.stringify(ids));
+  }, []);
+
+  const unpinApp = useCallback(
+    (appId: string) => {
+      Alert.alert("เอาออกจากแอปด่วน?", "กดยืนยันเพื่อเอาออก", [
+        { text: "ยกเลิก", style: "cancel" },
+        {
+          text: "เอาออก",
+          style: "destructive",
+          onPress: () => savePinned(pinnedIds.filter((id) => id !== appId)),
+        },
+      ]);
+    },
+    [pinnedIds, savePinned],
+  );
+
+  const pinApp = useCallback(
+    (appId: string) => {
+      if (!pinnedIds.includes(appId)) {
+        savePinned([...pinnedIds, appId]);
+      }
+      setShowPinPicker(false);
+    },
+    [pinnedIds, savePinned],
+  );
 
   // Sync selectedBranchId when user data first loads (e.g. after cold start)
   useEffect(() => {
@@ -207,18 +165,6 @@ export default function HomeScreen() {
       setSelectedBranchName(bName);
     },
     [selectedBranchId],
-  );
-
-  // Save app usage to storage
-  const saveAppUsage = async (appId: string) => {
-    await trackAppUsage(appId, user?.uid);
-  };
-
-  // Reload recent apps when screen comes into focus
-  useFocusEffect(
-    useCallback(() => {
-      loadRecentApps();
-    }, [loadRecentApps]),
   );
 
   const fetchDashboardData = useCallback(
@@ -436,23 +382,7 @@ export default function HomeScreen() {
           <Text style={[styles.appName, { color: colors.text }]}>FITT BSA</Text>
         </View>
         <View style={styles.headerRight}>
-          <TouchableOpacity
-            style={[styles.headerButton, { backgroundColor: colors.card }]}
-            onPress={() => router.push("/(mini-apps)/stock-counter?tab=inbox")}
-          >
-            <Ionicons
-              name="notifications-outline"
-              size={22}
-              color={colors.text}
-            />
-            {stats.pendingReview > 0 && (
-              <View style={styles.notificationBadge}>
-                <Text style={styles.badgeText}>
-                  {stats.pendingReview > 9 ? "9+" : stats.pendingReview}
-                </Text>
-              </View>
-            )}
-          </TouchableOpacity>
+          <NotificationDropdown />
         </View>
       </Animated.View>
 
@@ -567,105 +497,165 @@ export default function HomeScreen() {
           </LinearGradient>
         </Animated.View>
 
-        {/* Quick Access - Available Apps */}
-        <View style={styles.section}>
+        {/* Quick Apps (Pinned) */}
+        <Animated.View
+          entering={FadeInDown.delay(200).duration(500)}
+          style={styles.section}
+        >
           <View style={styles.sectionHeader}>
             <Text style={[styles.sectionTitle, { color: colors.text }]}>
-              ใช้งานล่าสุด
+              แอปด่วน
             </Text>
-          </View>
-
-          <View style={styles.quickAccessGrid}>
-            {(recentApps.length > 0
-              ? recentApps
-              : MINI_APPS.filter((app) => !app.comingSoon)
-            ).map((app, index) => (
-              <Animated.View
-                key={app.id}
-                entering={FadeInUp.delay(200 + 80 * index).duration(400)}
-              >
-                <TouchableOpacity
-                  style={styles.quickAccessItem}
-                  activeOpacity={0.7}
-                  onPress={() => {
-                    saveAppUsage(app.id);
-                    router.push(app.route as any);
-                  }}
-                >
-                  <LinearGradient
-                    colors={app.gradientColors}
-                    style={styles.quickAccessIcon}
-                  >
-                    <Ionicons name={app.icon} size={28} color="#fff" />
-                  </LinearGradient>
-                  <Text
-                    style={[styles.quickAccessName, { color: colors.text }]}
-                    numberOfLines={1}
-                  >
-                    {app.name}
-                  </Text>
-                </TouchableOpacity>
-              </Animated.View>
-            ))}
-          </View>
-        </View>
-
-        {/* Coming Soon Services */}
-        <View style={styles.section}>
-          <View style={styles.sectionHeader}>
-            <Text style={[styles.sectionTitle, { color: colors.text }]}>
-              บริการเร็วๆ นี้
-            </Text>
-            <TouchableOpacity onPress={() => router.push("/(tabs)/services")}>
-              <Text style={[styles.seeAll, { color: colors.primary }]}>
-                ดูทั้งหมด
+            <TouchableOpacity
+              onPress={() => setShowPinPicker(true)}
+              style={[
+                styles.pinAddBtn,
+                { backgroundColor: colors.primary + "18" },
+              ]}
+            >
+              <Ionicons name="add" size={16} color={colors.primary} />
+              <Text style={[styles.pinAddText, { color: colors.primary }]}>
+                เพิ่ม
               </Text>
             </TouchableOpacity>
           </View>
 
-          <View style={styles.quickAccessGrid}>
-            {MINI_APPS.filter((app) => app.comingSoon).map((app, index) => (
-              <Animated.View
-                key={app.id}
-                entering={FadeInUp.delay(300 + 80 * index).duration(400)}
-              >
+          <View style={styles.quickAppsGrid}>
+            {pinnedIds
+              .map((id) => ALL_MINI_APPS.find((a) => a.id === id))
+              .filter((app): app is MiniApp => !!app)
+              .map((app, index) => (
+                <Animated.View
+                  key={app.id}
+                  entering={FadeInUp.delay(200 + 60 * index).duration(400)}
+                  style={styles.quickAppCell}
+                >
+                  <TouchableOpacity
+                    activeOpacity={0.7}
+                    onPress={() => router.push(app.route as any)}
+                    onLongPress={() => unpinApp(app.id)}
+                    delayLongPress={500}
+                    style={styles.quickAppItem}
+                  >
+                    <View style={styles.quickAppIconWrap}>
+                      <LinearGradient
+                        colors={app.gradientColors}
+                        style={styles.quickAppIcon}
+                        start={{ x: 0, y: 0 }}
+                        end={{ x: 1, y: 1 }}
+                      >
+                        <Ionicons name={app.icon} size={26} color="#fff" />
+                      </LinearGradient>
+                    </View>
+                    <Text
+                      style={[styles.quickAppName, { color: colors.text }]}
+                      numberOfLines={1}
+                    >
+                      {app.name}
+                    </Text>
+                  </TouchableOpacity>
+                </Animated.View>
+              ))}
+            {/* + slot when fewer than 8 pinned */}
+            {pinnedIds.length < 8 && (
+              <View style={styles.quickAppCell}>
                 <TouchableOpacity
-                  style={styles.quickAccessItem}
+                  style={styles.quickAppItem}
                   activeOpacity={0.7}
-                  onPress={() =>
-                    Alert.alert(
-                      "เร็วๆ นี้",
-                      `${app.name} กำลังอยู่ระหว่างการพัฒนา`,
-                    )
-                  }
+                  onPress={() => setShowPinPicker(true)}
                 >
                   <View
                     style={[
-                      styles.quickAccessIcon,
-                      styles.quickAccessIconDisabled,
-                      { backgroundColor: colors.card },
+                      styles.quickAppIcon,
+                      styles.quickAppAddSlot,
+                      { borderColor: colors.border },
                     ]}
                   >
                     <Ionicons
-                      name={app.icon}
-                      size={28}
+                      name="add"
+                      size={26}
                       color={colors.textSecondary}
                     />
                   </View>
                   <Text
                     style={[
-                      styles.quickAccessName,
+                      styles.quickAppName,
                       { color: colors.textSecondary },
                     ]}
                     numberOfLines={1}
                   >
-                    {app.name}
+                    เพิ่ม
                   </Text>
                 </TouchableOpacity>
-              </Animated.View>
-            ))}
+              </View>
+            )}
           </View>
-        </View>
+          <Text style={[styles.pinHint, { color: colors.textSecondary }]}>
+            กดค้างที่ไอคอนเพื่อเอาออก
+          </Text>
+        </Animated.View>
+
+        {/* Pin Picker Modal */}
+        <Modal
+          visible={showPinPicker}
+          transparent
+          animationType="slide"
+          onRequestClose={() => setShowPinPicker(false)}
+        >
+          <TouchableOpacity
+            style={styles.modalOverlay}
+            activeOpacity={1}
+            onPress={() => setShowPinPicker(false)}
+          />
+          <View style={[styles.modalSheet, { backgroundColor: colors.card }]}>
+            <View
+              style={[styles.modalHandle, { backgroundColor: colors.border }]}
+            />
+            <Text style={[styles.modalTitle, { color: colors.text }]}>
+              เลือกแอปที่ต้องการปัก
+            </Text>
+            <ScrollView>
+              {PINNABLE_APPS.map((app) => {
+                const isPinned = pinnedIds.includes(app.id);
+                return (
+                  <TouchableOpacity
+                    key={app.id}
+                    style={[
+                      styles.modalRow,
+                      { borderBottomColor: colors.border },
+                      isPinned && { opacity: 0.4 },
+                    ]}
+                    activeOpacity={isPinned ? 1 : 0.7}
+                    onPress={() => !isPinned && pinApp(app.id)}
+                  >
+                    <LinearGradient
+                      colors={app.gradientColors}
+                      style={styles.modalAppIcon}
+                    >
+                      <Ionicons name={app.icon} size={22} color="#fff" />
+                    </LinearGradient>
+                    <Text style={[styles.modalAppName, { color: colors.text }]}>
+                      {app.name}
+                    </Text>
+                    {isPinned ? (
+                      <Ionicons
+                        name="checkmark-circle"
+                        size={22}
+                        color={colors.primary}
+                      />
+                    ) : (
+                      <Ionicons
+                        name="add-circle-outline"
+                        size={22}
+                        color={colors.textSecondary}
+                      />
+                    )}
+                  </TouchableOpacity>
+                );
+              })}
+            </ScrollView>
+          </View>
+        </Modal>
 
         {/* Today's Stats */}
         <Animated.View
@@ -1279,5 +1269,117 @@ const styles = StyleSheet.create({
     color: "#fff",
     fontSize: 14,
     fontWeight: "600",
+  },
+  // Pin add button
+  pinAddBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 12,
+  },
+  pinAddText: {
+    fontSize: 13,
+    fontWeight: "600",
+  },
+  pinHint: {
+    fontSize: 11,
+    marginTop: 6,
+    textAlign: "center",
+  },
+  // Modal
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.45)",
+  },
+  modalSheet: {
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    paddingHorizontal: 20,
+    paddingBottom: 40,
+    paddingTop: 12,
+    maxHeight: "65%",
+  },
+  modalHandle: {
+    width: 40,
+    height: 4,
+    borderRadius: 2,
+    alignSelf: "center",
+    marginBottom: 16,
+  },
+  modalTitle: {
+    fontSize: 17,
+    fontWeight: "700",
+    marginBottom: 12,
+  },
+  modalRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingVertical: 14,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    gap: 14,
+  },
+  modalAppIcon: {
+    width: 44,
+    height: 44,
+    borderRadius: 13,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  modalAppName: {
+    flex: 1,
+    fontSize: 15,
+    fontWeight: "600",
+  },
+  // Quick Apps
+  quickAppsGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 4,
+  },
+  quickAppCell: {
+    width: (width - 32) / 4,
+    alignItems: "center",
+    paddingVertical: 8,
+  },
+  quickAppItem: {
+    alignItems: "center",
+    width: "100%",
+  },
+  quickAppIconWrap: {
+    position: "relative",
+    marginBottom: 6,
+  },
+  quickAppIcon: {
+    width: 58,
+    height: 58,
+    borderRadius: 18,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  quickAppAddSlot: {
+    backgroundColor: "transparent",
+    borderWidth: 2,
+    borderStyle: "dashed",
+  },
+  quickAppBadge: {
+    position: "absolute",
+    bottom: -4,
+    right: -4,
+    backgroundColor: "#6B7280",
+    paddingHorizontal: 5,
+    paddingVertical: 2,
+    borderRadius: 6,
+  },
+  quickAppBadgeText: {
+    color: "#fff",
+    fontSize: 9,
+    fontWeight: "700",
+  },
+  quickAppName: {
+    fontSize: 11,
+    fontWeight: "600",
+    textAlign: "center",
   },
 });

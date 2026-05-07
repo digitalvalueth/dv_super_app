@@ -85,14 +85,18 @@ export async function POST(request: NextRequest) {
     const userData: any = {
       uid: uid,
       email: invitationData.email,
-      name: invitationData.name,
-      displayName: invitationData.name,
+      name: invitationData.fullName || invitationData.name,
+      displayName: invitationData.fullName || invitationData.name,
       role: invitationData.role,
       companyId: invitationData.companyId,
       moduleAccess: invitationData.moduleAccess || [],
       companyName: invitationData.companyName,
       status: "active",
       updatedAt: new Date(),
+      // Phithan fields
+      baCode: invitationData.baCode || null,
+      fullName: invitationData.fullName || null,
+      seller: invitationData.seller || null,
     };
 
     // Role-specific fields
