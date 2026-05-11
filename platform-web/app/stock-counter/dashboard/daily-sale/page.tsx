@@ -146,7 +146,7 @@ export default function DailySalePage() {
       }
 
       const snap = await getDocs(q);
-      setSales(snap.docs.map((d) => ({ id: d.id, ...d.data() }) as DailySale));
+      setSales(snap.docs.map((d) => ({ id: d.id, ...(d.data() as Record<string, unknown>) }) as DailySale));
     } catch (e) {
       console.error(e);
       toast.error("ไม่สามารถโหลดข้อมูลได้");
