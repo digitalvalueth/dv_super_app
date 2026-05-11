@@ -121,6 +121,12 @@ const config = {
       projectId: "fc7bbd1e-59a8-4f4c-abe7-4ae3a73df297",
     },
   },
+  updates: {
+    url: "https://u.expo.dev/fc7bbd1e-59a8-4f4c-abe7-4ae3a73df297",
+  },
+  runtimeVersion: {
+    policy: "appVersion",
+  },
   owner: "digitalvalue",
 };
 
