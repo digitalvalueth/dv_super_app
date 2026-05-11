@@ -90,6 +90,32 @@ export const useAuthStore = create<AuthState>((set, get) => ({
                 console.log("✅ User data updated:", userData.email);
                 // Cancel any pending "not-found" clear
                 cancelRetryTimer();
+
+                // Block access if admin disabled the account
+                // DO NOT call signOut() — keeping Firebase Auth session prevents
+                // the auth state from going null and causing a login redirect.
+                // The route guard in (tabs)/_layout.tsx will redirect to /pending-approval.
+                // The user can explicitly logout from that screen.
+                const disabledStatuses = ["inactive", "suspended"];
+                if (
+                  userData.status &&
+                  disabledStatuses.includes(userData.status)
+                ) {
+                  console.log(
+                    "🚫 Account disabled (status:",
+                    userData.status,
+                    "), blocking access",
+                  );
+                  // Stop this Firestore listener — no need to keep watching
+                  if (userUnsubscribe) {
+                    userUnsubscribe();
+                    userUnsubscribe = null;
+                  }
+                  // Set user with disabled status — TabLayout redirect handles the rest
+                  set({ user: userData, loading: false });
+                  return;
+                }
+
                 set({ user: userData, loading: false });
               } else if (!docSnapshot.metadata.fromCache) {
                 // Server confirmed document doesn't exist.

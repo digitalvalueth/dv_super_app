@@ -23,6 +23,7 @@ import {
   getDoc,
   getDocs,
   query,
+  serverTimestamp,
   setDoc,
   Timestamp,
   updateDoc,
@@ -290,6 +291,26 @@ const logLoginActivity = async (userId: string): Promise<void> => {
     console.error("⚠️ Error logging login activity:", error);
     // Don't throw error, just log it - login should succeed even if logging fails
   }
+};
+
+/**
+ * Submit an account deletion REQUEST.
+ * Writes to `account_deletion_requests` collection for admin to review.
+ * The user account is NOT deleted immediately — admin must confirm.
+ * This complies with Apple App Store Guideline 5.1.1 and Google Play policy:
+ * users must be able to INITIATE deletion from within the app.
+ */
+export const requestAccountDeletion = async (): Promise<void> => {
+  const firebaseUser = auth.currentUser;
+  if (!firebaseUser) throw new Error("No authenticated user");
+
+  const reqRef = doc(collection(db, "account_deletion_requests"));
+  await setDoc(reqRef, {
+    uid: firebaseUser.uid,
+    email: firebaseUser.email ?? "",
+    requestedAt: serverTimestamp(),
+    status: "pending", // pending | approved | rejected
+  });
 };
 
 /**

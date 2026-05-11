@@ -18,6 +18,11 @@ export interface User {
   supervisorId?: string; // ID of supervisor (for employees)
   supervisorName?: string; // Name of supervisor
   photoURL?: string; // Profile picture URL from Firebase Auth
+  status?: UserStatus; // active | inactive | suspended
+  // Phithan fields
+  baCode?: string; // รหัส BA / Employee ID
+  fullName?: string; // ชื่อ-นามสกุล (TH)
+  seller?: string; // ยี่ห้อ/seller ที่รับผิดชอบ
   createdAt: Timestamp;
   updatedAt: Timestamp;
 }
@@ -88,6 +93,10 @@ export interface Branch {
   code: string;
   address?: string;
   phone?: string;
+  // Geofence — สำหรับเช็คอิน / รูปถ่าย ว่าอยู่ในพื้นที่สาขาจริง
+  latitude?: number;
+  longitude?: number;
+  radiusMeters?: number; // default 200m
   createdAt: Timestamp;
   updatedAt?: Timestamp;
 }
@@ -507,6 +516,45 @@ export interface DeliveryReceive {
   notes?: string;
   remarks?: string;
 
+  createdAt: Timestamp;
+  updatedAt?: Timestamp;
+}
+
+// ==================== Daily Sale ====================
+export type SaleType = "normal" | "promotion";
+
+export interface DailySaleItem {
+  barcode: string;
+  productDescription: string;
+  productImageUrl?: string;
+  price: number;
+  quantity: number;
+  revenue: number; // price * quantity
+  saleType: SaleType;
+  hasFreebie: boolean;
+  freebieBarcode?: string;
+  freebieDescription?: string;
+  promotionRemark?: string; // promo remark from Watson promotion master (e.g. "Buy 1", "SAVE")
+}
+
+export interface DailySale {
+  id: string;
+  companyId: string;
+  branchId: string;
+  branchName: string;
+  employeeId: string; // uid
+  baCode?: string; // รหัส BA
+  employeeName: string;
+  supervisorId?: string;
+  supervisorName?: string;
+  seller?: string; // ยี่ห้อ/Seller ที่รับผิดชอบ
+  saleDate: string; // "YYYY-MM-DD"
+  saleType?: SaleType; // kept for legacy; per-item saleType is in items[]
+  workDescription?: string;
+  imageUrl?: string;
+  items: DailySaleItem[];
+  totalItems: number;
+  totalRevenue: number;
   createdAt: Timestamp;
   updatedAt?: Timestamp;
 }

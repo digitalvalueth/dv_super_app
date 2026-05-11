@@ -1,6 +1,6 @@
-import { auth, db } from "@/config/firebase";
+import { db } from "@/config/firebase";
 import { useTranslation } from "@/constants/i18n";
-import { deleteAccount, signOut } from "@/services/auth.service";
+import { signOut } from "@/services/auth.service";
 import { useAuthStore } from "@/stores/auth.store";
 import { Language, useLanguageStore } from "@/stores/language.store";
 import { ThemeMode, useTheme, useThemeStore } from "@/stores/theme.store";
@@ -17,7 +17,6 @@ import {
 } from "firebase/firestore";
 import React, { useCallback, useState } from "react";
 import {
-  ActivityIndicator,
   Alert,
   ScrollView,
   StatusBar,
@@ -47,7 +46,6 @@ type SettingItem = SettingItemWithComponent | SettingItemWithPress;
 export default function ProfileScreen() {
   const user = useAuthStore((state) => state.user);
   const logout = useAuthStore((state) => state.logout);
-  const setDeletingAccount = useAuthStore((state) => state.setDeletingAccount);
   const { colors, isDark, mode } = useTheme();
   const setMode = useThemeStore((state) => state.setMode);
   const { language, setLanguage } = useLanguageStore();
@@ -55,7 +53,6 @@ export default function ProfileScreen() {
   const [unreadCount, setUnreadCount] = useState(0);
   const [companyName, setCompanyName] = useState<string>("");
   const [branchName, setBranchName] = useState<string>("");
-  const [isDeleting, setIsDeleting] = useState(false);
 
   // Load company and branch names
   useFocusEffect(
@@ -133,67 +130,6 @@ export default function ProfileScreen() {
             router.replace("/(login)");
           } catch {
             Alert.alert(t.error, t.settings.logoutError);
-          }
-        },
-      },
-    ]);
-  };
-
-  const handleDeleteAccount = () => {
-    const isAppleUser = auth.currentUser?.providerData.some(
-      (p) => p.providerId === "apple.com",
-    );
-    const message = isAppleUser
-      ? `${t.settings.deleteMessage}\n\n⚠️ ระบบจะขอให้ท่านยืนยันตัวตนผ่าน Apple อีกครั้งเพื่อความปลอดภัย`
-      : t.settings.deleteMessage;
-
-    Alert.alert(t.settings.deleteTitle, message, [
-      { text: t.cancel, style: "cancel" },
-      {
-        text: t.settings.deleteAccount,
-        style: "destructive",
-        onPress: async () => {
-          try {
-            // Apple re-auth fires immediately inside deleteAccount() BEFORE
-            // any Firestore writes, so we show the overlay AFTER re-auth resolves.
-            // For that we keep setIsDeleting(true) here — it shows behind the
-            // native Apple sheet, which is fine (sheet is on top).
-            setDeletingAccount(true);
-            console.log("🗑️ Starting deleteAccount...");
-            await deleteAccount(() => {
-              // Apple/Google re-auth done — now safe to show overlay
-              console.log("✅ Re-auth complete, showing loading overlay");
-              setIsDeleting(true);
-            });
-            console.log("✅ deleteAccount complete, redirecting to login...");
-            logout();
-            router.replace("/(login)");
-          } catch (err: any) {
-            setIsDeleting(false);
-            setDeletingAccount(false);
-            if (
-              err?.code === "ERR_REQUEST_CANCELED" ||
-              err?.message === "ERR_REQUEST_CANCELED"
-            ) {
-              console.log(
-                "ℹ️ User cancelled Apple verification — delete aborted",
-              );
-              return;
-            } else if (err?.code === "auth/requires-recent-login") {
-              Alert.alert(t.settings.reloginTitle, t.settings.reloginMessage, [
-                { text: t.cancel, style: "cancel" },
-                {
-                  text: t.settings.logout,
-                  onPress: async () => {
-                    await signOut();
-                    logout();
-                    router.replace("/(login)");
-                  },
-                },
-              ]);
-            } else {
-              Alert.alert(t.error, t.settings.deleteError);
-            }
           }
         },
       },
@@ -340,7 +276,7 @@ export default function ProfileScreen() {
         {
           icon: "person",
           label: t.settings.editProfile,
-          onPress: () => Alert.alert(t.comingSoon, t.comingSoon),
+          onPress: () => router.push("/(tabs)/settings/edit-profile" as any),
         },
         {
           icon: "time",
@@ -348,9 +284,9 @@ export default function ProfileScreen() {
           onPress: () => router.push("/(tabs)/settings/login-history"),
         },
         {
-          icon: "trash",
-          label: t.settings.deleteAccount,
-          onPress: handleDeleteAccount,
+          icon: "shield-checkmark",
+          label: "ความเป็นส่วนตัวและข้อมูล",
+          onPress: () => router.push("/(tabs)/settings/privacy" as any),
         },
       ],
     },
@@ -419,8 +355,21 @@ export default function ProfileScreen() {
           </View>
 
           <Text style={[styles.userName, { color: colors.text }]}>
-            {user?.name || "User"}
+            {user?.fullName || user?.name || "User"}
           </Text>
+          {user?.baCode && (
+            <View
+              style={[
+                styles.roleBadge,
+                { backgroundColor: "#3b82f6" + "20", marginBottom: 0 },
+              ]}
+            >
+              <Ionicons name="id-card" size={14} color="#3b82f6" />
+              <Text style={[styles.roleText, { color: "#3b82f6" }]}>
+                {user.baCode}
+              </Text>
+            </View>
+          )}
           <Text style={[styles.userEmail, { color: colors.textSecondary }]}>
             {user?.email}
           </Text>
@@ -602,14 +551,6 @@ export default function ProfileScreen() {
           </Text>
         </View>
       </ScrollView>
-
-      {/* Loading overlay during account deletion */}
-      {isDeleting && (
-        <View style={styles.deletingOverlay}>
-          <ActivityIndicator size="large" color="#fff" />
-          <Text style={styles.deletingText}>กำลังลบบัญชี...</Text>
-        </View>
-      )}
     </SafeAreaView>
   );
 }

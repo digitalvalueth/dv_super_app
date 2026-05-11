@@ -4,7 +4,6 @@ import { useTheme } from "@/stores/theme.store";
 import { createWatermarkMetadata } from "@/utils/watermark";
 import { Ionicons } from "@expo/vector-icons";
 import { CameraView, useCameraPermissions } from "expo-camera";
-import * as ImagePicker from "expo-image-picker";
 import { router, useFocusEffect } from "expo-router";
 import { useCallback, useRef, useState } from "react";
 import {
@@ -82,49 +81,6 @@ export default function DeliveryCameraScreen() {
       setIsCapturing(false);
     }
   }, [isCapturing, user, setCapturedImage, setWatermarkData]);
-
-  const handlePickImage = useCallback(async () => {
-    try {
-      const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ["images"],
-        allowsEditing: false,
-        quality: 0.8,
-        base64: true,
-      });
-
-      if (result.canceled || !result.assets?.[0]) return;
-
-      const asset = result.assets[0];
-
-      if (!asset.base64) {
-        Alert.alert("เกิดข้อผิดพลาด", "ไม่สามารถอ่านรูปภาพได้");
-        return;
-      }
-
-      // Get watermark metadata
-      const watermarkData = await createWatermarkMetadata(
-        user?.name || "Unknown",
-        user?.uid || "",
-      );
-
-      // Store in zustand
-      setCapturedImage(asset.uri);
-      setWatermarkData(watermarkData);
-
-      // Navigate to preview
-      router.push({
-        pathname: "/(mini-apps)/delivery-receive/preview",
-        params: {
-          imageUri: asset.uri,
-          imageBase64: asset.base64,
-          watermarkData: JSON.stringify(watermarkData),
-        },
-      });
-    } catch (error) {
-      console.error("Error picking image:", error);
-      Alert.alert("เกิดข้อผิดพลาด", "ไม่สามารถเลือกรูปภาพได้");
-    }
-  }, [user, setCapturedImage, setWatermarkData]);
 
   const toggleFlash = () => {
     setFlash((prev) => (prev === "off" ? "on" : "off"));
@@ -254,10 +210,8 @@ export default function DeliveryCameraScreen() {
 
       {/* Bottom controls */}
       <SafeAreaView style={styles.bottomControls} edges={["bottom"]}>
-        {/* Gallery button */}
-        <TouchableOpacity style={styles.sideButton} onPress={handlePickImage}>
-          <Ionicons name="images-outline" size={28} color="#FFFFFF" />
-        </TouchableOpacity>
+        {/* Spacer (gallery picker removed for security/anti-tampering) */}
+        <View style={styles.sideButton} />
 
         {/* Capture button */}
         <TouchableOpacity

@@ -29,7 +29,9 @@ import { toast } from "sonner";
 interface AlertItem {
   uid: string;
   name: string;
+  fullName?: string;
   email: string;
+  baCode?: string;
   branchName: string;
   consecutiveMissingDays: number;
   lastCheckInDate: Date | null;
@@ -149,7 +151,9 @@ export default function AlertsPage() {
           alertItems.push({
             uid,
             name: data.name || data.email || "Unknown",
+            fullName: data.fullName || "",
             email: data.email || "",
+            baCode: data.baCode || "",
             branchName: data.branchName || "",
             consecutiveMissingDays: consecutiveMissing,
             lastCheckInDate,
@@ -400,8 +404,18 @@ export default function AlertsPage() {
                     <td className="px-6 py-4">
                       <div>
                         <p className="font-medium text-gray-900 dark:text-white">
-                          {alert.name}
+                          {alert.fullName || alert.name}
                         </p>
+                        {alert.fullName && alert.fullName !== alert.name && (
+                          <p className="text-xs text-gray-500 dark:text-gray-400">
+                            ({alert.name})
+                          </p>
+                        )}
+                        {alert.baCode && (
+                          <p className="text-xs font-mono text-blue-600 dark:text-blue-400">
+                            รหัส: {alert.baCode}
+                          </p>
+                        )}
                         <p className="text-sm text-gray-500 dark:text-gray-400">
                           {alert.email}
                         </p>

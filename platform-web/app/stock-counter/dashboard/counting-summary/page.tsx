@@ -155,6 +155,12 @@ export default function CountingSummaryPage() {
     Record<string, EodSnapshot>
   >({});
   const [loading, setLoading] = useState(true);
+  const [userFullNameMap, setUserFullNameMap] = useState<
+    Record<string, string>
+  >({});
+  const [userBaCodeMap, setUserBaCodeMap] = useState<Record<string, string>>(
+    {},
+  );
   const [searchTerm, setSearchTerm] = useState("");
   const [filterBranch, setFilterBranch] = useState("all");
   const [filterEmployee, setFilterEmployee] = useState("all");
@@ -272,8 +278,40 @@ export default function CountingSummaryPage() {
     }
   };
 
+  // For Super Admin (no companyId), default to "all months" so they can see all branches' data
+  useEffect(() => {
+    if (userData && !userData.companyId) {
+      setFilterMonth(0);
+      setFilterHalf("all");
+    }
+  }, [userData]);
+
   useEffect(() => {
     if (!userData || !user) return;
+    const fetchUserInfoMaps = async () => {
+      try {
+        const usersQ = userData.companyId
+          ? query(
+              collection(db, "users"),
+              where("companyId", "==", userData.companyId),
+            )
+          : query(collection(db, "users"));
+        const snap = await getDocs(usersQ);
+        const fullNameMap: Record<string, string> = {};
+        const baCodeMap: Record<string, string> = {};
+        snap.forEach((d) => {
+          const data = d.data() as any;
+          const uid = data.uid || d.id;
+          if (data.fullName) fullNameMap[uid] = data.fullName;
+          if (data.baCode) baCodeMap[uid] = data.baCode;
+        });
+        setUserFullNameMap(fullNameMap);
+        setUserBaCodeMap(baCodeMap);
+      } catch (err) {
+        console.error("Error fetching user info maps:", err);
+      }
+    };
+    fetchUserInfoMaps();
     fetchSessions();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [userData, user]);
@@ -444,7 +482,9 @@ export default function CountingSummaryPage() {
     try {
       const wb = XLSX.utils.book_new();
       const completedSessions = sessions.filter(
-        (s) => s.status === "completed",
+        (s) =>
+          (s.status === "completed" || s.status === "approved") &&
+          inSelectedMonth(s),
       );
 
       // Fetch products for UOM data (unitType, unitsPerBox, linkedProductId)
@@ -478,6 +518,8 @@ export default function CountingSummaryPage() {
       const buildRows = (data: CountingSession[]) => [
         [
           "พนักงาน",
+          "ชื่อจริงพนักงาน",
+          "รหัสพนักงาน",
           "อีเมล",
           "สาขา",
           "สินค้า",
@@ -490,19 +532,18 @@ export default function CountingSummaryPage() {
           "จำนวนที่นับได้",
           "AI Count",
           "วันที่เสร็จสิ้น",
-          "ตำแหน่งที่อยู่",
-          "พิกัด",
+          "ตำแหน่ง/พิกัด",
           "แจ้งความผิดพลาด AI",
           "พนักงานรายงาน",
         ],
         ...data.map((s) => {
-          let location = "";
-          let coords = "";
+          let locationOrCoords = "";
           try {
             const w = JSON.parse(s.remarks || "");
-            location = w.location || "";
             if (w.coordinates?.lat != null && w.coordinates?.lng != null) {
-              coords = `${w.coordinates.lat}, ${w.coordinates.lng}`;
+              locationOrCoords = `${w.coordinates.lat}, ${w.coordinates.lng}`;
+            } else if (w.location) {
+              locationOrCoords = w.location;
             }
           } catch {
             /* not watermark JSON */
@@ -519,6 +560,8 @@ export default function CountingSummaryPage() {
             unitType === "box" ? count * (uom?.unitsPerBox || 1) : count;
           return [
             s.userName || "",
+            userFullNameMap[s.userId] || "",
+            userBaCodeMap[s.userId] || "",
             s.userEmail || "",
             s.branchName || "",
             s.productName || "",
@@ -531,8 +574,7 @@ export default function CountingSummaryPage() {
             convertedCount,
             s.aiCount ?? 0,
             s.createdAt ? format(s.createdAt, "dd/MM/yyyy HH:mm") : "",
-            location,
-            coords,
+            locationOrCoords,
             s.errorRemark || "",
             s.userReportedCount != null ? s.userReportedCount : "",
           ];
@@ -654,7 +696,9 @@ export default function CountingSummaryPage() {
   // Build export data for image exports (shared by Excel & PDF with images)
   const buildImageExportData = () => {
     let filtered = sessions.filter(
-      (s) => s.status === "completed" && inSelectedMonth(s),
+      (s) =>
+        (s.status === "completed" || s.status === "approved") &&
+        inSelectedMonth(s),
     );
     if (filterBranch !== "all")
       filtered = filtered.filter(
@@ -679,6 +723,8 @@ export default function CountingSummaryPage() {
       productName: s.productName || "",
       branchName: s.branchName || "",
       userName: s.userName || "",
+      fullName: userFullNameMap[s.userId] || undefined,
+      baCode: userBaCodeMap[s.userId] || undefined,
       finalCount: s.finalCount ?? s.aiCount ?? 0,
       imageUrl: s.imageUrl,
       remarks: s.remarks,
@@ -827,6 +873,9 @@ export default function CountingSummaryPage() {
 
   // Helper: check if session matches selected month/year/half
   const inSelectedMonth = (s: CountingSession) => {
+    // filterMonth === 0 means "all months" (for Super Admin)
+    if (filterMonth === 0) return true;
+
     const selectedPeriodMonth = `${filterYear}-${String(filterMonth).padStart(2, "0")}`;
     const matchesMonth = s.periodMonth
       ? s.periodMonth === selectedPeriodMonth
@@ -846,6 +895,9 @@ export default function CountingSummaryPage() {
 
     return matchesMonth && matchesHalf;
   };
+
+  // Super Admin (no companyId) sees all branches/companies across all time periods
+  const isGlobalAdmin = !userData?.companyId;
 
   const matchesActiveFilters = (s: CountingSession) => {
     if (!inSelectedMonth(s)) return false;
@@ -873,11 +925,15 @@ export default function CountingSummaryPage() {
       filterMonth,
       filterYear,
       filterHalf,
+      isGlobalAdmin,
     ],
   );
 
   const completedVisibleSessions = useMemo(
-    () => visibleSessions.filter((s) => s.status === "completed"),
+    () =>
+      visibleSessions.filter(
+        (s) => s.status === "completed" || s.status === "approved",
+      ),
     [visibleSessions],
   );
 
@@ -1020,24 +1076,32 @@ export default function CountingSummaryPage() {
   const branches = useMemo(() => {
     const map = new Map<string, string>();
     sessions
-      .filter((s) => s.status === "completed" && inSelectedMonth(s))
+      .filter(
+        (s) =>
+          (s.status === "completed" || s.status === "approved") &&
+          inSelectedMonth(s),
+      )
       .forEach((s) => {
         if (s.branchId && s.branchName) map.set(s.branchId, s.branchName);
       });
     return Array.from(map.entries()).map(([id, name]) => ({ id, name }));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sessions, filterMonth, filterYear, filterHalf]);
+  }, [sessions, filterMonth, filterYear, filterHalf, isGlobalAdmin]);
 
   const employees = useMemo(() => {
     const map = new Map<string, string>();
     sessions
-      .filter((s) => s.status === "completed" && inSelectedMonth(s))
+      .filter(
+        (s) =>
+          (s.status === "completed" || s.status === "approved") &&
+          inSelectedMonth(s),
+      )
       .forEach((s) => {
         if (s.userId && s.userName) map.set(s.userId, s.userName);
       });
     return Array.from(map.entries()).map(([id, name]) => ({ id, name }));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sessions, filterMonth, filterYear, filterHalf]);
+  }, [sessions, filterMonth, filterYear, filterHalf, isGlobalAdmin]);
 
   // Summary: group by employee + branch + product
   const summaryRows = useMemo((): SummaryRow[] => {
@@ -1254,6 +1318,7 @@ export default function CountingSummaryPage() {
               onChange={(e) => setFilterMonth(Number(e.target.value))}
               className="w-full px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
             >
+              {isGlobalAdmin && <option value={0}>ทุกเดือน</option>}
               {Array.from({ length: 12 }, (_, i) => i + 1).map((m) => (
                 <option key={m} value={m}>
                   {new Date(2000, m - 1, 1).toLocaleDateString("th-TH", {
@@ -1536,8 +1601,19 @@ export default function CountingSummaryPage() {
                     >
                       <td className="px-6 py-4">
                         <div className="text-sm font-medium text-gray-900 dark:text-white">
-                          {row.userName}
+                          {userFullNameMap[row.userId] || row.userName}
                         </div>
+                        {userFullNameMap[row.userId] &&
+                          userFullNameMap[row.userId] !== row.userName && (
+                            <div className="text-xs text-gray-500 dark:text-gray-400">
+                              ({row.userName})
+                            </div>
+                          )}
+                        {userBaCodeMap[row.userId] && (
+                          <div className="text-xs font-mono text-blue-600 dark:text-blue-400">
+                            รหัส: {userBaCodeMap[row.userId]}
+                          </div>
+                        )}
                         {row.userEmail && (
                           <div className="text-xs text-gray-500 dark:text-gray-400">
                             {row.userEmail}
@@ -1631,7 +1707,8 @@ export default function CountingSummaryPage() {
                         {(() => {
                           const session = sessions.find(
                             (s) =>
-                              s.status === "completed" &&
+                              (s.status === "completed" ||
+                                s.status === "approved") &&
                               s.userId === row.userId &&
                               s.branchId === row.branchId &&
                               s.productId === row.productId,
@@ -1723,8 +1800,19 @@ export default function CountingSummaryPage() {
                             </td>
                             <td className="px-6 py-4">
                               <div className="text-sm font-medium text-gray-900 dark:text-white">
-                                {s.userName}
+                                {userFullNameMap[s.userId] || s.userName}
                               </div>
+                              {userFullNameMap[s.userId] &&
+                                userFullNameMap[s.userId] !== s.userName && (
+                                  <div className="text-xs text-gray-500 dark:text-gray-400">
+                                    ({s.userName})
+                                  </div>
+                                )}
+                              {userBaCodeMap[s.userId] && (
+                                <div className="text-xs font-mono text-blue-600 dark:text-blue-400">
+                                  รหัส: {userBaCodeMap[s.userId]}
+                                </div>
+                              )}
                               <div className="text-xs text-gray-500 dark:text-gray-400">
                                 {s.userEmail}
                               </div>
@@ -1833,12 +1921,12 @@ export default function CountingSummaryPage() {
         {/* Footer row count */}
         <div className="px-6 py-3 border-t border-gray-200 dark:border-gray-700 text-sm text-gray-500 dark:text-gray-400">
           {viewMode === "summary"
-            ? `แสดง ${summaryRows.length} รายการ (สถานะเสร็จสิ้น) จากทั้งหมด ${totalSessions} รายการ${
+            ? `แสดง ${summaryRows.length} รายการ (${isGlobalAdmin ? "เสร็จสิ้น/อนุมัติแล้ว" : "สถานะเสร็จสิ้น"}) จากทั้งหมด ${totalSessions} รายการ${
                 eodComparison.totalItems > 0
                   ? ` · เทียบ EOD ได้ ${eodComparison.matchedItems}/${eodComparison.totalItems} SKU`
                   : ""
               }`
-            : `แสดง ${detailRows.length} รายการ (เสร็จสิ้น) จากทั้งหมด ${totalSessions} รายการ`}
+            : `แสดง ${detailRows.length} รายการ (${isGlobalAdmin ? "เสร็จสิ้น/อนุมัติแล้ว" : "เสร็จสิ้น"}) จากทั้งหมด ${totalSessions} รายการ`}
         </div>
       </div>
 
@@ -1850,6 +1938,8 @@ export default function CountingSummaryPage() {
           userData={userData}
           eodSnapshotsByCode={eodSnapshotsByCode}
           branchesById={branchesById}
+          userFullNameMap={userFullNameMap}
+          userBaCodeMap={userBaCodeMap}
           onOverrideSuccess={(sessionId, finalCount, source) => {
             // Update local state
             setSessions((prev) =>
@@ -1954,6 +2044,8 @@ function SessionDetailModal({
   userData,
   eodSnapshotsByCode,
   branchesById,
+  userFullNameMap,
+  userBaCodeMap,
   onOverrideSuccess,
 }: {
   session: CountingSession;
@@ -1961,6 +2053,8 @@ function SessionDetailModal({
   userData: User | null;
   eodSnapshotsByCode: Record<string, EodSnapshot>;
   branchesById: Record<string, Branch>;
+  userFullNameMap: Record<string, string>;
+  userBaCodeMap: Record<string, string>;
   onOverrideSuccess?: (
     sessionId: string,
     finalCount: number,
@@ -2135,8 +2229,19 @@ function SessionDetailModal({
                     ผู้นับ:
                   </span>{" "}
                   <span className="font-semibold text-gray-900 dark:text-white">
-                    {session.userName}
+                    {userFullNameMap[session.userId] || session.userName}
                   </span>
+                  {userFullNameMap[session.userId] &&
+                    userFullNameMap[session.userId] !== session.userName && (
+                      <span className="ml-1 text-sm text-gray-500 dark:text-gray-400">
+                        ({session.userName})
+                      </span>
+                    )}
+                  {userBaCodeMap[session.userId] && (
+                    <span className="ml-2 text-sm font-mono text-blue-600 dark:text-blue-400">
+                      [{userBaCodeMap[session.userId]}]
+                    </span>
+                  )}
                 </div>
                 <div>
                   <span className="text-gray-600 dark:text-gray-400">
@@ -2271,12 +2376,19 @@ function SessionDetailModal({
                 {watermarkData && (
                   <div className="absolute bottom-0 left-0 right-0 bg-linear-to-t from-black/80 to-transparent p-4">
                     <div className="text-white text-sm space-y-1">
-                      {watermarkData.employeeName && (
+                      {(userFullNameMap[session.userId] ||
+                        watermarkData.employeeName) && (
                         <p className="font-semibold">
-                          {watermarkData.employeeName}
+                          {userFullNameMap[session.userId] ||
+                            watermarkData.employeeName}
                           {watermarkData.branchName
                             ? ` · ${watermarkData.branchName}`
                             : ""}
+                        </p>
+                      )}
+                      {userBaCodeMap[session.userId] && (
+                        <p className="text-xs opacity-90 font-mono">
+                          รหัส: {userBaCodeMap[session.userId]}
                         </p>
                       )}
                       {watermarkData.timestamp && (
@@ -2616,6 +2728,42 @@ function SessionDetailModal({
               className="object-contain"
               onClick={(e) => e.stopPropagation()}
             />
+            {watermarkData && (
+              <div className="absolute bottom-0 left-0 right-0 bg-linear-to-t from-black/80 to-transparent p-6 pointer-events-none">
+                <div className="text-white text-sm space-y-1">
+                  {(userFullNameMap[session.userId] ||
+                    watermarkData.employeeName) && (
+                    <p className="font-semibold text-base">
+                      {userFullNameMap[session.userId] ||
+                        watermarkData.employeeName}
+                      {watermarkData.branchName
+                        ? ` · ${watermarkData.branchName}`
+                        : ""}
+                    </p>
+                  )}
+                  {userBaCodeMap[session.userId] && (
+                    <p className="text-sm opacity-90 font-mono">
+                      รหัส: {userBaCodeMap[session.userId]}
+                    </p>
+                  )}
+                  {watermarkData.timestamp && (
+                    <p className="text-xs opacity-80">
+                      {formatWatermarkTimestamp(watermarkData.timestamp)}
+                    </p>
+                  )}
+                  {watermarkData.location && (
+                    <p className="text-xs opacity-80">
+                      📍 {watermarkData.location}
+                    </p>
+                  )}
+                  {watermarkData.deviceModel && (
+                    <p className="text-xs opacity-80">
+                      📱 {watermarkData.deviceModel}
+                    </p>
+                  )}
+                </div>
+              </div>
+            )}
           </div>
         </div>
       )}

@@ -11,6 +11,10 @@ export interface Invitation {
   branchCode?: string;
   supervisorId?: string;
   supervisorName?: string;
+  // Phithan fields
+  baCode?: string;
+  fullName?: string;
+  seller?: string;
   token: string;
   status: "pending" | "accepted" | "expired";
   expiresAt: Date;
@@ -22,4 +26,8 @@ export interface InvitationRequest {
   name: string;
   role: "employee" | "supervisor" | "manager";
   branchId?: string;
+  baCode?: string;
+  fullName?: string;
+  seller?: string;
+  supervisorId?: string;
 }

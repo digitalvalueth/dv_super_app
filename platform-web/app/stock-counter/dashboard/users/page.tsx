@@ -59,7 +59,26 @@ export default function UsersPage() {
     branchId: "",
     branchIds: [] as string[],
     status: "active" as "pending" | "active" | "inactive" | "suspended",
+    baCode: "",
+    fullName: "",
+    sellerCategory: "",
+    supervisorId: "",
   });
+
+  const [supervisors, setSupervisors] = useState<
+    { id: string; name: string; email: string }[]
+  >([]);
+
+  // Common preset categories — input is free-text but suggestions help consistency
+  const SELLER_CATEGORY_PRESETS = [
+    "Lotus",
+    "BigC",
+    "Watson",
+    "Boots",
+    "Tops",
+    "Makro",
+    "7-Eleven",
+  ];
 
   // ตรวจสอบว่าเป็น superadmin หรือไม่
   const isSuperAdmin = userData?.role === "super_admin";
@@ -129,7 +148,11 @@ export default function UsersPage() {
           status: data.status,
           createdAt: data.createdAt?.toDate(),
           updatedAt: data.updatedAt?.toDate(),
-        });
+          baCode: data.baCode || "",
+          fullName: data.fullName || "",
+          sellerCategory: data.sellerCategory || "",
+          supervisorId: data.supervisorId || "",
+        } as any);
       });
       setUsers(usersData);
 
@@ -162,6 +185,40 @@ export default function UsersPage() {
         });
       });
       setBranches(branchesData);
+
+      // Fetch supervisors (สำหรับ dropdown supervisor)
+      let supervisorsQuery;
+      if (isSuperAdmin) {
+        supervisorsQuery = query(
+          collection(db, "users"),
+          where("role", "in", ["supervisor", "manager", "admin"]),
+        );
+      } else if (userData.companyId) {
+        supervisorsQuery = query(
+          collection(db, "users"),
+          where("companyId", "==", userData.companyId),
+          where("role", "in", ["supervisor", "manager", "admin"]),
+        );
+      }
+      if (supervisorsQuery) {
+        const supervisorsSnapshot = await getDocs(supervisorsQuery);
+        const supervisorsData: { id: string; name: string; email: string }[] =
+          [];
+        supervisorsSnapshot.forEach((doc) => {
+          const data = doc.data() as any;
+          supervisorsData.push({
+            id: data.uid || doc.id,
+            name:
+              data.fullName ||
+              data.name ||
+              data.displayName ||
+              data.email ||
+              "",
+            email: data.email || "",
+          });
+        });
+        setSupervisors(supervisorsData);
+      }
     } catch (error) {
       console.error("Error fetching users:", error);
       toast.error("ไม่สามารถดึงข้อมูลผู้ใช้ได้");
@@ -209,6 +266,10 @@ export default function UsersPage() {
       branchId: user.branchId || "",
       branchIds: existingBranchIds,
       status: user.status || "active",
+      baCode: (user as any).baCode || "",
+      fullName: (user as any).fullName || "",
+      sellerCategory: (user as any).sellerCategory || "",
+      supervisorId: (user as any).supervisorId || "",
     });
     setShowEditModal(true);
   };
@@ -243,6 +304,10 @@ export default function UsersPage() {
         branchIds: editForm.branchIds.length > 0 ? editForm.branchIds : null,
         branchNames: editForm.branchIds.length > 0 ? branchNames : null,
         status: editForm.status,
+        baCode: editForm.baCode || null,
+        fullName: editForm.fullName || null,
+        sellerCategory: editForm.sellerCategory.trim() || null,
+        supervisorId: editForm.supervisorId || null,
         updatedAt: serverTimestamp(),
       });
 
@@ -453,12 +518,24 @@ export default function UsersPage() {
                   <td className="px-4 lg:px-6 py-4">
                     <div className="flex items-center gap-3">
                       <div className="w-10 h-10 bg-blue-600 rounded-full flex items-center justify-center text-white font-semibold shrink-0">
-                        {user.name?.[0]?.toUpperCase() || "U"}
+                        {((user as any).fullName ||
+                          user.name)?.[0]?.toUpperCase() || "U"}
                       </div>
                       <div className="min-w-0">
                         <p className="font-medium text-gray-900 dark:text-white truncate">
-                          {user.name}
+                          {(user as any).fullName || user.name}
                         </p>
+                        {(user as any).fullName &&
+                          (user as any).fullName !== user.name && (
+                            <p className="text-xs text-gray-500 dark:text-gray-400 truncate">
+                              ({user.name})
+                            </p>
+                          )}
+                        {(user as any).baCode && (
+                          <p className="text-xs text-blue-600 dark:text-blue-400 font-mono truncate">
+                            รหัส: {(user as any).baCode}
+                          </p>
+                        )}
                         <p className="text-sm text-gray-500 dark:text-gray-400 truncate">
                           {user.email}
                         </p>
@@ -600,7 +677,88 @@ export default function UsersPage() {
                 <div className="space-y-4">
                   <div>
                     <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                      ชื่อ
+                      รหัสพนักงาน (BA Code)
+                    </label>
+                    <input
+                      type="text"
+                      value={editForm.baCode}
+                      onChange={(e) =>
+                        setEditForm({ ...editForm, baCode: e.target.value })
+                      }
+                      className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white font-mono"
+                      placeholder="เช่น BA001"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                      ชื่อ-นามสกุลจริง
+                    </label>
+                    <input
+                      type="text"
+                      value={editForm.fullName}
+                      onChange={(e) =>
+                        setEditForm({ ...editForm, fullName: e.target.value })
+                      }
+                      className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                      placeholder="ชื่อ-นามสกุลตามบัตรประชาชน"
+                    />
+                  </div>
+
+                  {/* Seller Category */}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                      Seller Category (หมวดหมู่ร้านค้า)
+                    </label>
+                    <input
+                      type="text"
+                      list="user-seller-category-presets"
+                      value={editForm.sellerCategory}
+                      onChange={(e) =>
+                        setEditForm({
+                          ...editForm,
+                          sellerCategory: e.target.value,
+                        })
+                      }
+                      placeholder="เช่น Lotus, BigC, Watson"
+                      className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                    />
+                    <datalist id="user-seller-category-presets">
+                      {SELLER_CATEGORY_PRESETS.map((s) => (
+                        <option key={s} value={s} />
+                      ))}
+                    </datalist>
+                  </div>
+
+                  {/* Supervisor */}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                      Supervisor (หัวหน้าพนักงาน)
+                    </label>
+                    <select
+                      value={editForm.supervisorId}
+                      onChange={(e) =>
+                        setEditForm({
+                          ...editForm,
+                          supervisorId: e.target.value,
+                        })
+                      }
+                      className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                    >
+                      <option value="">-- ไม่ระบุ --</option>
+                      {supervisors
+                        .filter((s) => s.id !== selectedUser?.uid)
+                        .map((s) => (
+                          <option key={s.id} value={s.id}>
+                            {s.name} ({s.email})
+                          </option>
+                        ))}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                      ชื่อ (จาก Google/Apple)
                     </label>
                     <input
                       type="text"

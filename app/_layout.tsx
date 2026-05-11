@@ -11,6 +11,7 @@ import { Stack, useRouter } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
 import { StatusBar } from "expo-status-bar";
 import { useCallback, useEffect, useRef } from "react";
+import { ActivityIndicator, Text, View } from "react-native";
 import "react-native-reanimated";
 
 import { useColorScheme } from "@/hooks/use-color-scheme";
@@ -142,8 +143,33 @@ export default function RootLayout() {
 
   // Show loading screen while initializing or loading fonts
   if (loading || !fontsLoaded) {
-    return null; // or return a loading component
+    return (
+      <View
+        style={{
+          flex: 1,
+          justifyContent: "center",
+          alignItems: "center",
+          backgroundColor: "#0a0a0a",
+          gap: 16,
+        }}
+      >
+        <ActivityIndicator size="large" color="#ffffff" />
+        <Text style={{ color: "#888", fontSize: 14 }}>กำลังตรวจสอบ...</Text>
+      </View>
+    );
   }
+
+  // Determine initial route once — avoids redirect chain:
+  // disabled → pending-approval directly (skip login → tabs → pending-approval)
+  // authenticated → (tabs) directly (skip login → tabs)
+  // unauthenticated → (login)
+  const isDisabled =
+    user?.status === "inactive" || user?.status === "suspended";
+  const initialRouteName = isDisabled
+    ? "pending-approval"
+    : user
+      ? "(tabs)"
+      : "(login)";
 
   return (
     <ThemeProvider value={colorScheme === "dark" ? DarkTheme : DefaultTheme}>
@@ -151,7 +177,7 @@ export default function RootLayout() {
         screenOptions={{
           headerShown: false,
         }}
-        initialRouteName="(login)"
+        initialRouteName={initialRouteName}
       >
         <Stack.Screen name="(login)" />
         <Stack.Screen name="(tabs)" />

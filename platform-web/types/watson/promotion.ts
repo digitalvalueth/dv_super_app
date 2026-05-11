@@ -1,12 +1,17 @@
 // Types for Promotion Master Data
 
 export interface PromotionItem {
-  itemCode: string;
+  itemCode: string; // Watson Code
+  barcode?: string; // Product barcode (EAN/UPC)
   itemName: string;
-  stdPrice: number;
-  promoPrice: number | null;
+  stdPrice: number; // Standard Price IncV
+  commPrice?: number | null; // Comm Price IncV
+  invoice62IncV?: number | null; // Invoice 62% IncV
+  invoice62ExV?: number | null; // Invoice 62% ExV
+  promoPrice: number | null; // kept for backward-compat
   promoStart: Date | null;
   promoEnd: Date | null;
+  remark?: string; // e.g. "SAVE", "Buy 1"
 }
 
 export interface PromotionMaster {

@@ -2,6 +2,7 @@ import * as admin from "firebase-admin";
 import { autoAssign } from "./auto-assign";
 import { checkMissingCheckIn } from "./check-missing-checkin";
 import { onCheckInWrite } from "./checkin-notifications";
+import { processAccountDeletion } from "./process-account-deletion";
 import { getServerTime } from "./server-time";
 
 admin.initializeApp();
@@ -10,7 +11,7 @@ admin.initializeApp();
 export { autoAssign, checkMissingCheckIn };
 
 // Export Firestore-triggered functions
-export { onCheckInWrite };
+export { onCheckInWrite, processAccountDeletion };
 
 // Export HTTPS callable functions
 export { getServerTime };

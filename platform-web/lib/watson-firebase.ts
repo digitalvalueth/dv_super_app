@@ -876,24 +876,91 @@ export async function clearAllActivityLogsFull(): Promise<void> {
 const PROMOTION_DOC_ID = "current";
 
 export async function savePromotionData(items: PromotionItem[]): Promise<void> {
+  // Convert Date fields to Firestore Timestamps
+  const serialized = items.map((it) => ({
+    ...it,
+    promoStart:
+      it.promoStart instanceof Date
+        ? Timestamp.fromDate(it.promoStart)
+        : (it.promoStart ?? null),
+    promoEnd:
+      it.promoEnd instanceof Date
+        ? Timestamp.fromDate(it.promoEnd)
+        : (it.promoEnd ?? null),
+  }));
+
+  // Save to localStorage as backup
+  if (typeof window !== "undefined") {
+    try {
+      localStorage.setItem("promotion_data_backup", JSON.stringify(items));
+    } catch {
+      console.warn("Could not save promotion data backup to localStorage");
+    }
+  }
+
   const db = getFirestoreDb();
   const docRef = doc(db, COLLECTIONS.PROMOTION_DATA, PROMOTION_DOC_ID);
 
   await setDoc(docRef, {
     id: PROMOTION_DOC_ID,
     updatedAt: Timestamp.now(),
-    items,
+    items: serialized,
   });
 }
 
 export async function getPromotionData(): Promise<PromotionItem[]> {
-  const db = getFirestoreDb();
-  const docRef = doc(db, COLLECTIONS.PROMOTION_DATA, PROMOTION_DOC_ID);
-  const docSnap = await getDoc(docRef);
+  try {
+    const db = getFirestoreDb();
+    const docRef = doc(db, COLLECTIONS.PROMOTION_DATA, PROMOTION_DOC_ID);
+    const docSnap = await getDoc(docRef);
 
-  if (!docSnap.exists()) return [];
-  const data = docSnap.data() as PromotionDataDocument;
-  return data.items || [];
+    if (!docSnap.exists()) return [];
+    const data = docSnap.data() as PromotionDataDocument;
+    const rawItems = data.items || [];
+
+    // Convert Firestore Timestamps back to JS Dates
+    const items: PromotionItem[] = rawItems.map((it: any) => ({
+      ...it,
+      promoStart:
+        it.promoStart instanceof Timestamp
+          ? it.promoStart.toDate()
+          : it.promoStart
+            ? new Date(it.promoStart)
+            : null,
+      promoEnd:
+        it.promoEnd instanceof Timestamp
+          ? it.promoEnd.toDate()
+          : it.promoEnd
+            ? new Date(it.promoEnd)
+            : null,
+    }));
+
+    // Update localStorage cache on successful fetch
+    if (typeof window !== "undefined" && items.length > 0) {
+      try {
+        localStorage.setItem("promotion_data_backup", JSON.stringify(items));
+      } catch {
+        // ignore
+      }
+    }
+
+    return items;
+  } catch (error: any) {
+    // Offline fallback: try localStorage cache
+    if (
+      typeof window !== "undefined" &&
+      (error?.code === "unavailable" || error?.message?.includes("offline"))
+    ) {
+      console.warn("Firestore offline — loading promotion data from cache");
+      try {
+        const cached = localStorage.getItem("promotion_data_backup");
+        if (cached) return JSON.parse(cached) as PromotionItem[];
+      } catch {
+        // ignore
+      }
+    }
+    throw error;
+  }
 }
 
 // ==================== Current Price List Functions ====================

@@ -1,7 +1,8 @@
 "use client";
 
-import { auth } from "@/lib/firebase";
+import { auth, db } from "@/lib/firebase";
 import { useAuthStore } from "@/stores/auth.store";
+import { collection, getDocs, query, where } from "firebase/firestore";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 
@@ -45,6 +46,12 @@ export default function SupervisorDashboard() {
   });
   const [loading, setLoading] = useState(true);
   const [bulkAssigning, setBulkAssigning] = useState(false);
+  const [userFullNameMap, setUserFullNameMap] = useState<
+    Record<string, string>
+  >({});
+  const [userBaCodeMap, setUserBaCodeMap] = useState<Record<string, string>>(
+    {},
+  );
 
   // Redirect non-supervisors
   useEffect(() => {
@@ -52,6 +59,66 @@ export default function SupervisorDashboard() {
       router.push("/dashboard");
     }
   }, [userData, router]);
+
+  // Fetch userId → fullName + baCode map
+  useEffect(() => {
+    if (!userData) return;
+    const fetchUserInfoMaps = async () => {
+      try {
+        const usersQ = userData.companyId
+          ? query(
+              collection(db, "users"),
+              where("companyId", "==", userData.companyId),
+            )
+          : query(collection(db, "users"));
+        const snap = await getDocs(usersQ);
+        const fullNameMap: Record<string, string> = {};
+        const baCodeMap: Record<string, string> = {};
+        snap.forEach((d) => {
+          const data = d.data() as any;
+          const uid = data.uid || d.id;
+          if (data.fullName) fullNameMap[uid] = data.fullName;
+          if (data.baCode) baCodeMap[uid] = data.baCode;
+        });
+        setUserFullNameMap(fullNameMap);
+        setUserBaCodeMap(baCodeMap);
+      } catch (err) {
+        console.error("Error fetching user info maps:", err);
+      }
+    };
+    fetchUserInfoMaps();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [userData]);
+
+  // Fetch userId → fullName + baCode map
+  useEffect(() => {
+    if (!userData) return;
+    const fetchUserInfoMaps = async () => {
+      try {
+        const usersQ = userData.companyId
+          ? query(
+              collection(db, "users"),
+              where("companyId", "==", userData.companyId),
+            )
+          : query(collection(db, "users"));
+        const snap = await getDocs(usersQ);
+        const fullNameMap: Record<string, string> = {};
+        const baCodeMap: Record<string, string> = {};
+        snap.forEach((d) => {
+          const data = d.data() as any;
+          const uid = data.uid || d.id;
+          if (data.fullName) fullNameMap[uid] = data.fullName;
+          if (data.baCode) baCodeMap[uid] = data.baCode;
+        });
+        setUserFullNameMap(fullNameMap);
+        setUserBaCodeMap(baCodeMap);
+      } catch (err) {
+        console.error("Error fetching user info maps:", err);
+      }
+    };
+    fetchUserInfoMaps();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [userData]);
 
   // Fetch employees and assignments
   useEffect(() => {
@@ -358,8 +425,19 @@ export default function SupervisorDashboard() {
                     <tr key={employee.id} className="hover:bg-gray-50">
                       <td className="px-6 py-4 whitespace-nowrap">
                         <div className="text-sm font-medium text-gray-900">
-                          {employee.name}
+                          {userFullNameMap[employee.id] || employee.name}
                         </div>
+                        {userFullNameMap[employee.id] &&
+                          userFullNameMap[employee.id] !== employee.name && (
+                            <div className="text-xs text-gray-500">
+                              ({employee.name})
+                            </div>
+                          )}
+                        {userBaCodeMap[employee.id] && (
+                          <div className="text-xs font-mono text-blue-600">
+                            รหัส: {userBaCodeMap[employee.id]}
+                          </div>
+                        )}
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap">
                         <div className="text-sm text-gray-600">

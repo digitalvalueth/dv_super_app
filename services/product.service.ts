@@ -359,12 +359,25 @@ export const subscribeToProductsWithAssignments = (
                   continue;
                 }
 
-                // Find all branch entries for this product in the assignment map
+                // Find all branch entries for this product in the assignment map.
+                // If the product document has a branchId, only match assignments for
+                // THAT branch to prevent cross-branch image leakage (e.g. branch 41063
+                // photo showing up in branch 3316's product list).
                 const matchingEntries = Array.from(
                   productAssignmentMap.entries(),
-                ).filter(([key]) =>
-                  key.startsWith(`${productData.productId}__`),
-                );
+                ).filter(([key]) => {
+                  if (!key.startsWith(`${productData.productId}__`))
+                    return false;
+                  // Branch-scoped product: only match the exact branch
+                  if (productData.branchId) {
+                    return (
+                      key ===
+                      `${productData.productId}__${productData.branchId}`
+                    );
+                  }
+                  // Company-level product (no branchId): match any branch
+                  return true;
+                });
 
                 for (const [, assignmentInfo] of matchingEntries) {
                   // Determine status

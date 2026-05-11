@@ -1,13 +1,8 @@
 import { useAuthStore } from "@/stores/auth.store";
 import { useTheme } from "@/stores/theme.store";
-import {
-  createWatermarkMetadata,
-  getCurrentLocation,
-  validateImageExif,
-} from "@/utils/watermark";
+import { createWatermarkMetadata, getCurrentLocation } from "@/utils/watermark";
 import { Ionicons } from "@expo/vector-icons";
 import { CameraView, useCameraPermissions } from "expo-camera";
-import * as ImagePicker from "expo-image-picker";
 import { router, useFocusEffect, useLocalSearchParams } from "expo-router";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
@@ -140,84 +135,6 @@ export default function CameraScreen() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isCapturing, user, params, prefetchedLocation]);
-
-  const handlePickImage = useCallback(async () => {
-    try {
-      const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ["images"],
-        allowsEditing: false,
-        quality: 0.8,
-        // No base64: true here — read lazily in preview when AI is triggered (same as camera capture)
-        exif: true, // Required for metadata validation only
-      });
-
-      if (result.canceled || !result.assets?.[0]) return;
-
-      const asset = result.assets[0];
-
-      // Validate EXIF metadata from the gallery image
-      const exifResult = validateImageExif(
-        asset.exif as Record<string, unknown>,
-      );
-
-      if (exifResult.reason === "too_old") {
-        const takenAtStr = exifResult.takenAt
-          ? exifResult.takenAt.toLocaleString("th-TH", {
-              dateStyle: "short",
-              timeStyle: "short",
-            })
-          : "";
-        Alert.alert(
-          "รูปภาพเก่าเกินไป",
-          `รูปนี้ถ่ายเมื่อ ${takenAtStr}\nกรุณาถ่ายรูปใหม่โดยตรงจากกล้องถ่าย`,
-        );
-        return;
-      }
-
-      if (exifResult.reason === "no_exif" || exifResult.reason === "no_date") {
-        Alert.alert(
-          "ไม่อนุญาตให้ใช้ภาพนี้",
-          "รูปนี้ไม่มีข้อมูลวันเวลาถ่าย (อาจเป็น screenshot หรือรูปที่ดาวน์โหลด)\nกรุณาถ่ายรูปใหม่โดยตรงจากกล้องเท่านั้น",
-        );
-        return;
-      }
-
-      // Get watermark metadata (use pre-fetched location if available)
-      const watermarkData = await createWatermarkMetadata(
-        user?.name || "Unknown",
-        user?.uid || "",
-        user?.branchName || "",
-        params.productName,
-        params.productBarcode,
-        prefetchedLocation ?? undefined,
-      );
-
-      // Navigate to preview
-      router.push({
-        pathname: "/(mini-apps)/stock-counter/preview",
-        params: {
-          imageUri: asset.uri,
-          imageBase64: "", // lazy read in preview, same as camera capture
-          watermarkData: JSON.stringify(watermarkData),
-          productId: params.productId,
-          productName: params.productName,
-          productBarcode: params.productBarcode,
-          assignmentId: params.assignmentId,
-          beforeQty: params.beforeQty,
-          assignmentBranchId: params.assignmentBranchId || "",
-          existingSessionId: params.existingSessionId || "",
-          nativeScannedBarcode: scannedBarcode || "",
-          isSupplementMode: params.isSupplementMode || "",
-          originalSessionId: params.originalSessionId || "",
-          isSupplemental: params.isSupplemental || "",
-        },
-      });
-    } catch (error) {
-      console.error("Error picking image:", error);
-      Alert.alert("เกิดข้อผิดพลาด", "ไม่สามารถเลือกรูปภาพได้");
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user, params]);
 
   const toggleFlash = () => {
     setFlash((prev) => (prev === "off" ? "on" : "off"));
@@ -376,11 +293,6 @@ export default function CameraScreen() {
 
       {/* Bottom controls - Absolute positioned */}
       <SafeAreaView style={styles.controls} edges={["bottom"]}>
-        {/* Gallery button */}
-        <TouchableOpacity style={styles.sideButton} onPress={handlePickImage}>
-          <Ionicons name="images" size={28} color="#fff" />
-        </TouchableOpacity>
-
         {/* Capture button */}
         <TouchableOpacity
           style={styles.captureButton}
@@ -395,7 +307,7 @@ export default function CameraScreen() {
         </TouchableOpacity>
 
         {/* Flip camera button */}
-        <TouchableOpacity style={styles.sideButton} onPress={toggleFacing}>
+        <TouchableOpacity style={styles.flipButton} onPress={toggleFacing}>
           <Ionicons name="camera-reverse" size={28} color="#fff" />
         </TouchableOpacity>
       </SafeAreaView>
@@ -568,12 +480,14 @@ const styles = StyleSheet.create({
     zIndex: 10,
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "space-around",
+    justifyContent: "center",
     paddingVertical: 24,
     paddingHorizontal: 32,
     backgroundColor: "rgba(0,0,0,0.3)",
   },
-  sideButton: {
+  flipButton: {
+    position: "absolute",
+    right: 48,
     width: 56,
     height: 56,
     borderRadius: 28,

@@ -14,6 +14,7 @@ export const COLLECTIONS = {
   INVOICE_UPLOADS: "watson_invoice_uploads",
   ACTIVITY_LOGS_FULL: "watson_activity_logs_full",
   PROMOTION_DATA: "watson_promotion_data",
+  PROMOTION_UPLOAD_HISTORY: "watson_promotion_upload_history",
   CURRENT_PRICE_LIST: "watson_current_pricelist",
 } as const;
 

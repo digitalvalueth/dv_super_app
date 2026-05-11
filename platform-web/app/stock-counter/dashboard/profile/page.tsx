@@ -25,6 +25,8 @@ export default function ProfilePage() {
     name: "",
     displayName: "",
     phoneNumber: "",
+    baCode: "",
+    fullName: "",
   });
 
   useEffect(() => {
@@ -33,6 +35,8 @@ export default function ProfilePage() {
         name: userData.name || "",
         displayName: userData.displayName || "",
         phoneNumber: userData.phoneNumber || "",
+        baCode: (userData as any).baCode || "",
+        fullName: (userData as any).fullName || "",
       });
 
       // Fetch company name from Firestore
@@ -86,6 +90,8 @@ export default function ProfilePage() {
         name: formData.name,
         displayName: formData.displayName,
         phoneNumber: formData.phoneNumber,
+        baCode: formData.baCode,
+        fullName: formData.fullName,
       });
 
       toast.success("บันทึกข้อมูลเรียบร้อยแล้ว");
@@ -104,6 +110,8 @@ export default function ProfilePage() {
         name: userData.name || "",
         displayName: userData.displayName || "",
         phoneNumber: userData.phoneNumber || "",
+        baCode: (userData as any).baCode || "",
+        fullName: (userData as any).fullName || "",
       });
     }
     setIsEditing(false);
@@ -267,6 +275,54 @@ export default function ProfilePage() {
               ) : (
                 <p className="text-gray-900">
                   {userData.name || (
+                    <span className="text-gray-400">ไม่ระบุ</span>
+                  )}
+                </p>
+              )}
+            </div>
+
+            {/* BA Code */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                รหัสพนักงาน (BA Code)
+              </label>
+              {isEditing ? (
+                <input
+                  type="text"
+                  value={formData.baCode}
+                  onChange={(e) =>
+                    setFormData({ ...formData, baCode: e.target.value })
+                  }
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  placeholder="กรอกรหัสพนักงาน"
+                />
+              ) : (
+                <p className="text-gray-900 font-mono">
+                  {(userData as any).baCode || (
+                    <span className="text-gray-400">ไม่ระบุ</span>
+                  )}
+                </p>
+              )}
+            </div>
+
+            {/* Full Name */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                ชื่อ-นามสกุลจริง
+              </label>
+              {isEditing ? (
+                <input
+                  type="text"
+                  value={formData.fullName}
+                  onChange={(e) =>
+                    setFormData({ ...formData, fullName: e.target.value })
+                  }
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  placeholder="กรอกชื่อ-นามสกุลจริง"
+                />
+              ) : (
+                <p className="text-gray-900">
+                  {(userData as any).fullName || (
                     <span className="text-gray-400">ไม่ระบุ</span>
                   )}
                 </p>

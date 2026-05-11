@@ -31,8 +31,16 @@ export default function AuthLayout() {
     );
   }
 
-  // If user is authenticated, redirect to tabs (regardless of company/branch)
+  // If user is authenticated, redirect appropriately
   if (user) {
+    const isDisabled =
+      user.status === "inactive" || user.status === "suspended";
+    if (isDisabled) {
+      console.log(
+        "🚫 AuthLayout - Account disabled, redirecting to pending-approval",
+      );
+      return <Redirect href="/pending-approval" />;
+    }
     console.log("🚀 Redirecting to /(tabs)/home");
     return <Redirect href="/(tabs)/home" />;
   }

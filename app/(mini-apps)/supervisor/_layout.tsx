@@ -34,6 +34,10 @@ export default function SupervisorLayout() {
         name="supplement-review"
         options={{ title: "นับเสริม", headerBackTitle: "กลับ" }}
       />
+      <Stack.Screen
+        name="account-deletion-requests"
+        options={{ title: "คำขอลบบัญชี", headerBackTitle: "กลับ" }}
+      />
     </Stack>
   );
 }

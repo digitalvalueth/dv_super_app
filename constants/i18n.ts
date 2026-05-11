@@ -97,6 +97,16 @@ const translations = {
       deleteMessage:
         "คุณแน่ใจว่าต้องการลบบัญชีนี้หรือไม่? ข้อมูลทั้งหมดจะถูกลบอย่างถาวรและไม่สามารถกู้คืนได้",
       deleteError: "ไม่สามารถลบบัญชีได้ กรุณาติดต่อผู้ดูแลระบบ",
+      requestDeleteTitle: "ส่งคำขอลบบัญชี",
+      requestDeleteBtn: "ส่งคำขอลบบัญชี",
+      requestDeleteConfirm: "ยืนยันการส่งคำขอ",
+      requestDeleteMessage:
+        "คำขอของท่านจะถูกส่งให้ผู้ดูแลระบบพิจารณา ข้อมูลจะยังไม่ถูกลบทันที และจะดำเนินการหลังจากผู้ดูแลอนุมัติเท่านั้น",
+      requestDeleteSuccess: "ส่งคำขอสำเร็จ",
+      requestDeleteSuccessMessage:
+        "คำขอลบบัญชีของท่านถูกบันทึกแล้ว ทีมงานจะดำเนินการภายใน 7–30 วัน และแจ้งให้ทราบทางอีเมล",
+      requestDeleteError:
+        "ไม่สามารถส่งคำขอได้ กรุณาลองใหม่หรือติดต่อผู้ดูแลระบบ",
       reloginTitle: "ต้องเข้าสู่ระบบใหม่",
       reloginMessage:
         "เพื่อความปลอดภัย กรุณาออกจากระบบแล้วเข้าสู่ระบบใหม่ จากนั้นลองลบบัญชีอีกครั้ง",
@@ -209,6 +219,16 @@ const translations = {
         "Are you sure you want to delete your account? All data will be permanently deleted and cannot be recovered.",
       deleteError:
         "Unable to delete account. Please contact the administrator.",
+      requestDeleteTitle: "Request Account Deletion",
+      requestDeleteBtn: "Request Account Deletion",
+      requestDeleteConfirm: "Confirm Request",
+      requestDeleteMessage:
+        "Your request will be sent to the administrator for review. Your account will not be deleted immediately — it will only be processed after admin approval.",
+      requestDeleteSuccess: "Request Submitted",
+      requestDeleteSuccessMessage:
+        "Your account deletion request has been recorded. Our team will process it within 7–30 days and notify you by email.",
+      requestDeleteError:
+        "Unable to submit request. Please try again or contact the administrator.",
       reloginTitle: "Re-authentication Required",
       reloginMessage:
         "For security, please sign out and sign back in, then try deleting your account again.",

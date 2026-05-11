@@ -186,6 +186,17 @@ export default function LoginScreen() {
         console.log("✅ Firebase Auth Success:", user.email);
         setUser(user);
 
+        // If admin disabled the account, go directly to pending-approval
+        const isDisabled =
+          user.status === "inactive" || user.status === "suspended";
+        if (isDisabled) {
+          console.log(
+            "🚫 Account disabled after login, redirecting to pending-approval",
+          );
+          router.replace("/pending-approval");
+          return;
+        }
+
         // Check if onboarding is completed
         const onboardingCompleted = await AsyncStorage.getItem(
           "onboarding_completed",

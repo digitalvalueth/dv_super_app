@@ -29,6 +29,12 @@ export default function ReportsPage() {
   const { userData } = useAuthStore();
   const [allSessions, setAllSessions] = useState<CountingSession[]>([]);
   const [loading, setLoading] = useState(true);
+  const [userFullNameMap, setUserFullNameMap] = useState<
+    Record<string, string>
+  >({});
+  const [userBaCodeMap, setUserBaCodeMap] = useState<Record<string, string>>(
+    {},
+  );
   const [filterMonth, setFilterMonth] = useState<number>(
     new Date().getMonth() + 1,
   );
@@ -144,6 +150,31 @@ export default function ReportsPage() {
 
   useEffect(() => {
     if (!userData) return;
+
+    const fetchUserInfoMaps = async () => {
+      try {
+        const usersQ = userData.companyId
+          ? query(
+              collection(db, "users"),
+              where("companyId", "==", userData.companyId),
+            )
+          : query(collection(db, "users"));
+        const snap = await getDocs(usersQ);
+        const fullNameMap: Record<string, string> = {};
+        const baCodeMap: Record<string, string> = {};
+        snap.forEach((d) => {
+          const data = d.data() as any;
+          const uid = data.uid || d.id;
+          if (data.fullName) fullNameMap[uid] = data.fullName;
+          if (data.baCode) baCodeMap[uid] = data.baCode;
+        });
+        setUserFullNameMap(fullNameMap);
+        setUserBaCodeMap(baCodeMap);
+      } catch (err) {
+        console.error("Error fetching user info maps:", err);
+      }
+    };
+    fetchUserInfoMaps();
 
     const fetchReportData = async () => {
       try {
@@ -500,7 +531,18 @@ export default function ReportsPage() {
                       <span className="font-semibold text-gray-900">
                         {index + 1}.
                       </span>{" "}
-                      {user.userName}
+                      {userFullNameMap[user.userId] || user.userName}
+                      {userFullNameMap[user.userId] &&
+                        userFullNameMap[user.userId] !== user.userName && (
+                          <span className="ml-1 text-xs text-gray-500">
+                            ({user.userName})
+                          </span>
+                        )}
+                      {userBaCodeMap[user.userId] && (
+                        <span className="ml-1 text-xs font-mono text-blue-600">
+                          [{userBaCodeMap[user.userId]}]
+                        </span>
+                      )}
                     </td>
                     <td className="px-4 py-2 text-right font-semibold text-red-600">
                       {user.totalDiscrepancy}

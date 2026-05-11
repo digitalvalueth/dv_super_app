@@ -3,7 +3,13 @@ import { useAuthStore } from "@/stores/auth.store";
 import { useTheme } from "@/stores/theme.store";
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
-import { collection, getDocs, query, where } from "firebase/firestore";
+import {
+  collection,
+  getDocs,
+  onSnapshot,
+  query,
+  where,
+} from "firebase/firestore";
 import { useCallback, useEffect, useState } from "react";
 import {
   RefreshControl,
@@ -29,6 +35,7 @@ export default function SupervisorDashboard() {
   const { colors } = useTheme();
   const user = useAuthStore((s) => s.user);
   const [refreshing, setRefreshing] = useState(false);
+  const [pendingDeletionCount, setPendingDeletionCount] = useState(0);
   const [stats, setStats] = useState<DashboardStats>({
     totalBA: 0,
     checkedInToday: 0,
@@ -105,6 +112,16 @@ export default function SupervisorDashboard() {
     loadStats();
   }, [loadStats]);
 
+  // Live badge for pending deletion requests
+  useEffect(() => {
+    const q = query(
+      collection(db, "account_deletion_requests"),
+      where("status", "==", "pending"),
+    );
+    const unsub = onSnapshot(q, (snap) => setPendingDeletionCount(snap.size));
+    return unsub;
+  }, []);
+
   const onRefresh = async () => {
     setRefreshing(true);
     await loadStats();
@@ -147,6 +164,15 @@ export default function SupervisorDashboard() {
       color: "#8b5cf6",
       badge: 0,
       route: "/(mini-apps)/supervisor/supplement-review",
+    },
+    {
+      id: "account-deletion-requests",
+      title: "คำขอลบบัญชี",
+      subtitle: "พิจารณาและอนุมัติคำขอลบบัญชีผู้ใช้",
+      icon: "person-remove-outline" as const,
+      color: "#DC2626",
+      badge: pendingDeletionCount,
+      route: "/(mini-apps)/supervisor/account-deletion-requests",
     },
   ];
 

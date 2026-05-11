@@ -15,7 +15,7 @@ import {
   updateDoc,
   where,
 } from "firebase/firestore";
-import { Check, Clock, Plus, X } from "lucide-react";
+import { Check, Clock, Plus, UserCheck, UserX, X } from "lucide-react";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 
@@ -23,16 +23,30 @@ export default function InvitationsPage() {
   const { userData } = useAuthStore();
   const [invitations, setInvitations] = useState<Invitation[]>([]);
   const [branches, setBranches] = useState<Branch[]>([]);
+  const [supervisors, setSupervisors] = useState<
+    { id: string; name: string; email: string }[]
+  >([]);
   const [loading, setLoading] = useState(true);
   const [showInviteForm, setShowInviteForm] = useState(false);
   const [showBulkInviteForm, setShowBulkInviteForm] = useState(false);
   const [bulkEmails, setBulkEmails] = useState("");
   const [companyDisplayName, setCompanyDisplayName] = useState("");
+  // Branch search states for combobox
+  const [branchSearch, setBranchSearch] = useState("");
+  const [showBranchDropdown, setShowBranchDropdown] = useState(false);
+  const [branchMultiSearch, setBranchMultiSearch] = useState("");
+  // Supervisor search states for combobox
+  const [supervisorSearch, setSupervisorSearch] = useState("");
+  const [showSupervisorDropdown, setShowSupervisorDropdown] = useState(false);
   const [formData, setFormData] = useState({
     email: "",
     role: "employee" as "manager" | "supervisor" | "employee",
     branchId: "",
     branchIds: [] as string[],
+    // Phithan fields
+    baCode: "",
+    fullName: "",
+    supervisorId: "",
   });
 
   useEffect(() => {
@@ -75,7 +89,13 @@ export default function InvitationsPage() {
       // Fetch invitations
       const invitationsSnapshot = await getDocs(invitationsQuery);
 
-      const invitationsData: Invitation[] = [];
+      const invitationsData: (Invitation & {
+        baCode?: string;
+        fullName?: string;
+        supervisorId?: string;
+        userId?: string;
+        userStatus?: string;
+      })[] = [];
       invitationsSnapshot.forEach((doc) => {
         const data = doc.data() as any;
         invitationsData.push({
@@ -91,12 +111,47 @@ export default function InvitationsPage() {
           status: data.status,
           createdAt: data.createdAt?.toDate(),
           expiresAt: data.expiresAt?.toDate(),
+          baCode: data.baCode || "",
+          fullName: data.fullName || "",
+          supervisorId: data.supervisorId || "",
         });
       });
 
       invitationsData.sort(
         (a, b) => (b.createdAt?.getTime() || 0) - (a.createdAt?.getTime() || 0),
       );
+
+      // ดึง user ที่ตอบรับ invitation แล้ว เพื่อหา status (active/inactive)
+      const acceptedEmails = invitationsData
+        .filter((inv) => inv.status === "accepted")
+        .map((inv) => inv.email);
+      if (acceptedEmails.length > 0) {
+        // Firestore 'in' query รองบิลสูงสุด 30 ตัว — แบ่งเป็น chunk
+        const userMap = new Map<string, { id: string; status: string }>();
+        for (let i = 0; i < acceptedEmails.length; i += 30) {
+          const chunk = acceptedEmails.slice(i, i + 30);
+          const usersSnap = await getDocs(
+            query(collection(db, "users"), where("email", "in", chunk)),
+          );
+          usersSnap.forEach((d) => {
+            const u = d.data() as any;
+            if (u.email) {
+              userMap.set(u.email, {
+                id: d.id,
+                status: u.status || "active",
+              });
+            }
+          });
+        }
+        invitationsData.forEach((inv) => {
+          const u = userMap.get(inv.email);
+          if (u) {
+            inv.userId = u.id;
+            inv.userStatus = u.status;
+          }
+        });
+      }
+
       setInvitations(invitationsData);
 
       // Fetch branches
@@ -122,6 +177,32 @@ export default function InvitationsPage() {
       const branchesData: Branch[] = Array.from(branchesMap.values());
 
       setBranches(branchesData);
+
+      // Fetch supervisors (สำหรับ dropdown ตอนเชิญ employee)
+      let supervisorsQuery;
+      if (companyId) {
+        supervisorsQuery = query(
+          collection(db, "users"),
+          where("companyId", "==", companyId),
+          where("role", "in", ["supervisor", "manager", "admin"]),
+        );
+      } else {
+        supervisorsQuery = query(
+          collection(db, "users"),
+          where("role", "in", ["supervisor", "manager", "admin"]),
+        );
+      }
+      const supervisorsSnapshot = await getDocs(supervisorsQuery);
+      const supervisorsData: { id: string; name: string; email: string }[] = [];
+      supervisorsSnapshot.forEach((doc) => {
+        const data = doc.data() as any;
+        supervisorsData.push({
+          id: data.uid || doc.id,
+          name: data.fullName || data.name || data.displayName || data.email,
+          email: data.email,
+        });
+      });
+      setSupervisors(supervisorsData);
     } catch (error) {
       console.error("Error fetching data:", error);
       toast.error("เกิดข้อผิดพลาดในการโหลดข้อมูล");
@@ -164,9 +245,15 @@ export default function InvitationsPage() {
 
       const body: any = {
         email: formData.email,
-        name: formData.email.split("@")[0],
+        name: formData.fullName.trim() || formData.email.split("@")[0],
         role: formData.role,
         companyId: effectiveCompanyId,
+        baCode: formData.baCode.trim() || undefined,
+        fullName: formData.fullName.trim() || undefined,
+        supervisorId:
+          formData.role === "employee" && formData.supervisorId
+            ? formData.supervisorId
+            : undefined,
       };
       if (formData.role === "employee") {
         body.branchId = formData.branchId;
@@ -190,7 +277,20 @@ export default function InvitationsPage() {
 
       toast.success("ส่งคำเชิญและอีเมลสำเร็จ");
       setShowInviteForm(false);
-      setFormData({ email: "", role: "employee", branchId: "", branchIds: [] });
+      setFormData({
+        email: "",
+        role: "employee",
+        branchId: "",
+        branchIds: [],
+        baCode: "",
+        fullName: "",
+        supervisorId: "",
+      });
+      setBranchSearch("");
+      setBranchMultiSearch("");
+      setShowBranchDropdown(false);
+      setSupervisorSearch("");
+      setShowSupervisorDropdown(false);
       fetchData();
     } catch (error: any) {
       console.error("Error sending invitation:", error);
@@ -211,6 +311,25 @@ export default function InvitationsPage() {
     } catch (error) {
       console.error("Error canceling invitation:", error);
       toast.error("ยกเลิกคำเชิญไม่สำเร็จ");
+    }
+  };
+
+  const handleToggleUserStatus = async (
+    userId: string,
+    currentStatus: string,
+  ) => {
+    const next = currentStatus === "active" ? "inactive" : "active";
+    const verb = next === "active" ? "เปิด" : "ปิด";
+    if (!confirm(`ต้องการ${verb}การใช้งานบัญชีนี้?`)) return;
+    try {
+      await updateDoc(doc(db, "users", userId), {
+        status: next,
+      });
+      toast.success(`${verb}การใช้งานสำเร็จ`);
+      fetchData();
+    } catch (error) {
+      console.error("Error toggling user status:", error);
+      toast.error("ไม่สามารถเปลี่ยนสถานะได้");
     }
   };
 
@@ -311,7 +430,20 @@ export default function InvitationsPage() {
 
       setShowBulkInviteForm(false);
       setBulkEmails("");
-      setFormData({ email: "", role: "employee", branchId: "", branchIds: [] });
+      setFormData({
+        email: "",
+        role: "employee",
+        branchId: "",
+        branchIds: [],
+        baCode: "",
+        fullName: "",
+        supervisorId: "",
+      });
+      setBranchSearch("");
+      setBranchMultiSearch("");
+      setShowBranchDropdown(false);
+      setSupervisorSearch("");
+      setShowSupervisorDropdown(false);
       fetchData();
     } catch (error) {
       console.error("Error sending bulk invitations:", error);
@@ -380,7 +512,7 @@ export default function InvitationsPage() {
             <form onSubmit={handleSendInvitation} className="space-y-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                  อีเมล
+                  อีเมล <span className="text-red-500">*</span>
                 </label>
                 <input
                   type="email"
@@ -391,6 +523,38 @@ export default function InvitationsPage() {
                   required
                   className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                   placeholder="user@example.com"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                    รหัส BA
+                  </label>
+                  <input
+                    type="text"
+                    value={formData.baCode}
+                    onChange={(e) =>
+                      setFormData({ ...formData, baCode: e.target.value })
+                    }
+                    className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    placeholder="เช่น BA001"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                  ชื่อ-นามสกุล
+                </label>
+                <input
+                  type="text"
+                  value={formData.fullName}
+                  onChange={(e) =>
+                    setFormData({ ...formData, fullName: e.target.value })
+                  }
+                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  placeholder="เช่น สมชาย ใจดี"
                 />
               </div>
 
@@ -419,26 +583,76 @@ export default function InvitationsPage() {
 
               {/* Branch Selection */}
               {formData.role === "employee" ? (
-                // Single branch for employee
+                // Single branch for employee — searchable combobox
                 <div>
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                     สาขา <span className="text-red-500">*</span>
                   </label>
-                  <select
-                    value={formData.branchId}
-                    onChange={(e) =>
-                      setFormData({ ...formData, branchId: e.target.value })
-                    }
-                    required
-                    className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  >
-                    <option value="">-- เลือกสาขา --</option>
-                    {branches.map((branch) => (
-                      <option key={branch.id} value={branch.id}>
-                        {branch.name}
-                      </option>
-                    ))}
-                  </select>
+                  <div className="relative">
+                    <input
+                      type="text"
+                      value={
+                        showBranchDropdown
+                          ? branchSearch
+                          : formData.branchId
+                            ? branches.find((b) => b.id === formData.branchId)
+                                ?.name || branchSearch
+                            : branchSearch
+                      }
+                      onChange={(e) => {
+                        setBranchSearch(e.target.value);
+                        setFormData({ ...formData, branchId: "" });
+                        setShowBranchDropdown(true);
+                      }}
+                      onFocus={() => setShowBranchDropdown(true)}
+                      onBlur={() =>
+                        setTimeout(() => setShowBranchDropdown(false), 150)
+                      }
+                      placeholder="พิมพ์เพื่อค้นหาสาขา..."
+                      className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    />
+                    {showBranchDropdown && (
+                      <div className="absolute z-20 w-full mt-1 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg shadow-lg max-h-52 overflow-y-auto">
+                        {branches.filter((b) =>
+                          b.name
+                            .toLowerCase()
+                            .includes(branchSearch.toLowerCase()),
+                        ).length === 0 ? (
+                          <p className="px-4 py-2 text-sm text-gray-500 dark:text-gray-400">
+                            ไม่พบสาขา
+                          </p>
+                        ) : (
+                          branches
+                            .filter((b) =>
+                              b.name
+                                .toLowerCase()
+                                .includes(branchSearch.toLowerCase()),
+                            )
+                            .map((branch) => (
+                              <button
+                                key={branch.id}
+                                type="button"
+                                onMouseDown={() => {
+                                  setFormData({
+                                    ...formData,
+                                    branchId: branch.id,
+                                  });
+                                  setBranchSearch("");
+                                  setShowBranchDropdown(false);
+                                }}
+                                className={`w-full text-left px-4 py-2 text-sm hover:bg-blue-50 dark:hover:bg-gray-600 ${
+                                  formData.branchId === branch.id
+                                    ? "bg-blue-50 dark:bg-blue-900/30 font-medium text-blue-600 dark:text-blue-400"
+                                    : "text-gray-900 dark:text-white"
+                                }`}
+                              >
+                                {branch.name}
+                              </button>
+                            ))
+                        )}
+                      </div>
+                    )}
+                  </div>
                 </div>
               ) : (
                 // Multiple branches for supervisor/manager
@@ -449,42 +663,60 @@ export default function InvitationsPage() {
                       (เลือกได้มากกว่า 1)
                     </span>
                   </label>
+                  <div className="mb-1">
+                    <input
+                      type="text"
+                      value={branchMultiSearch}
+                      onChange={(e) => setBranchMultiSearch(e.target.value)}
+                      placeholder="พิมพ์เพื่อกรองสาขา..."
+                      className="w-full px-3 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    />
+                  </div>
                   <div className="border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 max-h-48 overflow-y-auto p-2">
                     {branches.length === 0 ? (
                       <p className="text-sm text-gray-500 dark:text-gray-400 p-2">
                         ไม่มีสาขา
                       </p>
                     ) : (
-                      branches.map((branch) => (
-                        <label
-                          key={branch.id}
-                          className="flex items-center px-3 py-2 hover:bg-gray-50 dark:hover:bg-gray-600 rounded cursor-pointer"
-                        >
-                          <input
-                            type="checkbox"
-                            checked={formData.branchIds.includes(branch.id)}
-                            onChange={(e) => {
-                              if (e.target.checked) {
-                                setFormData({
-                                  ...formData,
-                                  branchIds: [...formData.branchIds, branch.id],
-                                });
-                              } else {
-                                setFormData({
-                                  ...formData,
-                                  branchIds: formData.branchIds.filter(
-                                    (id) => id !== branch.id,
-                                  ),
-                                });
-                              }
-                            }}
-                            className="w-4 h-4 text-blue-600 rounded focus:ring-2 focus:ring-blue-500"
-                          />
-                          <span className="ml-2 text-sm text-gray-900 dark:text-white">
-                            {branch.name}
-                          </span>
-                        </label>
-                      ))
+                      branches
+                        .filter((b) =>
+                          b.name
+                            .toLowerCase()
+                            .includes(branchMultiSearch.toLowerCase()),
+                        )
+                        .map((branch) => (
+                          <label
+                            key={branch.id}
+                            className="flex items-center px-3 py-2 hover:bg-gray-50 dark:hover:bg-gray-600 rounded cursor-pointer"
+                          >
+                            <input
+                              type="checkbox"
+                              checked={formData.branchIds.includes(branch.id)}
+                              onChange={(e) => {
+                                if (e.target.checked) {
+                                  setFormData({
+                                    ...formData,
+                                    branchIds: [
+                                      ...formData.branchIds,
+                                      branch.id,
+                                    ],
+                                  });
+                                } else {
+                                  setFormData({
+                                    ...formData,
+                                    branchIds: formData.branchIds.filter(
+                                      (id) => id !== branch.id,
+                                    ),
+                                  });
+                                }
+                              }}
+                              className="w-4 h-4 text-blue-600 rounded focus:ring-2 focus:ring-blue-500"
+                            />
+                            <span className="ml-2 text-sm text-gray-900 dark:text-white">
+                              {branch.name}
+                            </span>
+                          </label>
+                        ))
                     )}
                   </div>
                   {formData.branchIds.length > 0 && (
@@ -492,6 +724,103 @@ export default function InvitationsPage() {
                       เลือกแล้ว {formData.branchIds.length} สาขา
                     </p>
                   )}
+                </div>
+              )}
+
+              {/* Supervisor dropdown — for employee only */}
+              {formData.role === "employee" && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                    Supervisor (ผู้ดูแล)
+                  </label>
+                  <div className="relative">
+                    <input
+                      type="text"
+                      value={
+                        showSupervisorDropdown
+                          ? supervisorSearch
+                          : formData.supervisorId
+                            ? (() => {
+                                const s = supervisors.find(
+                                  (s) => s.id === formData.supervisorId,
+                                );
+                                return s
+                                  ? `${s.name} (${s.email})`
+                                  : supervisorSearch;
+                              })()
+                            : supervisorSearch
+                      }
+                      onChange={(e) => {
+                        setSupervisorSearch(e.target.value);
+                        setFormData({ ...formData, supervisorId: "" });
+                        setShowSupervisorDropdown(true);
+                      }}
+                      onFocus={() => setShowSupervisorDropdown(true)}
+                      onBlur={() =>
+                        setTimeout(() => setShowSupervisorDropdown(false), 150)
+                      }
+                      placeholder="พิมพ์ชื่อหรืออีเมล Supervisor..."
+                      className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    />
+                    {showSupervisorDropdown && (
+                      <div className="absolute z-20 w-full mt-1 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg shadow-lg max-h-52 overflow-y-auto">
+                        <button
+                          type="button"
+                          onMouseDown={() => {
+                            setFormData({ ...formData, supervisorId: "" });
+                            setSupervisorSearch("");
+                            setShowSupervisorDropdown(false);
+                          }}
+                          className="w-full text-left px-4 py-2 text-sm text-gray-500 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-600"
+                        >
+                          -- ไม่ระบุ --
+                        </button>
+                        {supervisors
+                          .filter((s) => {
+                            const q = supervisorSearch.toLowerCase();
+                            return (
+                              s.name.toLowerCase().includes(q) ||
+                              s.email.toLowerCase().includes(q)
+                            );
+                          })
+                          .map((s) => (
+                            <button
+                              key={s.id}
+                              type="button"
+                              onMouseDown={() => {
+                                setFormData({
+                                  ...formData,
+                                  supervisorId: s.id,
+                                });
+                                setSupervisorSearch("");
+                                setShowSupervisorDropdown(false);
+                              }}
+                              className={`w-full text-left px-4 py-2 text-sm hover:bg-blue-50 dark:hover:bg-gray-600 ${
+                                formData.supervisorId === s.id
+                                  ? "bg-blue-50 dark:bg-blue-900/30 font-medium text-blue-600 dark:text-blue-400"
+                                  : "text-gray-900 dark:text-white"
+                              }`}
+                            >
+                              <span className="font-medium">{s.name}</span>
+                              <span className="ml-1 text-xs text-gray-500 dark:text-gray-400">
+                                ({s.email})
+                              </span>
+                            </button>
+                          ))}
+                        {supervisors.filter((s) => {
+                          const q = supervisorSearch.toLowerCase();
+                          return (
+                            s.name.toLowerCase().includes(q) ||
+                            s.email.toLowerCase().includes(q)
+                          );
+                        }).length === 0 && (
+                          <p className="px-4 py-2 text-sm text-gray-500 dark:text-gray-400">
+                            ไม่พบ Supervisor
+                          </p>
+                        )}
+                      </div>
+                    )}
+                  </div>
                 </div>
               )}
 
@@ -584,25 +913,76 @@ export default function InvitationsPage() {
 
               {/* Branch Selection */}
               {formData.role === "employee" ? (
+                // Single branch for employee — searchable combobox
                 <div>
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                     สาขา <span className="text-red-500">*</span>
                   </label>
-                  <select
-                    value={formData.branchId}
-                    onChange={(e) =>
-                      setFormData({ ...formData, branchId: e.target.value })
-                    }
-                    required
-                    className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-purple-500 focus:border-transparent"
-                  >
-                    <option value="">-- เลือกสาขา --</option>
-                    {branches.map((branch) => (
-                      <option key={branch.id} value={branch.id}>
-                        {branch.name}
-                      </option>
-                    ))}
-                  </select>
+                  <div className="relative">
+                    <input
+                      type="text"
+                      value={
+                        showBranchDropdown
+                          ? branchSearch
+                          : formData.branchId
+                            ? branches.find((b) => b.id === formData.branchId)
+                                ?.name || branchSearch
+                            : branchSearch
+                      }
+                      onChange={(e) => {
+                        setBranchSearch(e.target.value);
+                        setFormData({ ...formData, branchId: "" });
+                        setShowBranchDropdown(true);
+                      }}
+                      onFocus={() => setShowBranchDropdown(true)}
+                      onBlur={() =>
+                        setTimeout(() => setShowBranchDropdown(false), 150)
+                      }
+                      placeholder="พิมพ์เพื่อค้นหาสาขา..."
+                      className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                    />
+                    {showBranchDropdown && (
+                      <div className="absolute z-20 w-full mt-1 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg shadow-lg max-h-52 overflow-y-auto">
+                        {branches.filter((b) =>
+                          b.name
+                            .toLowerCase()
+                            .includes(branchSearch.toLowerCase()),
+                        ).length === 0 ? (
+                          <p className="px-4 py-2 text-sm text-gray-500 dark:text-gray-400">
+                            ไม่พบสาขา
+                          </p>
+                        ) : (
+                          branches
+                            .filter((b) =>
+                              b.name
+                                .toLowerCase()
+                                .includes(branchSearch.toLowerCase()),
+                            )
+                            .map((branch) => (
+                              <button
+                                key={branch.id}
+                                type="button"
+                                onMouseDown={() => {
+                                  setFormData({
+                                    ...formData,
+                                    branchId: branch.id,
+                                  });
+                                  setBranchSearch("");
+                                  setShowBranchDropdown(false);
+                                }}
+                                className={`w-full text-left px-4 py-2 text-sm hover:bg-purple-50 dark:hover:bg-gray-600 ${
+                                  formData.branchId === branch.id
+                                    ? "bg-purple-50 dark:bg-purple-900/30 font-medium text-purple-600 dark:text-purple-400"
+                                    : "text-gray-900 dark:text-white"
+                                }`}
+                              >
+                                {branch.name}
+                              </button>
+                            ))
+                        )}
+                      </div>
+                    )}
+                  </div>
                 </div>
               ) : (
                 <div>
@@ -612,42 +992,60 @@ export default function InvitationsPage() {
                       (เลือกได้มากกว่า 1)
                     </span>
                   </label>
+                  <div className="mb-1">
+                    <input
+                      type="text"
+                      value={branchMultiSearch}
+                      onChange={(e) => setBranchMultiSearch(e.target.value)}
+                      placeholder="พิมพ์เพื่อกรองสาขา..."
+                      className="w-full px-3 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                    />
+                  </div>
                   <div className="border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 max-h-48 overflow-y-auto p-2">
                     {branches.length === 0 ? (
                       <p className="text-sm text-gray-500 dark:text-gray-400 p-2">
                         ไม่มีสาขา
                       </p>
                     ) : (
-                      branches.map((branch) => (
-                        <label
-                          key={branch.id}
-                          className="flex items-center px-3 py-2 hover:bg-gray-50 dark:hover:bg-gray-600 rounded cursor-pointer"
-                        >
-                          <input
-                            type="checkbox"
-                            checked={formData.branchIds.includes(branch.id)}
-                            onChange={(e) => {
-                              if (e.target.checked) {
-                                setFormData({
-                                  ...formData,
-                                  branchIds: [...formData.branchIds, branch.id],
-                                });
-                              } else {
-                                setFormData({
-                                  ...formData,
-                                  branchIds: formData.branchIds.filter(
-                                    (id) => id !== branch.id,
-                                  ),
-                                });
-                              }
-                            }}
-                            className="w-4 h-4 text-purple-600 rounded focus:ring-2 focus:ring-purple-500"
-                          />
-                          <span className="ml-2 text-sm text-gray-900 dark:text-white">
-                            {branch.name}
-                          </span>
-                        </label>
-                      ))
+                      branches
+                        .filter((b) =>
+                          b.name
+                            .toLowerCase()
+                            .includes(branchMultiSearch.toLowerCase()),
+                        )
+                        .map((branch) => (
+                          <label
+                            key={branch.id}
+                            className="flex items-center px-3 py-2 hover:bg-gray-50 dark:hover:bg-gray-600 rounded cursor-pointer"
+                          >
+                            <input
+                              type="checkbox"
+                              checked={formData.branchIds.includes(branch.id)}
+                              onChange={(e) => {
+                                if (e.target.checked) {
+                                  setFormData({
+                                    ...formData,
+                                    branchIds: [
+                                      ...formData.branchIds,
+                                      branch.id,
+                                    ],
+                                  });
+                                } else {
+                                  setFormData({
+                                    ...formData,
+                                    branchIds: formData.branchIds.filter(
+                                      (id) => id !== branch.id,
+                                    ),
+                                  });
+                                }
+                              }}
+                              className="w-4 h-4 text-purple-600 rounded focus:ring-2 focus:ring-purple-500"
+                            />
+                            <span className="ml-2 text-sm text-gray-900 dark:text-white">
+                              {branch.name}
+                            </span>
+                          </label>
+                        ))
                     )}
                   </div>
                   {formData.branchIds.length > 0 && (
@@ -702,7 +1100,10 @@ export default function InvitationsPage() {
             <thead className="bg-gray-50 dark:bg-gray-700">
               <tr>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
-                  อีเมล
+                  อีเมล / ชื่อ-สกุล
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
+                  รหัสพนักงาน
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
                   บทบาท
@@ -725,87 +1126,146 @@ export default function InvitationsPage() {
               </tr>
             </thead>
             <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
-              {invitations.map((invitation) => (
-                <tr
-                  key={invitation.id}
-                  className="hover:bg-gray-50 dark:hover:bg-gray-700"
-                >
-                  <td className="px-6 py-4 text-sm text-gray-900 dark:text-gray-100">
-                    {invitation.email}
-                  </td>
-                  <td className="px-6 py-4 text-sm text-gray-900 dark:text-gray-100">
-                    <span
-                      className={`px-3 py-1 rounded-full text-xs font-semibold ${
-                        invitation.role === "manager"
-                          ? "bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-400"
+              {invitations.map((invitation) => {
+                const inv = invitation as typeof invitation & {
+                  baCode?: string;
+                  fullName?: string;
+                  userId?: string;
+                  userStatus?: string;
+                };
+                return (
+                  <tr
+                    key={invitation.id}
+                    className="hover:bg-gray-50 dark:hover:bg-gray-700"
+                  >
+                    <td className="px-6 py-4 text-sm">
+                      <div className="text-gray-900 dark:text-gray-100">
+                        {invitation.email}
+                      </div>
+                      {inv.fullName && (
+                        <div className="text-xs text-gray-500 dark:text-gray-400">
+                          {inv.fullName}
+                        </div>
+                      )}
+                    </td>
+                    <td className="px-6 py-4 text-sm font-mono text-blue-600 dark:text-blue-400">
+                      {inv.baCode || "-"}
+                    </td>
+                    <td className="px-6 py-4 text-sm text-gray-900 dark:text-gray-100">
+                      <span
+                        className={`px-3 py-1 rounded-full text-xs font-semibold ${
+                          invitation.role === "manager"
+                            ? "bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-400"
+                            : invitation.role === "supervisor"
+                              ? "bg-orange-100 text-orange-800 dark:bg-orange-900/30 dark:text-orange-400"
+                              : "bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400"
+                        }`}
+                      >
+                        {invitation.role === "manager"
+                          ? "ผู้จัดการสาขา"
                           : invitation.role === "supervisor"
-                            ? "bg-orange-100 text-orange-800 dark:bg-orange-900/30 dark:text-orange-400"
-                            : "bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400"
-                      }`}
-                    >
-                      {invitation.role === "manager"
-                        ? "ผู้จัดการสาขา"
-                        : invitation.role === "supervisor"
-                          ? "ผู้ดูแลสาขา"
-                          : "พนักงาน"}
-                    </span>
-                  </td>
-                  <td className="px-6 py-4 text-sm text-gray-900 dark:text-gray-100">
-                    {invitation.role === "employee" ? (
-                      // Employee: single branch
-                      invitation.branchId ? (
-                        branches.find((b) => b.id === invitation.branchId)
-                          ?.name || "-"
+                            ? "ผู้ดูแลสาขา"
+                            : "พนักงาน"}
+                      </span>
+                    </td>
+                    <td className="px-6 py-4 text-sm text-gray-900 dark:text-gray-100">
+                      {invitation.role === "employee" ? (
+                        // Employee: single branch
+                        invitation.branchId ? (
+                          branches.find((b) => b.id === invitation.branchId)
+                            ?.name || "-"
+                        ) : (
+                          "-"
+                        )
+                      ) : // Supervisor/Manager: multiple branches
+                      invitation.managedBranchIds &&
+                        invitation.managedBranchIds.length > 0 ? (
+                        <div className="flex flex-wrap gap-1">
+                          {invitation.managedBranchIds.map((branchId) => {
+                            const branch = branches.find(
+                              (b) => b.id === branchId,
+                            );
+                            return branch ? (
+                              <span
+                                key={branchId}
+                                className="px-2 py-1 bg-gray-100 dark:bg-gray-700 rounded text-xs"
+                              >
+                                {branch.name}
+                              </span>
+                            ) : null;
+                          })}
+                        </div>
                       ) : (
                         "-"
-                      )
-                    ) : // Supervisor/Manager: multiple branches
-                    invitation.managedBranchIds &&
-                      invitation.managedBranchIds.length > 0 ? (
-                      <div className="flex flex-wrap gap-1">
-                        {invitation.managedBranchIds.map((branchId) => {
-                          const branch = branches.find(
-                            (b) => b.id === branchId,
-                          );
-                          return branch ? (
-                            <span
-                              key={branchId}
-                              className="px-2 py-1 bg-gray-100 dark:bg-gray-700 rounded text-xs"
-                            >
-                              {branch.name}
-                            </span>
-                          ) : null;
-                        })}
+                      )}
+                    </td>
+                    <td className="px-6 py-4 text-sm text-gray-900 dark:text-gray-100">
+                      {invitation.invitedByName}
+                    </td>
+                    <td className="px-6 py-4 text-sm text-gray-900 dark:text-gray-100">
+                      {invitation.createdAt
+                        ? format(invitation.createdAt, "dd MMM yyyy", {
+                            locale: th,
+                          })
+                        : "-"}
+                    </td>
+                    <td className="px-6 py-4">
+                      <StatusBadge status={invitation.status} />
+                      {inv.userStatus === "inactive" && (
+                        <span className="mt-1 inline-block px-2 py-0.5 rounded text-xs bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300">
+                          บัญชีถูกปิดใช้งาน
+                        </span>
+                      )}
+                    </td>
+                    <td className="px-6 py-4">
+                      <div className="flex items-center gap-2">
+                        {invitation.status === "pending" && (
+                          <button
+                            onClick={() =>
+                              handleCancelInvitation(invitation.id)
+                            }
+                            className="text-red-600 hover:text-red-800 dark:text-red-400 dark:hover:text-red-300 font-semibold text-sm"
+                          >
+                            ยกเลิก
+                          </button>
+                        )}
+                        {invitation.status === "accepted" && inv.userId && (
+                          <button
+                            onClick={() =>
+                              handleToggleUserStatus(
+                                inv.userId!,
+                                inv.userStatus || "active",
+                              )
+                            }
+                            className={`flex items-center gap-1 text-sm font-semibold ${
+                              inv.userStatus === "inactive"
+                                ? "text-green-600 hover:text-green-800 dark:text-green-400"
+                                : "text-orange-600 hover:text-orange-800 dark:text-orange-400"
+                            }`}
+                            title={
+                              inv.userStatus === "inactive"
+                                ? "เปิดใช้งานบัญชี"
+                                : "ปิดใช้งานบัญชี"
+                            }
+                          >
+                            {inv.userStatus === "inactive" ? (
+                              <>
+                                <UserCheck className="w-4 h-4" />
+                                เปิดใช้งาน
+                              </>
+                            ) : (
+                              <>
+                                <UserX className="w-4 h-4" />
+                                ปิดใช้งาน
+                              </>
+                            )}
+                          </button>
+                        )}
                       </div>
-                    ) : (
-                      "-"
-                    )}
-                  </td>
-                  <td className="px-6 py-4 text-sm text-gray-900 dark:text-gray-100">
-                    {invitation.invitedByName}
-                  </td>
-                  <td className="px-6 py-4 text-sm text-gray-900 dark:text-gray-100">
-                    {invitation.createdAt
-                      ? format(invitation.createdAt, "dd MMM yyyy", {
-                          locale: th,
-                        })
-                      : "-"}
-                  </td>
-                  <td className="px-6 py-4">
-                    <StatusBadge status={invitation.status} />
-                  </td>
-                  <td className="px-6 py-4">
-                    {invitation.status === "pending" && (
-                      <button
-                        onClick={() => handleCancelInvitation(invitation.id)}
-                        className="text-red-600 hover:text-red-800 dark:text-red-400 dark:hover:text-red-300 font-semibold text-sm"
-                      >
-                        ยกเลิก
-                      </button>
-                    )}
-                  </td>
-                </tr>
-              ))}
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>

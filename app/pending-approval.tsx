@@ -20,6 +20,9 @@ export default function PendingApprovalScreen() {
   const { user, logout } = useAuthStore();
   const t = useTranslation();
 
+  const isDisabled =
+    user?.status === "inactive" || user?.status === "suspended";
+
   const handleLogout = async () => {
     Alert.alert(
       t.pendingApproval.logoutTitle,
@@ -65,20 +68,35 @@ export default function PendingApprovalScreen() {
           <View
             style={[
               styles.iconCircle,
-              { backgroundColor: colors.primary + "20" },
+              {
+                backgroundColor: isDisabled
+                  ? "#DC262620"
+                  : colors.primary + "20",
+              },
             ]}
           >
-            <Ionicons name="time" size={80} color={colors.primary} />
+            <Ionicons
+              name={isDisabled ? "ban" : "time"}
+              size={80}
+              color={isDisabled ? "#DC2626" : colors.primary}
+            />
           </View>
 
           {/* Title */}
-          <Text style={[styles.title, { color: colors.text }]}>
-            {t.pendingApproval.title}
+          <Text
+            style={[
+              styles.title,
+              { color: isDisabled ? "#DC2626" : colors.text },
+            ]}
+          >
+            {isDisabled ? "บัญชีถูกปิดใช้งาน" : t.pendingApproval.title}
           </Text>
 
           {/* Description */}
           <Text style={[styles.description, { color: colors.textSecondary }]}>
-            {t.pendingApproval.description}
+            {isDisabled
+              ? "บัญชีของคุณถูกผู้ดูแลระบบปิดใช้งาน กรุณาติดต่อผู้ดูแลหากมีข้อสงสัย"
+              : t.pendingApproval.description}
           </Text>
 
           {/* Email */}
@@ -94,60 +112,68 @@ export default function PendingApprovalScreen() {
             </Text>
           </View>
 
-          {/* Instructions */}
-          <View style={styles.instructionsContainer}>
-            <Text style={[styles.instructionsTitle, { color: colors.text }]}>
-              {t.pendingApproval.nextSteps}
-            </Text>
+          {/* Instructions — only for pending, not for disabled */}
+          {!isDisabled && (
+            <View style={styles.instructionsContainer}>
+              <Text style={[styles.instructionsTitle, { color: colors.text }]}>
+                {t.pendingApproval.nextSteps}
+              </Text>
 
-            <View style={styles.stepItem}>
-              <View
-                style={[
-                  styles.stepBullet,
-                  { backgroundColor: colors.primary + "20" },
-                ]}
-              >
-                <Text style={[styles.stepNumber, { color: colors.primary }]}>
-                  1
+              <View style={styles.stepItem}>
+                <View
+                  style={[
+                    styles.stepBullet,
+                    { backgroundColor: colors.primary + "20" },
+                  ]}
+                >
+                  <Text style={[styles.stepNumber, { color: colors.primary }]}>
+                    1
+                  </Text>
+                </View>
+                <Text
+                  style={[styles.stepText, { color: colors.textSecondary }]}
+                >
+                  {t.pendingApproval.step1}
                 </Text>
               </View>
-              <Text style={[styles.stepText, { color: colors.textSecondary }]}>
-                {t.pendingApproval.step1}
-              </Text>
-            </View>
 
-            <View style={styles.stepItem}>
-              <View
-                style={[
-                  styles.stepBullet,
-                  { backgroundColor: colors.primary + "20" },
-                ]}
-              >
-                <Text style={[styles.stepNumber, { color: colors.primary }]}>
-                  2
+              <View style={styles.stepItem}>
+                <View
+                  style={[
+                    styles.stepBullet,
+                    { backgroundColor: colors.primary + "20" },
+                  ]}
+                >
+                  <Text style={[styles.stepNumber, { color: colors.primary }]}>
+                    2
+                  </Text>
+                </View>
+                <Text
+                  style={[styles.stepText, { color: colors.textSecondary }]}
+                >
+                  {t.pendingApproval.step2}
                 </Text>
               </View>
-              <Text style={[styles.stepText, { color: colors.textSecondary }]}>
-                {t.pendingApproval.step2}
-              </Text>
-            </View>
 
-            <View style={styles.stepItem}>
-              <View
-                style={[
-                  styles.stepBullet,
-                  { backgroundColor: colors.primary + "20" },
-                ]}
-              >
-                <Text style={[styles.stepNumber, { color: colors.primary }]}>
-                  3
+              <View style={styles.stepItem}>
+                <View
+                  style={[
+                    styles.stepBullet,
+                    { backgroundColor: colors.primary + "20" },
+                  ]}
+                >
+                  <Text style={[styles.stepNumber, { color: colors.primary }]}>
+                    3
+                  </Text>
+                </View>
+                <Text
+                  style={[styles.stepText, { color: colors.textSecondary }]}
+                >
+                  {t.pendingApproval.step3}
                 </Text>
               </View>
-              <Text style={[styles.stepText, { color: colors.textSecondary }]}>
-                {t.pendingApproval.step3}
-              </Text>
             </View>
-          </View>
+          )}
 
           {/* Action Buttons */}
           <View style={styles.actions}>

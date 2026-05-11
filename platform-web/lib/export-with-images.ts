@@ -98,6 +98,8 @@ export interface CountingExportItem {
     employeeName?: string;
     employeeId?: string;
     branchName?: string;
+    fullName?: string;
+    baCode?: string;
   };
   createdAt?: Date;
 }
@@ -835,8 +837,13 @@ async function fetchImageWithWatermark(
           if (watermarkData?.employeeName) {
             const branchLabel =
               watermarkData?.branchName || watermarkData?.employeeId || "";
+            const displayName =
+              watermarkData?.fullName || watermarkData.employeeName;
+            const baCodeLabel = watermarkData?.baCode
+              ? ` [${watermarkData.baCode}]`
+              : "";
             lines.push(
-              `👤 ${watermarkData.employeeName}${branchLabel ? ` (${branchLabel})` : ""}`,
+              `👤 ${displayName}${baCodeLabel}${branchLabel ? ` (${branchLabel})` : ""}`,
             );
           }
 
@@ -1431,6 +1438,8 @@ export interface SummaryExportItem {
   productName: string;
   branchName: string;
   userName: string;
+  fullName?: string;
+  baCode?: string;
   finalCount: number;
   imageUrl?: string;
   remarks?: string;
@@ -1529,7 +1538,9 @@ export async function exportSummaryToExcelWithImages(
       item.productSKU,
       item.productName,
       item.branchName,
-      item.userName,
+      item.fullName
+        ? `${item.fullName}${item.baCode ? ` [${item.baCode}]` : ""}`
+        : item.userName,
       item.finalCount,
       "", // image placeholder
       item.createdAt,
@@ -1575,6 +1586,8 @@ export async function exportSummaryToExcelWithImages(
           location: item.branchName,
           timestamp: item.createdAt,
           employeeName: item.userName,
+          fullName: item.fullName,
+          baCode: item.baCode,
           ...watermarkData,
         });
 
@@ -1725,6 +1738,8 @@ export async function exportSummaryToPDFWithImages(
           location: item.branchName,
           timestamp: item.createdAt,
           employeeName: item.userName,
+          fullName: item.fullName,
+          baCode: item.baCode,
           ...watermarkData,
         });
         if (base64Image) {
@@ -1777,7 +1792,14 @@ export async function exportSummaryToPDFWithImages(
     dy += 7;
     doc.text(`\u0e2a\u0e32\u0e02\u0e32: ${item.branchName}`, dx, dy);
     dy += 7;
-    doc.text(`\u0e1c\u0e39\u0e49\u0e19\u0e31\u0e1a: ${item.userName}`, dx, dy);
+    const employeeDisplay = item.fullName
+      ? `${item.fullName}${item.baCode ? ` [${item.baCode}]` : ""}`
+      : item.userName;
+    doc.text(
+      `\u0e1c\u0e39\u0e49\u0e19\u0e31\u0e1a: ${employeeDisplay}`,
+      dx,
+      dy,
+    );
     dy += 7;
     doc.text(`\u0e27\u0e31\u0e19\u0e17\u0e35\u0e48: ${item.createdAt}`, dx, dy);
     dy += 10;

@@ -1,5 +1,6 @@
 "use client";
 
+import { ALL_MINI_APPS, MiniApp } from "@/constants/mini-apps";
 import { useTheme } from "@/stores/theme.store";
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
@@ -34,114 +35,15 @@ const CATEGORIES: ServiceCategory[] = [
   { id: "reports", name: "รายงาน", icon: "bar-chart", color: "#10B981" },
 ];
 
-// All Mini Apps
-interface MiniApp {
-  id: string;
-  name: string;
-  description: string;
-  icon: keyof typeof Ionicons.glyphMap;
-  color: string;
-  bgColor: string;
-  route: string;
-  category: string;
-  comingSoon?: boolean;
-}
-
-const ALL_MINI_APPS: MiniApp[] = [
-  {
-    id: "check-in",
-    name: "เช็คชื่อพนักงาน",
-    description: "ลงเวลาเข้า-ออกงาน",
-    icon: "person-circle-outline",
-    color: "#10B981",
-    bgColor: "#D1FAE5",
-    route: "/(mini-apps)/check-in",
-    category: "tools",
-  },
-  {
-    id: "delivery-receive",
-    name: "รับสินค้า",
-    description: "รับพัสดุและถ่ายรูปยืนยัน",
-    icon: "cube",
-    color: "#6366F1",
-    bgColor: "#EEF2FF",
-    route: "/(mini-apps)/delivery-receive",
-    category: "inventory",
-  },
-  {
-    id: "stock-counter",
-    name: "นับสต็อก",
-    description: "นับสินค้าด้วย AI Camera",
-    icon: "cube-outline",
-    color: "#3B82F6",
-    bgColor: "#EFF6FF",
-    route: "/(mini-apps)/stock-counter",
-    category: "inventory",
-  },
-  {
-    id: "history",
-    name: "ประวัติการนับ",
-    description: "ดูประวัติการนับสต็อก",
-    icon: "time-outline",
-    color: "#0EA5E9",
-    bgColor: "#F0F9FF",
-    route: "/(mini-apps)/stock-counter?tab=history",
-    category: "inventory",
-  },
-  {
-    id: "speech-to-text",
-    name: "Speech to Text",
-    description: "แปลงเสียงเป็นข้อความ",
-    icon: "mic-outline",
-    color: "#8B5CF6",
-    bgColor: "#F5F3FF",
-    route: "/(mini-apps)/speech-to-text",
-    category: "tools",
-    comingSoon: true,
-  },
-  {
-    id: "scanner",
-    name: "Barcode Scanner",
-    description: "สแกนบาร์โค้ดสินค้า",
-    icon: "barcode-outline",
-    color: "#EC4899",
-    bgColor: "#FDF2F8",
-    route: "/(mini-apps)/scanner",
-    category: "tools",
-    comingSoon: true,
-  },
-  {
-    id: "reports",
-    name: "รายงานสรุป",
-    description: "ดูสถิติและรายงาน",
-    icon: "bar-chart-outline",
-    color: "#10B981",
-    bgColor: "#ECFDF5",
-    route: "/(mini-apps)/reports",
-    category: "reports",
-    comingSoon: true,
-  },
-  {
-    id: "export",
-    name: "ส่งออกข้อมูล",
-    description: "Export เป็น Excel/PDF",
-    icon: "download-outline",
-    color: "#F59E0B",
-    bgColor: "#FFFBEB",
-    route: "/(mini-apps)/export",
-    category: "reports",
-    comingSoon: true,
-  },
-];
-
 export default function ServicesScreen() {
   const { colors, isDark } = useTheme();
   const [selectedCategory, setSelectedCategory] = React.useState("all");
 
-  const filteredApps =
+  const filteredApps = (
     selectedCategory === "all"
       ? ALL_MINI_APPS
-      : ALL_MINI_APPS.filter((app) => app.category === selectedCategory);
+      : ALL_MINI_APPS.filter((app) => app.category === selectedCategory)
+  ).filter((app) => !app.comingSoon);
 
   const handleMiniAppPress = (app: MiniApp) => {
     if (app.comingSoon) {

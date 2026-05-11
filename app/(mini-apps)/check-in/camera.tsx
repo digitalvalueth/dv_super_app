@@ -7,7 +7,6 @@ import {
 } from "@/utils/watermark";
 import { Ionicons } from "@expo/vector-icons";
 import { CameraView, useCameraPermissions } from "expo-camera";
-import * as ImagePicker from "expo-image-picker";
 import { router, useFocusEffect, useLocalSearchParams } from "expo-router";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
@@ -132,59 +131,6 @@ export default function CheckInCameraScreen() {
     selectedBranchName,
   ]);
 
-  const handlePickImage = useCallback(async () => {
-    try {
-      const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ["images"],
-        allowsEditing: false,
-        quality: 0.8,
-        base64: true,
-      });
-
-      if (result.canceled || !result.assets?.[0]) return;
-
-      const asset = result.assets[0];
-
-      if (!asset.base64) {
-        Alert.alert("เกิดข้อผิดพลาด", "ไม่สามารถอ่านรูปภาพได้");
-        return;
-      }
-
-      const watermarkData = await createWatermarkMetadata(
-        user?.name || "Unknown",
-        user?.uid || "",
-        selectedBranchName || user?.branchName || "",
-        undefined,
-        undefined,
-        prefetchedLocation ?? undefined,
-        prefetchedServerTime ?? undefined,
-      );
-
-      // Navigate to preview
-      router.push({
-        pathname: "/(mini-apps)/check-in/preview",
-        params: {
-          imageUri: asset.uri,
-          imageBase64: asset.base64 || "",
-          watermarkData: JSON.stringify(watermarkData),
-          type: checkInType,
-          selectedShift: selectedShift || "",
-          selectedBranchId: selectedBranchId || "",
-          selectedBranchName: selectedBranchName || "",
-        },
-      });
-    } catch (error) {
-      console.error("Error picking image:", error);
-      Alert.alert("เกิดข้อผิดพลาด", "ไม่สามารถเลือกรูปภาพได้");
-    }
-  }, [
-    user,
-    checkInType,
-    prefetchedLocation,
-    prefetchedServerTime,
-    selectedShift,
-  ]);
-
   const toggleFlash = () => {
     setFlash((prev) => (prev === "off" ? "on" : "off"));
   };
@@ -287,11 +233,6 @@ export default function CheckInCameraScreen() {
 
       {/* Bottom controls */}
       <SafeAreaView style={styles.bottomControls} edges={["bottom"]}>
-        {/* Gallery button */}
-        <TouchableOpacity style={styles.sideButton} onPress={handlePickImage}>
-          <Ionicons name="images-outline" size={28} color="#FFFFFF" />
-        </TouchableOpacity>
-
         {/* Capture button */}
         <TouchableOpacity
           style={[
@@ -309,7 +250,7 @@ export default function CheckInCameraScreen() {
         </TouchableOpacity>
 
         {/* Flip camera button */}
-        <TouchableOpacity style={styles.sideButton} onPress={toggleFacing}>
+        <TouchableOpacity style={styles.flipButton} onPress={toggleFacing}>
           <Ionicons name="camera-reverse-outline" size={28} color="#FFFFFF" />
         </TouchableOpacity>
       </SafeAreaView>
@@ -459,7 +400,16 @@ const styles = StyleSheet.create({
     paddingVertical: 24,
     paddingHorizontal: 32,
     backgroundColor: "rgba(0,0,0,0.3)",
-    gap: 48,
+  },
+  flipButton: {
+    position: "absolute",
+    right: 48,
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: "rgba(255,255,255,0.2)",
+    justifyContent: "center",
+    alignItems: "center",
   },
   sideButton: {
     width: 56,
