@@ -35,6 +35,8 @@ export default function ProfilePage() {
         name: userData.name || "",
         displayName: userData.displayName || "",
         phoneNumber: userData.phoneNumber || "",
+        baCode: (userData as any).baCode || "",
+        fullName: (userData as any).fullName || "",
       });
 
       // Fetch company name from Firestore
