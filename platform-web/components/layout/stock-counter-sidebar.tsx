@@ -187,18 +187,18 @@ const navGroups: NavGroup[] = [
       },
     ],
   },
-  {
-    label: "ยอดขายรายวัน",
-    icon: Receipt,
-    collapsible: true,
-    items: [
-      {
-        name: "ภาพรวมยอดขาย",
-        href: "/stock-counter/dashboard/daily-sale",
-        icon: Receipt,
-      },
-    ],
-  },
+  // {
+  //   label: "ยอดขายรายวัน",
+  //   icon: Receipt,
+  //   collapsible: true,
+  //   items: [
+  //     {
+  //       name: "ภาพรวมยอดขาย",
+  //       href: "/stock-counter/dashboard/daily-sale",
+  //       icon: Receipt,
+  //     },
+  //   ],
+  // },
   {
     label: "รายงาน & ระบบ",
     icon: BarChart3,
