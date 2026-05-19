@@ -1,4 +1,4 @@
-export const APP_VERSION = "1.5.0";
+export const APP_VERSION = "1.5.1";
 
 export interface ChangeEntry {
   type: "feature" | "fix" | "improvement";
@@ -15,6 +15,62 @@ export interface Release {
 }
 
 export const CHANGELOG: Release[] = [
+  {
+    version: "1.5.1",
+    date: "19 พฤษภาคม 2569",
+    title: "ระบบสิทธิ์ Module · รวม Role Staff → Employee · แก้ BA Code",
+    changes: [
+      // ── Access Control ──────────────────────────────────────
+      {
+        type: "improvement",
+        text: "[Web] บล็อก Employee / Staff จากเว็บแอดมิน — ต้องใช้งานผ่าน Mobile App เท่านั้น",
+        before: "Employee ล็อกอินเว็บได้ แต่ไม่มีข้อมูล",
+        after: "แสดงหน้า 'กรุณาใช้งานผ่าน Mobile App' พร้อมปุ่มออกจากระบบ",
+      },
+      {
+        type: "improvement",
+        text: "[Web] Admin เห็นเฉพาะ Module ที่ได้รับสิทธิ์ (ไม่ bypass อัตโนมัติอีกต่อไป) — เฉพาะ Super Admin เท่านั้นที่เห็นทุก Module",
+        before: "Admin เห็นทุก Module โดยอัตโนมัติ",
+        after: "Admin เห็นเฉพาะ Module ที่ถูกเพิ่มใน whitelist",
+      },
+      {
+        type: "feature",
+        text: "[Web] Admin จัดการสิทธิ์ Module ให้ผู้ใช้ที่ role ต่ำกว่าได้ (Supervisor, Manager, Employee) จากหน้า 'จัดการสิทธิ์'",
+      },
+      {
+        type: "improvement",
+        text: "[Web] ป้องกันการแก้ไขสิทธิ์ของ Role เดียวกันหรือสูงกว่า (แสดง 🔒)",
+        before: "Admin เห็นปุ่ม toggle ของ Admin คนอื่น (แต่กดไม่ได้)",
+        after: "แสดง 🔒 พร้อม tooltip 'ไม่สามารถจัดการ role ระดับเดียวกันหรือสูงกว่า'",
+      },
+      // ── Role Consolidation ──────────────────────────────────
+      {
+        type: "improvement",
+        text: "[Web] รวม Role 'Staff' กับ 'Employee' เป็น 'Employee' อย่างเดียว — ลบ Staff ออกจาก Dropdown ทุกหน้า",
+        before: "5 roles: admin, manager, supervisor, employee, staff",
+        after: "4 roles: admin, manager, supervisor, employee",
+      },
+      {
+        type: "improvement",
+        text: "[Web] เปลี่ยนชื่อเมนู 'จัดการ Manager' → 'จัดการ Supervisor' พร้อมรองรับ query ทั้ง supervisor และ manager",
+      },
+      {
+        type: "feature",
+        text: "[Web] เพิ่มช่องค้นหาสาขาใน Modal เลือกสาขา (จัดการ Supervisor)",
+      },
+      // ── Import Excel ────────────────────────────────────────
+      {
+        type: "feature",
+        text: "[Web] เทมเพลตนำเข้าสาขา (Excel): เพิ่มคอลัมน์ 'seller' บันทึก Seller Category ลง Firestore",
+      },
+      {
+        type: "fix",
+        text: "[Web] แก้ BA Code ที่มีเลข 0 นำหน้า (เช่น 0087) ถูกตัดเหลือ 87 เมื่อนำเข้าผ่าน Excel",
+        before: "BA Code: 0087 → นำเข้าได้ 87",
+        after: "BA Code: 0087 → นำเข้าได้ 0087 (อ่าน formatted text จาก raw cell)",
+      },
+    ],
+  },
   {
     version: "1.5.0",
     date: "7 พฤษภาคม 2569",

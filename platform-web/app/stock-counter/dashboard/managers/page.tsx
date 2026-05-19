@@ -13,7 +13,7 @@ import {
   where,
 } from "firebase/firestore";
 import { Building2, Check, Edit2, Search, Shield, UserCog } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 
 interface Branch {
@@ -37,6 +37,7 @@ export default function ManagersPage() {
     useState<ManagerWithBranches | null>(null);
   const [showEditModal, setShowEditModal] = useState(false);
   const [selectedBranchIds, setSelectedBranchIds] = useState<string[]>([]);
+  const [modalSearchTerm, setModalSearchTerm] = useState("");
 
   const isSuperAdmin = userData?.role === "super_admin";
   const canManageManagers =
@@ -76,18 +77,18 @@ export default function ManagersPage() {
       });
       setBranches(branchesData);
 
-      // Fetch managers
+      // Fetch managers + supervisors
       let managersQuery;
       if (companyId) {
         managersQuery = query(
           collection(db, "users"),
           where("companyId", "==", companyId),
-          where("role", "==", "manager"),
+          where("role", "in", ["supervisor", "manager"]),
         );
       } else {
         managersQuery = query(
           collection(db, "users"),
-          where("role", "==", "manager"),
+          where("role", "in", ["supervisor", "manager"]),
         );
       }
 
@@ -122,6 +123,7 @@ export default function ManagersPage() {
   const handleEditBranches = (manager: ManagerWithBranches) => {
     setSelectedManager(manager);
     setSelectedBranchIds(manager.managedBranchIds || []);
+    setModalSearchTerm("");
     setShowEditModal(true);
   };
 
@@ -177,7 +179,7 @@ export default function ManagersPage() {
         }).catch(console.error);
       }
 
-      toast.success("อัปเดตสาขาที่ควบคุมเรียบร้อยแล้ว");
+      toast.success("อัปเดตสาขาที่ดูแลเรียบร้อยแล้ว");
       setShowEditModal(false);
       setSelectedManager(null);
       fetchData();
@@ -197,6 +199,17 @@ export default function ManagersPage() {
   const availableBranches = branches.filter((branch) =>
     isSuperAdmin ? true : branch.companyId === userData?.companyId,
   );
+
+  // Filter branches in the modal by search term
+  const filteredModalBranches = useMemo(() => {
+    if (!modalSearchTerm.trim()) return availableBranches;
+    const term = modalSearchTerm.toLowerCase();
+    return availableBranches.filter(
+      (b) =>
+        b.name?.toLowerCase().includes(term) ||
+        b.code?.toLowerCase().includes(term),
+    );
+  }, [availableBranches, modalSearchTerm]);
 
   if (loading) {
     return (
@@ -243,9 +256,9 @@ export default function ManagersPage() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-3xl font-bold text-gray-900">จัดการ Manager</h1>
+          <h1 className="text-3xl font-bold text-gray-900">จัดการ Supervisor</h1>
           <p className="text-gray-600 mt-1">
-            กำหนดสาขาที่ Manager แต่ละคนควบคุม
+            กำหนดสาขาที่ Supervisor / Manager แต่ละคนดูแล
           </p>
         </div>
       </div>
@@ -272,7 +285,7 @@ export default function ManagersPage() {
               <UserCog className="w-6 h-6 text-purple-600" />
             </div>
             <div>
-              <p className="text-sm text-gray-600">Manager ทั้งหมด</p>
+              <p className="text-sm text-gray-600">Supervisor / Manager ทั้งหมด</p>
               <p className="text-2xl font-bold text-gray-900">
                 {managers.length}
               </p>
@@ -302,13 +315,13 @@ export default function ManagersPage() {
             <thead className="bg-gray-50 border-b border-gray-200">
               <tr>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
-                  Manager
+                  Supervisor / Manager
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
                   บริษัท
                 </th>
                 <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase">
-                  สาขาที่ควบคุม
+                  สาขาที่ดูแล
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
                   รายการสาขา
@@ -325,8 +338,8 @@ export default function ManagersPage() {
                     <UserCog className="w-12 h-12 text-gray-400 mx-auto mb-3" />
                     <p className="text-gray-500">
                       {searchTerm
-                        ? "ไม่พบ Manager ที่ค้นหา"
-                        : "ยังไม่มี Manager"}
+                        ? "ไม่พบ Supervisor / Manager ที่ค้นหา"
+                        : "ยังไม่มี Supervisor / Manager"}
                     </p>
                   </td>
                 </tr>
@@ -345,6 +358,13 @@ export default function ManagersPage() {
                           <p className="text-sm text-gray-500">
                             {manager.email}
                           </p>
+                          <span className={`inline-block mt-0.5 text-xs font-medium px-2 py-0.5 rounded-full ${
+                            manager.role === "supervisor"
+                              ? "bg-blue-100 text-blue-700"
+                              : "bg-purple-100 text-purple-700"
+                          }`}>
+                            {manager.role === "supervisor" ? "Supervisor" : "Manager"}
+                          </span>
                         </div>
                       </div>
                     </td>
@@ -401,7 +421,7 @@ export default function ManagersPage() {
           <div className="bg-white rounded-xl shadow-xl max-w-2xl w-full max-h-[80vh] flex flex-col">
             <div className="p-6 border-b border-gray-200">
               <h2 className="text-xl font-bold text-gray-900">
-                จัดการสาขาที่ควบคุม
+                จัดการสาขาที่ดูแล
               </h2>
               <p className="text-sm text-gray-600 mt-1">
                 {selectedManager.name || selectedManager.displayName}
@@ -409,13 +429,25 @@ export default function ManagersPage() {
             </div>
 
             <div className="flex-1 overflow-y-auto p-6">
+              {/* Search branches */}
+              <div className="relative mb-4">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                <input
+                  type="text"
+                  placeholder="ค้นหาสาขา..."
+                  value={modalSearchTerm}
+                  onChange={(e) => setModalSearchTerm(e.target.value)}
+                  className="w-full pl-9 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+                />
+              </div>
+
               <div className="space-y-2">
-                {availableBranches.length === 0 ? (
+                {filteredModalBranches.length === 0 ? (
                   <p className="text-center text-gray-500 py-8">
-                    ไม่มีสาขาให้เลือก
+                    {modalSearchTerm ? "ไม่พบสาขาที่ค้นหา" : "ไม่มีสาขาให้เลือก"}
                   </p>
                 ) : (
-                  availableBranches.map((branch) => {
+                  filteredModalBranches.map((branch) => {
                     const isSelected = selectedBranchIds.includes(branch.id);
                     return (
                       <button

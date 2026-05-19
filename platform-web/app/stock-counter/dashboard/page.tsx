@@ -64,7 +64,7 @@ export default function DashboardPage() {
     return { totalSessions, pendingSessions, totalDiscrepancy, recentSessions };
   }, [allSessions, filterMonth, filterYear, filterHalf]);
 
-  const isStaff = userData?.role === "staff";
+  const isStaff = userData?.role === "staff" || userData?.role === "employee";
 
   // Redirect supervisor to their specific dashboard
   useEffect(() => {
@@ -76,9 +76,9 @@ export default function DashboardPage() {
   useEffect(() => {
     if (!userData) return;
     if (userData.role === "supervisor") return; // Skip loading for supervisors
-    if (userData.role === "staff") {
+    if (userData.role === "staff" || userData.role === "employee") {
       setLoading(false);
-      return; // Skip loading for staff
+      return; // Skip loading for staff/employee
     }
 
     const fetchDashboardData = async () => {

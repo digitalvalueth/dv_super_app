@@ -30,6 +30,7 @@ interface BranchRow {
   latitude?: number | null;
   longitude?: number | null;
   radiusMeters?: number;
+  seller?: string;
   status: "pending" | "ok" | "error" | "duplicate";
   message?: string;
 }
@@ -110,6 +111,7 @@ export default function ImportBranchesPage() {
         const latStr = get("latitude") || get("lat");
         const lngStr = get("longitude") || get("lng") || get("lon");
         const radiusStr = get("radiusMeters") || get("radius");
+        const seller = get("seller") || get("sellerCategory");
 
         const errors: string[] = [];
         if (!name) errors.push("ต้องมีชื่อสาขา");
@@ -139,6 +141,7 @@ export default function ImportBranchesPage() {
           latitude: lat,
           longitude: lng,
           radiusMeters: radius,
+          seller: seller || undefined,
           status: "pending",
         };
 
@@ -207,6 +210,7 @@ export default function ImportBranchesPage() {
           latitude: r.latitude,
           longitude: r.longitude,
           radiusMeters: r.radiusMeters || 200,
+          sellerCategory: r.seller || null,
           createdAt: serverTimestamp(),
         });
         updated[i] = { ...r, status: "ok", message: "เพิ่มแล้ว" };
@@ -235,6 +239,7 @@ export default function ImportBranchesPage() {
         latitude: 13.7563,
         longitude: 100.5018,
         radiusMeters: 200,
+        seller: "Watson's",
       },
     ];
     const ws = XLSX.utils.json_to_sheet(sample);
@@ -275,7 +280,7 @@ export default function ImportBranchesPage() {
           <p className="text-sm text-gray-600 dark:text-gray-400 mb-3">
             คอลัมน์:{" "}
             <code className="text-xs bg-gray-100 dark:bg-gray-700 px-2 py-1 rounded">
-              name, code, address, latitude, longitude, radiusMeters
+              name, code, address, latitude, longitude, radiusMeters, seller
             </code>
           </p>
           <button
@@ -340,6 +345,7 @@ export default function ImportBranchesPage() {
                     <th className="px-3 py-2 text-left">Lat</th>
                     <th className="px-3 py-2 text-left">Lng</th>
                     <th className="px-3 py-2 text-left">รัศมี</th>
+                    <th className="px-3 py-2 text-left">Seller</th>
                     <th className="px-3 py-2 text-left">สถานะ</th>
                   </tr>
                 </thead>
@@ -361,6 +367,7 @@ export default function ImportBranchesPage() {
                       <td className="px-3 py-2">{r.latitude ?? "-"}</td>
                       <td className="px-3 py-2">{r.longitude ?? "-"}</td>
                       <td className="px-3 py-2">{r.radiusMeters || 200}</td>
+                      <td className="px-3 py-2">{r.seller || "-"}</td>
                       <td className="px-3 py-2">
                         {r.status === "ok" && (
                           <span className="text-green-600 dark:text-green-400">

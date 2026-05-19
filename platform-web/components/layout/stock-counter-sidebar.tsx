@@ -84,7 +84,7 @@ const navGroups: NavGroup[] = [
         icon: Building2,
       },
       {
-        name: "Manager",
+        name: "Supervisor",
         href: "/stock-counter/dashboard/managers",
         icon: Shield,
         adminOnly: true,

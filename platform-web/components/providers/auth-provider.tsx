@@ -149,7 +149,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                 firebaseUser.displayName ||
                 firebaseUser.email?.split("@")[0] ||
                 "User",
-              role: "staff", // default role
+              role: "employee", // default role
               companyId: "",
               companyCode: "",
               companyName: "",
@@ -214,7 +214,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
               uid: firebaseUser.uid,
               email: newUserData.email!,
               name: newUserData.name,
-              role: newUserData.role as "admin" | "manager" | "staff",
+              role: newUserData.role as "admin" | "manager" | "employee",
               companyId: newUserData.companyId,
               companyCode: newUserData.companyCode,
               companyName: newUserData.companyName,

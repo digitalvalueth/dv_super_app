@@ -20,9 +20,9 @@ export default function StockCounterDashboardLayout({
     setMounted(true); // eslint-disable-line react-hooks/set-state-in-effect
   }, []);
 
-  // Block staff from accessing the web platform
+  // Block staff & employee from accessing the web platform
   // Only check this after hydration to prevent SSG/SSR errors
-  if (mounted && userData?.role === "staff") {
+  if (mounted && (userData?.role === "staff" || userData?.role === "employee")) {
     return (
       <div className="flex flex-col items-center justify-center min-h-screen bg-linear-to-br from-gray-900 via-blue-950 to-gray-900 p-4 text-center">
         <div className="bg-white/10 p-6 rounded-3xl backdrop-blur-xl border border-white/20 mb-8 shadow-2xl">

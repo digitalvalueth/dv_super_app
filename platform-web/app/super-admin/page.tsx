@@ -279,6 +279,7 @@ export default function SuperAdminPage() {
                 modules={activeModules}
                 companies={companies}
                 isSuperAdmin={isSuperAdmin}
+                adminUser={userData}
                 onToggleModule={handleToggleUserModule}
               />
             )}
@@ -1294,12 +1295,14 @@ function UsersTab({
   modules,
   companies,
   isSuperAdmin,
+  adminUser,
   onToggleModule,
 }: {
   users: (User & { id: string })[];
   modules: ModuleInfo[];
   companies: (Company & { id: string })[];
   isSuperAdmin: boolean;
+  adminUser: User | null;
   onToggleModule: (
     userId: string,
     currentModules: string[],
@@ -1351,6 +1354,23 @@ function UsersTab({
   const companyModulesMap = new Map<string, string[]>();
   companies.forEach((c) => companyModulesMap.set(c.id, c.enabledModules || []));
 
+  // For company admin: only show modules they themselves have access to
+  const adminModules = adminUser?.moduleAccess || [];
+  const visibleModules = isSuperAdmin
+    ? modules
+    : modules.filter((mod) => adminModules.includes(mod.id));
+
+  // Role hierarchy for determining which users admin can manage
+  const roleRank: Record<string, number> = {
+    super_admin: 0,
+    admin: 1,
+    manager: 2,
+    supervisor: 3,
+    employee: 4,
+    staff: 5,
+  };
+  const adminRank = roleRank[adminUser?.role || ""] ?? 99;
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between flex-wrap gap-4">
@@ -1396,7 +1416,7 @@ function UsersTab({
                     บริษัท
                   </th>
                 )}
-                {modules.map((mod) => (
+                {visibleModules.map((mod) => (
                   <th
                     key={mod.id}
                     className="text-center px-4 py-3 font-medium text-gray-500"
@@ -1444,7 +1464,6 @@ function UsersTab({
                           <option value="manager">manager</option>
                           <option value="supervisor">supervisor</option>
                           <option value="employee">employee</option>
-                          <option value="staff">staff</option>
                         </select>
                       )}
                     </td>
@@ -1453,7 +1472,7 @@ function UsersTab({
                         {user.companyName || "—"}
                       </td>
                     )}
-                    {modules.map((mod) => {
+                    {visibleModules.map((mod) => {
                       if (user.role === "super_admin") {
                         return (
                           <td
@@ -1470,6 +1489,13 @@ function UsersTab({
 
                       const hasAccess = userModules.includes(mod.id);
                       const companyHasModule = companyEnabled.includes(mod.id);
+                      const userRank = roleRank[user.role] ?? 99;
+                      // Admin can only toggle for users with lower rank
+                      const canToggle = isSuperAdmin || userRank > adminRank;
+                      // Company admin can toggle modules they have access to
+                      // (visibleModules is already filtered to admin's modules)
+                      const isCompanyAdmin = !isSuperAdmin && adminUser?.role === "admin";
+                      const moduleAvailable = companyHasModule || isCompanyAdmin || isSuperAdmin;
 
                       return (
                         <td key={mod.id} className="text-center px-4 py-3">
@@ -1477,23 +1503,33 @@ function UsersTab({
                             onClick={() =>
                               onToggleModule(user.id, userModules, mod.id)
                             }
-                            disabled={!companyHasModule && !isSuperAdmin}
+                            disabled={!moduleAvailable || !canToggle}
                             className={`w-8 h-8 rounded-lg inline-flex items-center justify-center text-lg transition-all ${
-                              !companyHasModule
-                                ? "bg-red-50 dark:bg-red-900/10 opacity-30 cursor-not-allowed"
-                                : hasAccess
-                                  ? "bg-green-100 dark:bg-green-900/30 hover:bg-green-200"
-                                  : "bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 opacity-40"
+                              !canToggle
+                                ? "bg-gray-50 dark:bg-gray-800 opacity-30 cursor-not-allowed"
+                                : !moduleAvailable
+                                  ? "bg-red-50 dark:bg-red-900/10 opacity-30 cursor-not-allowed"
+                                  : hasAccess
+                                    ? "bg-green-100 dark:bg-green-900/30 hover:bg-green-200"
+                                    : "bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 opacity-40"
                             }`}
                             title={
-                              !companyHasModule
-                                ? "บริษัทไม่ได้เปิดใช้ module นี้"
-                                : hasAccess
-                                  ? `ลบสิทธิ์ ${mod.name}`
-                                  : `เพิ่มสิทธิ์ ${mod.name}`
+                              !canToggle
+                                ? "ไม่สามารถจัดการ role ระดับเดียวกันหรือสูงกว่า"
+                                : !moduleAvailable
+                                  ? "บริษัทไม่ได้เปิดใช้ module นี้"
+                                  : hasAccess
+                                    ? `ลบสิทธิ์ ${mod.name}`
+                                    : `เพิ่มสิทธิ์ ${mod.name}`
                             }
                           >
-                            {!companyHasModule ? "🚫" : hasAccess ? "✅" : "⬜"}
+                            {!canToggle
+                              ? "🔒"
+                              : !moduleAvailable
+                                ? "🚫"
+                                : hasAccess
+                                  ? "✅"
+                                  : "⬜"}
                           </button>
                         </td>
                       );
@@ -1504,7 +1540,7 @@ function UsersTab({
               {sortedUsers.length === 0 && (
                 <tr>
                   <td
-                    colSpan={3 + modules.length + (isSuperAdmin ? 1 : 0)}
+                    colSpan={3 + visibleModules.length + (isSuperAdmin ? 1 : 0)}
                     className="text-center py-12 text-gray-400"
                   >
                     ไม่พบผู้ใช้
@@ -1520,6 +1556,7 @@ function UsersTab({
         <span>✅ มีสิทธิ์</span>
         <span>⬜ ไม่มีสิทธิ์ (คลิกเพิ่ม)</span>
         <span>🚫 บริษัทไม่ได้เปิด module</span>
+        <span>🔒 ไม่สามารถจัดการ role นี้</span>
         <span>⭐ Super Admin</span>
       </div>
     </div>

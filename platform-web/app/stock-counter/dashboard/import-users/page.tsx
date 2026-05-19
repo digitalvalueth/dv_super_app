@@ -124,12 +124,13 @@ export default function ImportUsersPage() {
   const handleFile = async (file: File) => {
     try {
       const buffer = await file.arrayBuffer();
-      const workbook = XLSX.read(buffer, { type: "array" });
+      const workbook = XLSX.read(buffer, { type: "array", cellText: true });
       const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
       const raw = XLSX.utils.sheet_to_json<Record<string, unknown>>(
         firstSheet,
         {
           defval: "",
+          raw: false, // Return formatted strings to preserve leading zeros
         },
       );
 
@@ -149,11 +150,38 @@ export default function ImportUsersPage() {
         const branchCode = get("branchCode") || get("branch");
         const supervisorEmail = get("supervisorEmail") || get("supervisor");
 
+        // Read baCode — try raw cell value first to preserve leading zeros
+        let baCode = get("baCode") || get("BACode") || get("ba_code");
+        // If the cell was numeric (leading zeros stripped by Excel), try to get
+        // the formatted text from the raw worksheet cell
+        if (baCode && /^\d+$/.test(baCode)) {
+          // Look for the original cell in the worksheet to check if it had formatting
+          const headers = Object.keys(r);
+          const baColKey = headers.find(
+            (h) => h.toLowerCase() === "bacode" || h.toLowerCase() === "ba_code",
+          );
+          if (baColKey) {
+            // Find the column letter for this header
+            const range = XLSX.utils.decode_range(firstSheet["!ref"] || "A1");
+            for (let c = range.s.c; c <= range.e.c; c++) {
+              const headerCell = firstSheet[XLSX.utils.encode_cell({ r: range.s.r, c })];
+              if (headerCell && String(headerCell.v).trim() === baColKey) {
+                const dataCell = firstSheet[XLSX.utils.encode_cell({ r: idx + 1 + range.s.r, c })];
+                if (dataCell && dataCell.w) {
+                  // Use the formatted text which preserves leading zeros
+                  baCode = dataCell.w;
+                }
+                break;
+              }
+            }
+          }
+        }
+
         const row: ImportRow = {
           rowNum: idx + 2, // +1 for header, +1 for 1-based
           email,
           fullName,
-          baCode: get("baCode") || get("BACode") || get("ba_code"),
+          baCode,
           role,
           branchCode,
           supervisorEmail,
@@ -282,7 +310,7 @@ export default function ImportUsersPage() {
       {
         email: "ba.somchai@example.com",
         fullName: "สมชาย ใจดี",
-        baCode: "BA001",
+        baCode: "0087",
         role: "employee",
         branchCode: "BKK01",
         supervisorEmail: "supervisor@example.com",
@@ -290,6 +318,27 @@ export default function ImportUsersPage() {
       },
     ];
     const ws = XLSX.utils.json_to_sheet(sample);
+
+    // Set baCode column to Text format (@) to preserve leading zeros
+    const range = XLSX.utils.decode_range(ws["!ref"] || "A1");
+    const headers: string[] = [];
+    for (let c = range.s.c; c <= range.e.c; c++) {
+      const cell = ws[XLSX.utils.encode_cell({ r: 0, c })];
+      headers.push(cell ? String(cell.v) : "");
+    }
+    const baCodeCol = headers.indexOf("baCode");
+    if (baCodeCol >= 0) {
+      for (let r = range.s.r + 1; r <= range.e.r; r++) {
+        const addr = XLSX.utils.encode_cell({ r, c: baCodeCol });
+        const cell = ws[addr];
+        if (cell) {
+          cell.t = "s"; // Force string type
+          cell.z = "@"; // Text format
+          cell.v = String(cell.v); // Ensure value is string
+        }
+      }
+    }
+
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "Users");
     XLSX.writeFile(wb, "users_import_template.xlsx");

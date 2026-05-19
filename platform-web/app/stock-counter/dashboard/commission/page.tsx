@@ -213,7 +213,7 @@ export default function CommissionPage() {
       const exportSessions = sessionsToExport.map((s) => ({
         id: s.id,
         userName: s.userName || "Unknown",
-        userRole: userData?.role || "staff",
+        userRole: userData?.role || "employee",
         branchName: s.branchName || "Unknown",
         productName: s.productName || "",
         productSKU: s.productSKU || "",
@@ -245,7 +245,7 @@ export default function CommissionPage() {
         sellerName: firstSession?.userName || "Unknown",
         supervisorName: userData?.name || userData?.email || "Unknown",
         supervisorRole:
-          roleDisplayMap[userData?.role || "staff"] ||
+          roleDisplayMap[userData?.role || "employee"] ||
           userData?.role ||
           "Staff",
         location:
@@ -311,7 +311,7 @@ export default function CommissionPage() {
       const exportSessions = sessionsToExport.map((s) => ({
         id: s.id,
         userName: s.userName || "Unknown",
-        userRole: userData?.role || "staff",
+        userRole: userData?.role || "employee",
         branchName: s.branchName || "Unknown",
         productName: s.productName || "",
         productSKU: s.productSKU || "",
@@ -341,7 +341,7 @@ export default function CommissionPage() {
 
       const metadata = {
         sellerName: firstSession?.userName || "Unknown",
-        supervisorName: `${userData?.name || userData?.email || "Unknown"} (${roleDisplayMapPDF[userData?.role || "staff"] || userData?.role || "Staff"})`,
+        supervisorName: `${userData?.name || userData?.email || "Unknown"} (${roleDisplayMapPDF[userData?.role || "employee"] || userData?.role || "Staff"})`,
         location:
           filterBranch !== "all"
             ? filterBranch

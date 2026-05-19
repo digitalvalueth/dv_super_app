@@ -53,8 +53,7 @@ export default function UsersPage() {
       | "admin"
       | "supervisor"
       | "manager"
-      | "employee"
-      | "staff",
+      | "employee",
     companyId: "",
     branchId: "",
     branchIds: [] as string[],
@@ -261,7 +260,7 @@ export default function UsersPage() {
       (user as any).branchIds || (user.branchId ? [user.branchId] : []);
     setEditForm({
       name: user.name || "",
-      role: user.role || "employee",
+      role: (user.role === "staff" ? "employee" : user.role) || "employee",
       companyId: user.companyId || "",
       branchId: user.branchId || "",
       branchIds: existingBranchIds,
@@ -472,7 +471,7 @@ export default function UsersPage() {
             <option value="supervisor">Supervisor</option>
             <option value="manager">Manager</option>
             <option value="employee">Employee</option>
-            <option value="staff">Staff</option>
+
           </select>
         </div>
       </div>
@@ -663,9 +662,8 @@ export default function UsersPage() {
                 "supervisor",
                 "manager",
                 "employee",
-                "staff",
               ]
-            : ["manager", "supervisor", "employee", "staff"];
+            : ["manager", "supervisor", "employee"];
 
           return (
             <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
@@ -782,7 +780,7 @@ export default function UsersPage() {
                           {editForm.role === "supervisor" && "หัวหน้างาน"}
                           {editForm.role === "manager" && "ผู้จัดการสาขา"}
                           {editForm.role === "employee" && "พนักงาน"}
-                          {editForm.role === "staff" && "พนักงาน (Part-time)"}
+
                         </div>
                         <p className="text-xs text-yellow-600 dark:text-yellow-400 mt-1">
                           ⚠️ ไม่สามารถเปลี่ยนบทบาทของตัวเองได้
@@ -799,8 +797,7 @@ export default function UsersPage() {
                               | "admin"
                               | "supervisor"
                               | "manager"
-                              | "employee"
-                              | "staff",
+                              | "employee",
                           })
                         }
                         className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
@@ -820,9 +817,7 @@ export default function UsersPage() {
                         {allowedRoles.includes("employee") && (
                           <option value="employee">พนักงาน</option>
                         )}
-                        {allowedRoles.includes("staff") && (
-                          <option value="staff">พนักงาน (Part-time)</option>
-                        )}
+
                       </select>
                     )}
                     {!isEditingSelf && !isSuperAdmin && (

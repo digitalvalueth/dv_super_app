@@ -85,7 +85,7 @@ export function useActivityLogs() {
               userData.displayName ||
               userData.email ||
               "Unknown",
-            role: userData.role || "staff",
+            role: userData.role || "employee",
             email: userData.email,
           }
         : undefined;
