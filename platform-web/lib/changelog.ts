@@ -18,7 +18,7 @@ export const CHANGELOG: Release[] = [
   {
     version: "1.5.1",
     date: "19 พฤษภาคม 2569",
-    title: "ระบบสิทธิ์ Module · รวม Role Staff → Employee · แก้ BA Code",
+    title: "โครงสร้างทีมงาน · ระบบสิทธิ์ Module · รวม Role · แก้ BA Code",
     changes: [
       // ── Access Control ──────────────────────────────────────
       {
@@ -68,6 +68,17 @@ export const CHANGELOG: Release[] = [
         text: "[Web] แก้ BA Code ที่มีเลข 0 นำหน้า (เช่น 0087) ถูกตัดเหลือ 87 เมื่อนำเข้าผ่าน Excel",
         before: "BA Code: 0087 → นำเข้าได้ 87",
         after: "BA Code: 0087 → นำเข้าได้ 0087 (อ่าน formatted text จาก raw cell)",
+      },
+      // ── Team Structure ──────────────────────────────────────
+      {
+        type: "feature",
+        text: "[Web] ใหม่! หน้า 'จัดการทีมงาน' — ออกแบบใหม่เป็นโครงสร้าง Tree: Manager → Supervisor → สาขา\n\n📌 วิธีใช้:\n1. ไปที่เมนู 🛡️ จัดการทีมงาน\n2. Tab 'Manager → Supervisor' — กดที่ชื่อ Manager เพื่อดู Supervisor ที่ดูแล กด ✏️ เพื่อเพิ่ม/ลบ Supervisor\n3. Tab 'Supervisor → สาขา' — กดที่ชื่อ Supervisor เพื่อดูสาขาที่ดูแล กด ✏️ เพื่อเพิ่ม/ลบสาขา\n4. Manager จะเห็นสาขารวมจาก Supervisor ทั้งหมดที่ดูแล",
+        before: "หน้าจัดการ Supervisor — แสดง flat list เหมือนกันทั้ง Manager/Supervisor",
+        after: "หน้าจัดการทีมงาน — 2 Tab: Manager → Supervisor (Tree) + Supervisor → สาขา พร้อม Supervisor อิสระ",
+      },
+      {
+        type: "improvement",
+        text: "[Web] เมนู Sidebar: เปลี่ยนชื่อจาก 'Supervisor' เป็น 'จัดการทีมงาน' เพื่อให้ตรงกับฟีเจอร์ใหม่",
       },
     ],
   },
