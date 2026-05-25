@@ -67,9 +67,8 @@ export default function TabLayout() {
 
   console.log("✅ TabLayout - Showing tabs");
 
-  // iOS: Use transparent background with blur effect
-  // Android: Use solid background color
-  const bgColor = Platform.OS === "android" ? colors.card : undefined;
+  // Keep the bottom safe-area aligned with the app background on iOS.
+  const bgColor = Platform.OS === "android" ? colors.card : colors.background;
   const indicatorBgColor =
     Platform.OS === "android" ? colors.border : undefined;
   const foregroundColor = Platform.OS === "android" ? colors.text : undefined;
@@ -80,8 +79,8 @@ export default function TabLayout() {
       indicatorColor={indicatorBgColor}
       // Enable glass effect on iOS 26+ (systemDefault adapts to light/dark mode)
       blurEffect={Platform.OS === "ios" ? "systemDefault" : undefined}
-      // Keep consistent appearance when scrolling
-      disableTransparentOnScrollEdge={false}
+      // Avoid the iOS scroll-edge transparent fallback showing a white strip.
+      disableTransparentOnScrollEdge
       iconColor={foregroundColor}
       labelStyle={{
         color: foregroundColor,

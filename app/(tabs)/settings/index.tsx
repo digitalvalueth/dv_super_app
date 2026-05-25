@@ -76,10 +76,18 @@ export default function ProfileScreen() {
           setCompanyName(user.companyName || "");
         }
 
+        const primaryBranchId = user.branchId || user.branchIds?.[0] || "";
+        const storedBranchName =
+          (primaryBranchId ? user.branchNames?.[primaryBranchId] : "") ||
+          user.branchName ||
+          "";
+
         // Load branch name if not in user object
-        if (user.branchId && !user.branchName) {
+        if (primaryBranchId && !storedBranchName) {
           try {
-            const branchDoc = await getDoc(doc(db, "branches", user.branchId));
+            const branchDoc = await getDoc(
+              doc(db, "branches", primaryBranchId),
+            );
             if (branchDoc.exists()) {
               setBranchName(branchDoc.data().name || "");
             }
@@ -87,7 +95,7 @@ export default function ProfileScreen() {
             console.error("Error loading branch name:", error);
           }
         } else {
-          setBranchName(user.branchName || "");
+          setBranchName(storedBranchName);
         }
       };
 
@@ -432,7 +440,7 @@ export default function ProfileScreen() {
                       </Text>
                     </View>
                   ))
-                : user?.branchId && (
+                : (user?.branchId || user?.branchIds?.[0]) && (
                     <View
                       style={[
                         styles.infoBadge,
@@ -443,7 +451,10 @@ export default function ProfileScreen() {
                       <Text
                         style={[styles.infoBadgeText, { color: "#f59e0b" }]}
                       >
-                        {branchName || user?.branchCode || user?.branchId}
+                        {branchName ||
+                          user?.branchCode ||
+                          user?.branchId ||
+                          user?.branchIds?.[0]}
                       </Text>
                     </View>
                   )}

@@ -50,15 +50,16 @@ export default function HomeScreen() {
   >("all");
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedBranchId, setSelectedBranchId] = useState<string | null>(null);
+  const primaryBranchId = user?.branchId || user?.branchIds?.[0] || null;
 
   // Pagination for better performance
   const pagination = usePaginationState<ProductWithAssignment>(20);
 
   // Derive branch tabs: prefer user.branchIds (authoritative) over product-derived ids
   const branchTabs = useMemo(() => {
-    // If user explicitly has multiple branches, show all of them
+    // If user explicitly has branches, show them even when there is only one.
     const userBranchIds = user?.branchIds;
-    if (userBranchIds && userBranchIds.length > 1) {
+    if (userBranchIds && userBranchIds.length > 0) {
       return userBranchIds.map((id) => ({
         id,
         name: user?.branchNames?.[id] || user?.branchName || id,
@@ -70,7 +71,7 @@ export default function HomeScreen() {
         products.map((p) => p.assignmentBranchId).filter(Boolean) as string[],
       ),
     );
-    if (branchIds.length <= 1) return [];
+    if (branchIds.length === 0) return [];
     return branchIds.map((id) => ({
       id,
       name: user?.branchNames?.[id] || id,
@@ -82,8 +83,8 @@ export default function HomeScreen() {
     if (branchTabs.length > 0 && !selectedBranchId) {
       // Default to user's primary branchId if it's in the tabs, else first tab
       const defaultId =
-        user?.branchId && branchTabs.find((t) => t.id === user.branchId)
-          ? user.branchId
+        primaryBranchId && branchTabs.find((t) => t.id === primaryBranchId)
+          ? primaryBranchId
           : branchTabs[0].id;
       setSelectedBranchId(defaultId);
     }
@@ -97,11 +98,10 @@ export default function HomeScreen() {
   // Match on assignmentBranchId (from assignment doc) or fallback to product's branchId
   const branchFilteredProducts = useMemo(() => {
     if (!selectedBranchId) return products;
-    return products.filter(
-      (p) =>
-        (p.assignmentBranchId && p.assignmentBranchId === selectedBranchId) ||
-        (!p.assignmentBranchId && p.branchId === selectedBranchId),
-    );
+    return products.filter((p) => {
+      const productBranchId = p.assignmentBranchId || p.branchId;
+      return !productBranchId || productBranchId === selectedBranchId;
+    });
   }, [products, selectedBranchId]);
 
   // Calculate counts for filter badges (scoped to selected branch)
@@ -192,7 +192,10 @@ export default function HomeScreen() {
           productBarcode: product.barcode || "",
           assignmentId: product.assignment?.id || "",
           assignmentBranchId:
-            product.assignmentBranchId || selectedBranchId || "",
+            product.assignmentBranchId ||
+            selectedBranchId ||
+            primaryBranchId ||
+            "",
         },
       });
       return;
@@ -211,7 +214,10 @@ export default function HomeScreen() {
         assignmentId: product.assignment?.id || "",
         productBarcode: product.barcode || "",
         assignmentBranchId:
-          product.assignmentBranchId || selectedBranchId || "",
+          product.assignmentBranchId ||
+          selectedBranchId ||
+          primaryBranchId ||
+          "",
       },
     });
   };
@@ -538,7 +544,7 @@ export default function HomeScreen() {
   );
 
   // Show message for users without company/branch
-  if (!user?.companyId || !user?.branchId) {
+  if (!user?.companyId || !primaryBranchId) {
     return (
       <View style={[styles.centered, { backgroundColor: colors.background }]}>
         <View
@@ -636,7 +642,7 @@ export default function HomeScreen() {
           )}
         </View>
 
-        {/* Branch Tabs — only shown when user has products from multiple branches */}
+        {/* Branch Tabs */}
         {branchTabs.length > 0 && (
           <ScrollView
             horizontal

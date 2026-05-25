@@ -99,6 +99,13 @@ export default function HomeScreen() {
   const [selectedBranchName, setSelectedBranchName] = useState<string>(
     user?.branchName ?? "",
   );
+  const primaryBranchId = user?.branchId || user?.branchIds?.[0] || "";
+  const primaryBranchName =
+    (primaryBranchId ? user?.branchNames?.[primaryBranchId] : "") ||
+    user?.branchName ||
+    "";
+  const effectiveBranchId = selectedBranchId || primaryBranchId;
+  const effectiveBranchName = selectedBranchName || primaryBranchName;
 
   // Load pinned apps from storage
   useEffect(() => {
@@ -143,11 +150,11 @@ export default function HomeScreen() {
 
   // Sync selectedBranchId when user data first loads (e.g. after cold start)
   useEffect(() => {
-    if (user?.branchId && !selectedBranchId) {
-      setSelectedBranchId(user.branchId);
-      setSelectedBranchName(user.branchName ?? "");
+    if (primaryBranchId && !selectedBranchId) {
+      setSelectedBranchId(primaryBranchId);
+      setSelectedBranchName(primaryBranchName);
     }
-  }, [user?.branchId]);
+  }, [primaryBranchId, primaryBranchName, selectedBranchId]);
 
   const handleSelectBranch = useCallback(
     (bId: string, bName: string) => {
@@ -169,13 +176,13 @@ export default function HomeScreen() {
 
   const fetchDashboardData = useCallback(
     async (forceRefresh = false) => {
-      if (!user?.companyId || !user?.branchId || !user?.uid) {
+      if (!user?.companyId || !primaryBranchId || !user?.uid) {
         setLoading(false);
         return;
       }
 
       try {
-        const branchId = selectedBranchId || user.branchId;
+        const branchId = effectiveBranchId;
         const userId = user.uid;
         const cacheKey = CacheKeys.dashboardStats(branchId);
 
@@ -293,7 +300,7 @@ export default function HomeScreen() {
         setRefreshing(false);
       }
     },
-    [user?.companyId, user?.branchId, user?.uid, selectedBranchId],
+    [user?.companyId, primaryBranchId, user?.uid, effectiveBranchId],
   );
 
   useEffect(() => {
@@ -304,12 +311,12 @@ export default function HomeScreen() {
   const onRefresh = useCallback(() => {
     setRefreshing(true);
     // Force refresh - bypass cache
-    const cacheTargetBranch = selectedBranchId || user?.branchId;
+    const cacheTargetBranch = effectiveBranchId;
     if (cacheTargetBranch) {
       removeCache(CacheKeys.dashboardStats(cacheTargetBranch));
     }
     fetchDashboardData(true);
-  }, [fetchDashboardData, user?.branchId]);
+  }, [effectiveBranchId, fetchDashboardData]);
 
   const greeting = () => {
     const hour = new Date().getHours();
@@ -354,6 +361,7 @@ export default function HomeScreen() {
     return (
       <SafeAreaView
         style={[styles.container, { backgroundColor: colors.background }]}
+        edges={["top"]}
       >
         <View style={styles.loadingContainer}>
           <ActivityIndicator size="large" color={colors.primary} />
@@ -368,6 +376,7 @@ export default function HomeScreen() {
   return (
     <SafeAreaView
       style={[styles.container, { backgroundColor: colors.background }]}
+      edges={["top"]}
     >
       <StatusBar barStyle={isDark ? "light-content" : "dark-content"} />
 
@@ -433,8 +442,8 @@ export default function HomeScreen() {
               </View>
             </View>
 
-            {/* Branch selector chips — visible only for multi-branch users */}
-            {(user?.branchIds?.length ?? 0) > 1 && (
+            {/* Branch selector chips */}
+            {(user?.branchIds?.length ?? 0) > 1 ? (
               <ScrollView
                 horizontal
                 showsHorizontalScrollIndicator={false}
@@ -471,7 +480,25 @@ export default function HomeScreen() {
                   );
                 })}
               </ScrollView>
-            )}
+            ) : effectiveBranchName ? (
+              <View
+                style={[
+                  styles.branchChipsRow,
+                  { marginTop: 12, marginBottom: 4 },
+                ]}
+              >
+                <View style={styles.branchChip}>
+                  <Ionicons
+                    name="business-outline"
+                    size={11}
+                    color="rgba(255,255,255,0.85)"
+                  />
+                  <Text style={styles.branchChipText} numberOfLines={1}>
+                    {effectiveBranchName}
+                  </Text>
+                </View>
+              </View>
+            ) : null}
 
             {/* Quick Stats in Banner */}
             <View style={styles.bannerStats}>
@@ -867,8 +894,6 @@ export default function HomeScreen() {
             </View>
           )}
         </Animated.View>
-
-        <View style={{ height: 100 }} />
       </ScrollView>
     </SafeAreaView>
   );
@@ -941,6 +966,7 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     paddingHorizontal: 16,
+    paddingBottom: 116,
   },
   userBanner: {
     borderRadius: 20,

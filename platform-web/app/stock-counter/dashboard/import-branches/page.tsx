@@ -31,9 +31,45 @@ interface BranchRow {
   longitude?: number | null;
   radiusMeters?: number;
   seller?: string;
+  supervisorEmail?: string;
+  supervisorId?: string;
+  supervisorName?: string;
   status: "pending" | "ok" | "error" | "duplicate";
   message?: string;
 }
+
+interface SupervisorLite {
+  id: string;
+  email: string;
+  name: string;
+}
+
+const normalizeImportKey = (key: string) =>
+  key
+    .replace(/^\uFEFF/, "")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9ก-๙]/g, "");
+
+const buildRowGetter = (row: Record<string, unknown>) => {
+  const normalized = new Map<string, unknown>();
+  Object.entries(row).forEach(([key, value]) => {
+    const normalizedKey = normalizeImportKey(key);
+    if (!normalized.has(normalizedKey)) {
+      normalized.set(normalizedKey, value);
+    }
+  });
+
+  return (...keys: string[]) => {
+    for (const key of keys) {
+      const value = normalized.get(normalizeImportKey(key));
+      if (value != null && String(value).trim()) {
+        return String(value).trim();
+      }
+    }
+    return "";
+  };
+};
 
 export default function ImportBranchesPage() {
   const { userData } = useAuthStore();
@@ -42,6 +78,7 @@ export default function ImportBranchesPage() {
   const [rows, setRows] = useState<BranchRow[]>([]);
   const [existingCodes, setExistingCodes] = useState<Set<string>>(new Set());
   const [existingNames, setExistingNames] = useState<Set<string>>(new Set());
+  const [supervisors, setSupervisors] = useState<SupervisorLite[]>([]);
   const [companyName, setCompanyName] = useState("");
   const [companyCode, setCompanyCode] = useState("");
   const [isSaving, setIsSaving] = useState(false);
@@ -79,12 +116,49 @@ export default function ImportBranchesPage() {
         setExistingNames(names);
         setCompanyName(cName);
         setCompanyCode(cCode);
+
+        const userSnap = await getDocs(
+          query(
+            collection(db, "users"),
+            where("companyId", "==", companyId),
+            where("role", "in", ["supervisor", "manager", "admin"]),
+          ),
+        );
+        setSupervisors(
+          userSnap.docs.map((d) => {
+            const data = d.data() as {
+              uid?: string;
+              email?: string;
+              fullName?: string;
+              name?: string;
+              displayName?: string;
+            };
+            return {
+              id: data.uid || d.id,
+              email: (data.email || "").toLowerCase(),
+              name:
+                data.fullName ||
+                data.name ||
+                data.displayName ||
+                data.email ||
+                "",
+            };
+          }),
+        );
       } catch (err) {
         console.error(err);
         toast.error("โหลดข้อมูลสาขาไม่สำเร็จ");
       }
     })();
   }, [companyId]);
+
+  const supervisorByEmail = useMemo(() => {
+    const m = new Map<string, SupervisorLite>();
+    supervisors.forEach((s) => {
+      if (s.email) m.set(s.email.trim().toLowerCase(), s);
+    });
+    return m;
+  }, [supervisors]);
 
   const handleFile = async (file: File) => {
     try {
@@ -101,17 +175,43 @@ export default function ImportBranchesPage() {
 
       const seen = new Set<string>();
       const parsed: BranchRow[] = raw.map((r, idx) => {
-        const get = (k: string) => {
-          const v = r[k] ?? r[k.toLowerCase()] ?? r[k.toUpperCase()];
-          return v == null ? "" : String(v).trim();
-        };
-        const name = get("name");
-        const code = get("code");
-        const address = get("address");
-        const latStr = get("latitude") || get("lat");
-        const lngStr = get("longitude") || get("lng") || get("lon");
-        const radiusStr = get("radiusMeters") || get("radius");
-        const seller = get("seller") || get("sellerCategory");
+        const get = buildRowGetter(r);
+        const name = get(
+          "name",
+          "branchName",
+          "branch name",
+          "ชื่อ",
+          "ชื่อสาขา",
+        );
+        const code = get(
+          "code",
+          "branchCode",
+          "branch code",
+          "รหัส",
+          "รหัสสาขา",
+        );
+        const address = get("address", "ที่อยู่");
+        const latStr = get("latitude", "lat", "ละติจูด");
+        const lngStr = get("longitude", "lng", "lon", "ลองจิจูด");
+        const radiusStr = get(
+          "radiusMeters",
+          "radius",
+          "radius meters",
+          "รัศมี",
+        );
+        const seller = get(
+          "seller",
+          "sellerCategory",
+          "seller category",
+          "ร้านค้า",
+        );
+        const supervisorEmail = get(
+          "supervisorEmail",
+          "supervisor email",
+          "supervisor",
+          "หัวหน้า",
+          "อีเมลหัวหน้า",
+        ).toLowerCase();
 
         const errors: string[] = [];
         if (!name) errors.push("ต้องมีชื่อสาขา");
@@ -142,8 +242,17 @@ export default function ImportBranchesPage() {
           longitude: lng,
           radiusMeters: radius,
           seller: seller || undefined,
+          supervisorEmail: supervisorEmail || undefined,
           status: "pending",
         };
+
+        if (supervisorEmail) {
+          const supervisor = supervisorByEmail.get(supervisorEmail);
+          if (supervisor) {
+            row.supervisorId = supervisor.id;
+            row.supervisorName = supervisor.name;
+          }
+        }
 
         // Duplicate within file
         const key = (code || name).toLowerCase();
@@ -211,6 +320,10 @@ export default function ImportBranchesPage() {
           longitude: r.longitude,
           radiusMeters: r.radiusMeters || 200,
           sellerCategory: r.seller || null,
+          seller: r.seller || null,
+          supervisorEmail: r.supervisorEmail || null,
+          supervisorId: r.supervisorId || null,
+          supervisorName: r.supervisorName || null,
           createdAt: serverTimestamp(),
         });
         updated[i] = { ...r, status: "ok", message: "เพิ่มแล้ว" };
@@ -240,6 +353,7 @@ export default function ImportBranchesPage() {
         longitude: 100.5018,
         radiusMeters: 200,
         seller: "Watson's",
+        supervisorEmail: "supervisor@example.com",
       },
     ];
     const ws = XLSX.utils.json_to_sheet(sample);
@@ -280,7 +394,8 @@ export default function ImportBranchesPage() {
           <p className="text-sm text-gray-600 dark:text-gray-400 mb-3">
             คอลัมน์:{" "}
             <code className="text-xs bg-gray-100 dark:bg-gray-700 px-2 py-1 rounded">
-              name, code, address, latitude, longitude, radiusMeters, seller
+              name, code, address, latitude, longitude, radiusMeters, seller,
+              supervisorEmail
             </code>
           </p>
           <button
@@ -346,6 +461,7 @@ export default function ImportBranchesPage() {
                     <th className="px-3 py-2 text-left">Lng</th>
                     <th className="px-3 py-2 text-left">รัศมี</th>
                     <th className="px-3 py-2 text-left">Seller</th>
+                    <th className="px-3 py-2 text-left">Supervisor</th>
                     <th className="px-3 py-2 text-left">สถานะ</th>
                   </tr>
                 </thead>
@@ -368,6 +484,9 @@ export default function ImportBranchesPage() {
                       <td className="px-3 py-2">{r.longitude ?? "-"}</td>
                       <td className="px-3 py-2">{r.radiusMeters || 200}</td>
                       <td className="px-3 py-2">{r.seller || "-"}</td>
+                      <td className="px-3 py-2">
+                        {r.supervisorName || r.supervisorEmail || "-"}
+                      </td>
                       <td className="px-3 py-2">
                         {r.status === "ok" && (
                           <span className="text-green-600 dark:text-green-400">

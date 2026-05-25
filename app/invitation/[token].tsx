@@ -41,6 +41,12 @@ interface InvitationData {
   branchCode?: string;
   managedBranchIds?: string[];
   supervisorId?: string;
+  supervisorName?: string;
+  supervisorEmail?: string;
+  baCode?: string;
+  fullName?: string;
+  seller?: string;
+  sellerCategory?: string;
   invitedByName?: string;
   status: string;
   token: string;
@@ -153,33 +159,60 @@ export default function InvitationScreen() {
         updateDoc: fsUpdateDoc,
         Timestamp: fsTimestamp,
         arrayUnion,
+        getDoc,
       } = await import("firebase/firestore");
 
       const userDocRef = firestoreDoc(db, "users", user.uid);
+      let resolvedBranchName = invitation.branchName || "";
+      let resolvedBranchCode = invitation.branchCode || "";
+      if (invitation.branchId) {
+        const branchDoc = await getDoc(
+          firestoreDoc(db, "branches", invitation.branchId),
+        );
+        if (branchDoc.exists()) {
+          const branchData = branchDoc.data();
+          resolvedBranchName = branchData.name || resolvedBranchName;
+          resolvedBranchCode = branchData.code || resolvedBranchCode;
+        }
+      }
+
+      const sellerCategory =
+        invitation.sellerCategory || invitation.seller || "";
       const userUpdate: Record<string, any> = {
         companyId: invitation.companyId,
         companyName: invitation.companyName || "",
+        name: invitation.fullName || user.name,
+        displayName: invitation.fullName || user.name,
         role: invitation.role,
+        baCode: invitation.baCode || null,
+        fullName: invitation.fullName || null,
+        seller: sellerCategory || null,
+        sellerCategory: sellerCategory || null,
         updatedAt: fsTimestamp.now(),
         invitationId: invitation.id,
       };
 
       if (invitation.role === "employee") {
         userUpdate.branchId = invitation.branchId || null;
-        userUpdate.branchName = invitation.branchName || "";
-        userUpdate.branchCode = invitation.branchCode || "";
+        userUpdate.branchName = resolvedBranchName;
+        userUpdate.branchCode = resolvedBranchCode;
         // Multi-branch support: add branchId to branchIds array + branchNames map
         if (invitation.branchId) {
           userUpdate.branchIds = arrayUnion(invitation.branchId);
-          userUpdate[`branchNames.${invitation.branchId}`] =
-            invitation.branchName || "";
+          userUpdate[`branchNames.${invitation.branchId}`] = resolvedBranchName;
         }
         if (invitation.supervisorId) {
           userUpdate.supervisorId = invitation.supervisorId;
         }
+        if (invitation.supervisorName) {
+          userUpdate.supervisorName = invitation.supervisorName;
+        }
+        if (invitation.supervisorEmail) {
+          userUpdate.supervisorEmail = invitation.supervisorEmail;
+        }
       } else {
         userUpdate.managedBranchIds = invitation.managedBranchIds || [];
-        userUpdate.branchName = invitation.branchName || "";
+        userUpdate.branchName = resolvedBranchName;
       }
 
       await setDoc(userDocRef, userUpdate, { merge: true });
@@ -202,7 +235,7 @@ export default function InvitationScreen() {
       const updatedBranchNames = {
         ...(user.branchNames || {}),
         ...(invitation.branchId
-          ? { [invitation.branchId]: invitation.branchName || "" }
+          ? { [invitation.branchId]: resolvedBranchName }
           : {}),
       };
       setUser({
@@ -214,7 +247,7 @@ export default function InvitationScreen() {
 
       Alert.alert(
         "ยินดีต้อนรับ! 🎉",
-        `คุณเข้าร่วม ${invitation.companyName || "ทีม"} ในตำแหน่ง ${ROLE_LABELS[invitation.role] || invitation.role} แล้ว`,
+        `คุณเข้าร่วม ${invitation.companyName || "ทีม"} ในบทบาท ${ROLE_LABELS[invitation.role] || invitation.role} แล้ว`,
         [
           {
             text: "เริ่มใช้งาน",
@@ -325,7 +358,7 @@ export default function InvitationScreen() {
           )}
           <DetailRow
             icon="briefcase"
-            label="ตำแหน่ง"
+            label="บทบาท"
             value={ROLE_LABELS[invitation.role] || invitation.role}
             colors={colors}
             isLast

@@ -560,7 +560,7 @@ export default function InvitationsPage() {
 
               <div>
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                  ตำแหน่ง
+                  บทบาท
                 </label>
                 <select
                   value={formData.role}
@@ -890,7 +890,7 @@ export default function InvitationsPage() {
 
               <div>
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                  ตำแหน่ง
+                  บทบาท
                 </label>
                 <select
                   value={formData.role}

@@ -111,23 +111,40 @@ export function NotificationDropdown() {
   };
 
   const acceptInvite = async (notification: Notification) => {
-    if (!user || !notification.data?.companyId || !notification.data?.branchId)
-      return;
+    if (!user || !notification.data?.companyId) return;
     setLoadingAction(notification.id);
     try {
-      const newBranchId = notification.data.branchId;
+      const role = notification.data.role || "employee";
+      const newBranchId = notification.data.branchId || "";
       const newBranchName = notification.data.branchName || "";
+      const sellerCategory =
+        notification.data.sellerCategory || notification.data.seller || "";
 
-      await updateDoc(doc(db, "users", user.uid), {
+      const userUpdate: Record<string, any> = {
         companyId: notification.data.companyId,
-        branchId: newBranchId,
-        branchName: newBranchName,
         companyName: notification.data.companyName || "",
-        role: notification.data.role || "employee",
-        branchIds: arrayUnion(newBranchId),
-        [`branchNames.${newBranchId}`]: newBranchName,
+        role,
+        baCode: notification.data.baCode || null,
+        fullName: notification.data.fullName || null,
+        seller: sellerCategory || null,
+        sellerCategory: sellerCategory || null,
         updatedAt: new Date(),
-      });
+      };
+
+      if (role === "employee" && newBranchId) {
+        userUpdate.branchId = newBranchId;
+        userUpdate.branchName = newBranchName;
+        userUpdate.branchCode = notification.data.branchCode || null;
+        userUpdate.supervisorId = notification.data.supervisorId || null;
+        userUpdate.supervisorName = notification.data.supervisorName || null;
+        userUpdate.supervisorEmail = notification.data.supervisorEmail || null;
+        userUpdate.branchIds = arrayUnion(newBranchId);
+        userUpdate[`branchNames.${newBranchId}`] = newBranchName;
+      } else if (notification.data.managedBranchIds?.length) {
+        userUpdate.managedBranchIds = notification.data.managedBranchIds;
+      }
+
+      await updateDoc(doc(db, "users", user.uid), userUpdate);
 
       await updateDoc(doc(db, "notifications", notification.id), {
         read: true,
@@ -146,30 +163,36 @@ export function NotificationDropdown() {
               updatedAt: new Date(),
             },
           );
-        } catch (_) {}
+        } catch {}
       }
 
       const updatedBranchIds = Array.from(
-        new Set([...(user.branchIds || []), newBranchId]),
+        new Set([
+          ...(user.branchIds || []),
+          ...(newBranchId ? [newBranchId] : []),
+        ]),
       );
       setUser({
         ...user,
+        ...userUpdate,
         companyId: notification.data.companyId,
-        branchId: newBranchId,
-        branchName: newBranchName,
         companyName: notification.data.companyName || "",
         branchIds: updatedBranchIds,
         branchNames: {
           ...(user.branchNames || {}),
-          [newBranchId]: newBranchName,
+          ...(newBranchId ? { [newBranchId]: newBranchName } : {}),
         },
-        role: (notification.data.role as any) || "employee",
+        role: role as any,
       });
 
-      Alert.alert("ยอมรับแล้ว 🎉", `คุณเข้าร่วมสาขา ${newBranchName} แล้ว`, [
-        { text: "ตกลง" },
-      ]);
-    } catch (e) {
+      Alert.alert(
+        "ยอมรับแล้ว 🎉",
+        newBranchName
+          ? `คุณเข้าร่วมสาขา ${newBranchName} แล้ว`
+          : "คุณเข้าร่วมทีมเรียบร้อยแล้ว",
+        [{ text: "ตกลง" }],
+      );
+    } catch {
       Alert.alert("เกิดข้อผิดพลาด", "ไม่สามารถยอมรับคำเชิญได้");
     } finally {
       setLoadingAction(null);
@@ -196,11 +219,11 @@ export function NotificationDropdown() {
               updatedAt: new Date(),
             },
           );
-        } catch (_) {}
+        } catch {}
       }
 
       Alert.alert("ปฏิเสธแล้ว", "คุณได้ปฏิเสธคำเชิญแล้ว");
-    } catch (e) {
+    } catch {
       Alert.alert("เกิดข้อผิดพลาด", "ไม่สามารถปฏิเสธคำเชิญได้");
     } finally {
       setLoadingAction(null);

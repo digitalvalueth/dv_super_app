@@ -373,6 +373,17 @@ export default function BranchDetailPage() {
   };
 
   const handleRemoveAllProducts = () => {
+    if (productBrandFilter !== "all") {
+      const brandProductIds = new Set(
+        products.filter(matchesBrandFilter).map((p) => p.productId),
+      );
+      setAssignmentForm((prev) => ({
+        ...prev,
+        productIds: prev.productIds.filter((id) => !brandProductIds.has(id)),
+      }));
+      return;
+    }
+
     setAssignmentForm((prev) => ({
       ...prev,
       productIds: [],
@@ -404,6 +415,12 @@ export default function BranchDetailPage() {
     return detectProductBrand(product) === productBrandFilter;
   };
 
+  const getBrandFilterLabel = () => {
+    if (productBrandFilter === "nestme") return "NestMe";
+    if (productBrandFilter === "primanest") return "PrimaNest";
+    return "ทุกแบรนด์";
+  };
+
   // Products that are NOT yet assigned
   const availableProducts = products.filter(
     (p) =>
@@ -426,11 +443,29 @@ export default function BranchDetailPage() {
         p.barcode?.toLowerCase().includes(assignedSearchTerm.toLowerCase())),
   );
 
+  const scopedAssignmentProductIds =
+    productBrandFilter === "all"
+      ? assignmentForm.productIds
+      : products
+          .filter(
+            (p) =>
+              matchesBrandFilter(p) &&
+              assignmentForm.productIds.includes(p.productId),
+          )
+          .map((p) => p.productId);
+
+  const scopedProductCount =
+    productBrandFilter === "all"
+      ? products.length
+      : products.filter(matchesBrandFilter).length;
+
   const handleSaveAssignment = async () => {
     if (!selectedUser || !branch) return;
 
-    if (assignmentForm.productIds.length === 0) {
-      toast.error("กรุณาเลือกอย่างน้อย 1 สินค้า");
+    const productIdsToSave = scopedAssignmentProductIds;
+
+    if (productIdsToSave.length === 0) {
+      toast.error(`กรุณาเลือกอย่างน้อย 1 สินค้า (${getBrandFilterLabel()})`);
       return;
     }
 
@@ -440,7 +475,7 @@ export default function BranchDetailPage() {
       if (existingAssignment) {
         // Update existing
         await updateDoc(doc(db, "assignments", existingAssignment.id), {
-          productIds: assignmentForm.productIds,
+          productIds: productIdsToSave,
           month: assignmentForm.month,
           year: assignmentForm.year,
           half: assignmentForm.half,
@@ -453,7 +488,7 @@ export default function BranchDetailPage() {
           companyId: branch.companyId,
           branchId: branch.id,
           userId: selectedUser.id,
-          productIds: assignmentForm.productIds,
+          productIds: productIdsToSave,
           month: assignmentForm.month,
           year: assignmentForm.year,
           half: assignmentForm.half,
@@ -1286,12 +1321,14 @@ export default function BranchDetailPage() {
                         {assignedProducts.length}
                       </span>
                     </h3>
-                    {assignmentForm.productIds.length > 0 && (
+                    {scopedAssignmentProductIds.length > 0 && (
                       <button
                         onClick={handleRemoveAllProducts}
                         className="text-xs px-3 py-1.5 bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400 rounded-lg hover:bg-red-200 dark:hover:bg-red-900/50 transition-colors"
                       >
-                        ลบทั้งหมด
+                        {productBrandFilter === "all"
+                          ? "ลบทั้งหมด"
+                          : `ลบ ${getBrandFilterLabel()}`}
                       </button>
                     )}
                   </div>
@@ -1367,9 +1404,14 @@ export default function BranchDetailPage() {
                 <p className="text-sm text-gray-600 dark:text-gray-400">
                   เลือกแล้ว{" "}
                   <strong className="text-blue-600 dark:text-blue-400">
-                    {assignmentForm.productIds.length}
+                    {scopedAssignmentProductIds.length}
                   </strong>{" "}
-                  จาก {products.length} สินค้า
+                  จาก {scopedProductCount} สินค้า
+                  {productBrandFilter !== "all" && (
+                    <span className="ml-1 text-purple-600 dark:text-purple-400">
+                      ({getBrandFilterLabel()})
+                    </span>
+                  )}
                 </p>
                 <div className="flex gap-3">
                   <button
@@ -1387,12 +1429,18 @@ export default function BranchDetailPage() {
                   <button
                     onClick={handleSaveAssignment}
                     disabled={
-                      submitting || assignmentForm.productIds.length === 0
+                      submitting || scopedAssignmentProductIds.length === 0
                     }
                     className="px-6 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed font-medium flex items-center gap-2 transition-colors"
                   >
                     {submitting && <Loader2 className="w-4 h-4 animate-spin" />}
-                    {existingAssignment ? "บันทึกการแก้ไข" : "มอบหมายงาน"}
+                    {existingAssignment
+                      ? productBrandFilter === "all"
+                        ? "บันทึกการแก้ไข"
+                        : `บันทึก ${getBrandFilterLabel()}`
+                      : productBrandFilter === "all"
+                        ? "มอบหมายงาน"
+                        : `มอบหมาย ${getBrandFilterLabel()}`}
                   </button>
                 </div>
               </div>
@@ -1462,7 +1510,7 @@ export default function BranchDetailPage() {
               {/* Role Selection */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                  ตำแหน่ง
+                  บทบาท
                 </label>
                 <select
                   value={inviteRole}

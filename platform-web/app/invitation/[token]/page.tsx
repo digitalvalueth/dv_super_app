@@ -371,7 +371,7 @@ export default function InvitationPage() {
                 </svg>
               </div>
               <div>
-                <p className="text-sm text-gray-500">ตำแหน่ง</p>
+                <p className="text-sm text-gray-500">บทบาท</p>
                 <p className="text-lg font-semibold text-gray-900 capitalize">
                   {invitation.role === "employee" ? "พนักงาน" : "ผู้จัดการ"}
                 </p>

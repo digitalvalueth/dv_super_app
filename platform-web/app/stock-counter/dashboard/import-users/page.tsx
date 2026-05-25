@@ -46,6 +46,48 @@ interface SupervisorLite {
 
 const VALID_ROLES = ["employee", "supervisor", "manager", "admin"];
 
+const normalizeImportKey = (key: string) =>
+  key
+    .replace(/^\uFEFF/, "")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9ก-๙]/g, "");
+
+const buildRowGetter = (row: Record<string, unknown>) => {
+  const normalized = new Map<string, unknown>();
+  Object.entries(row).forEach(([key, value]) => {
+    const normalizedKey = normalizeImportKey(key);
+    if (!normalized.has(normalizedKey)) {
+      normalized.set(normalizedKey, value);
+    }
+  });
+
+  return (...keys: string[]) => {
+    for (const key of keys) {
+      const value = normalized.get(normalizeImportKey(key));
+      if (value != null && String(value).trim()) {
+        return String(value).trim();
+      }
+    }
+    return "";
+  };
+};
+
+const findColumnIndex = (sheet: XLSX.WorkSheet, aliases: string[]) => {
+  const range = XLSX.utils.decode_range(sheet["!ref"] || "A1");
+  const normalizedAliases = aliases.map(normalizeImportKey);
+  for (let c = range.s.c; c <= range.e.c; c++) {
+    const headerCell = sheet[XLSX.utils.encode_cell({ r: range.s.r, c })];
+    if (
+      headerCell &&
+      normalizedAliases.includes(normalizeImportKey(String(headerCell.v || "")))
+    ) {
+      return c;
+    }
+  }
+  return -1;
+};
+
 export default function ImportUsersPage() {
   const { userData } = useAuthStore();
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -139,41 +181,60 @@ export default function ImportUsersPage() {
         return;
       }
 
+      const baCodeCol = findColumnIndex(firstSheet, [
+        "baCode",
+        "BACode",
+        "ba_code",
+        "ba code",
+        "รหัสพนักงาน",
+      ]);
+
       const parsed: ImportRow[] = raw.map((r, idx) => {
-        const get = (k: string) => {
-          const v = r[k] ?? r[k.toLowerCase()] ?? r[k.toUpperCase()];
-          return v == null ? "" : String(v).trim();
-        };
-        const email = get("email");
-        const fullName = get("fullName") || get("name");
+        const get = buildRowGetter(r);
+        const email = get("email", "e-mail", "mail", "อีเมล").toLowerCase();
+        const fullName = get(
+          "fullName",
+          "full name",
+          "name",
+          "ชื่อ",
+          "ชื่อสกุล",
+          "ชื่อ-นามสกุล",
+        );
         const role = get("role").toLowerCase() || "employee";
-        const branchCode = get("branchCode") || get("branch");
-        const supervisorEmail = get("supervisorEmail") || get("supervisor");
+        const branchCode = get(
+          "branchCode",
+          "branch code",
+          "branch",
+          "สาขา",
+          "รหัสสาขา",
+        );
+        const supervisorEmail = get(
+          "supervisorEmail",
+          "supervisor email",
+          "supervisor",
+          "หัวหน้า",
+          "อีเมลหัวหน้า",
+        ).toLowerCase();
 
         // Read baCode — try raw cell value first to preserve leading zeros
-        let baCode = get("baCode") || get("BACode") || get("ba_code");
+        let baCode = get(
+          "baCode",
+          "BACode",
+          "ba_code",
+          "ba code",
+          "รหัสพนักงาน",
+        );
         // If the cell was numeric (leading zeros stripped by Excel), try to get
         // the formatted text from the raw worksheet cell
-        if (baCode && /^\d+$/.test(baCode)) {
-          // Look for the original cell in the worksheet to check if it had formatting
-          const headers = Object.keys(r);
-          const baColKey = headers.find(
-            (h) => h.toLowerCase() === "bacode" || h.toLowerCase() === "ba_code",
-          );
-          if (baColKey) {
-            // Find the column letter for this header
-            const range = XLSX.utils.decode_range(firstSheet["!ref"] || "A1");
-            for (let c = range.s.c; c <= range.e.c; c++) {
-              const headerCell = firstSheet[XLSX.utils.encode_cell({ r: range.s.r, c })];
-              if (headerCell && String(headerCell.v).trim() === baColKey) {
-                const dataCell = firstSheet[XLSX.utils.encode_cell({ r: idx + 1 + range.s.r, c })];
-                if (dataCell && dataCell.w) {
-                  // Use the formatted text which preserves leading zeros
-                  baCode = dataCell.w;
-                }
-                break;
-              }
-            }
+        if (baCode && /^\d+$/.test(baCode) && baCodeCol >= 0) {
+          const range = XLSX.utils.decode_range(firstSheet["!ref"] || "A1");
+          const cellAddress = XLSX.utils.encode_cell({
+            r: idx + 1 + range.s.r,
+            c: baCodeCol,
+          });
+          const dataCell = firstSheet[cellAddress];
+          if (dataCell && dataCell.w) {
+            baCode = dataCell.w;
           }
         }
 
@@ -185,7 +246,7 @@ export default function ImportUsersPage() {
           role,
           branchCode,
           supervisorEmail,
-          seller: get("seller"),
+          seller: get("seller", "sellerCategory", "seller category", "ร้านค้า"),
           status: "pending",
         };
 
@@ -208,8 +269,6 @@ export default function ImportUsersPage() {
           const sv = supervisorByEmail.get(supervisorEmail.toLowerCase());
           if (sv) {
             row.supervisorId = sv.id;
-          } else {
-            errors.push(`ไม่พบหัวหน้า "${supervisorEmail}"`);
           }
         }
 
@@ -272,7 +331,9 @@ export default function ImportUsersPage() {
             baCode: r.baCode || undefined,
             fullName: r.fullName || undefined,
             seller: r.seller || undefined,
+            sellerCategory: r.seller || undefined,
             supervisorId: r.supervisorId || undefined,
+            supervisorEmail: r.supervisorEmail || undefined,
           }),
         });
 
@@ -285,7 +346,11 @@ export default function ImportUsersPage() {
           };
           failed++;
         } else {
-          updated[i] = { ...r, status: "ok", message: "ส่งสำเร็จ" };
+          updated[i] = {
+            ...r,
+            status: "ok",
+            message: data.updatedExisting ? "อัปเดตผู้ใช้เดิม" : "ส่งสำเร็จ",
+          };
           success++;
         }
       } catch (err) {

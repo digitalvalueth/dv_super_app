@@ -1,12 +1,22 @@
 "use client";
 
+import { db } from "@/lib/firebase";
 import {
   canAccessModule,
   getCompanyEnabledModules,
 } from "@/lib/module-service";
 import { useAuthStore } from "@/stores/auth.store";
+import { User } from "@/types";
+import {
+  collection,
+  doc,
+  getDoc,
+  getDocs,
+  query,
+  where,
+} from "firebase/firestore";
 import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
 
 interface ModuleGuardProps {
@@ -15,10 +25,48 @@ interface ModuleGuardProps {
 }
 
 export function ModuleGuard({ moduleId, children }: ModuleGuardProps) {
-  const { user, userData, loading } = useAuthStore();
+  const { user, userData, loading, activeCompanyId, setUserData } =
+    useAuthStore();
   const router = useRouter();
   const [checking, setChecking] = useState(true);
   const [hasAccess, setHasAccess] = useState(false);
+
+  const buildFreshUserData = useCallback(
+    (id: string, data: Record<string, any>): User & { id: string } =>
+      ({
+        id,
+        uid: data.uid || user?.uid || id,
+        ...data,
+      }) as User & { id: string },
+    [user?.uid],
+  );
+
+  const getFreshUserCandidates = useCallback(async () => {
+    if (!user) return [];
+
+    const candidates: (User & { id: string })[] = [];
+    const seen = new Set<string>();
+
+    const addCandidate = (id: string, data: Record<string, any>) => {
+      if (seen.has(id)) return;
+      seen.add(id);
+      candidates.push(buildFreshUserData(id, data));
+    };
+
+    const uidSnap = await getDoc(doc(db, "users", user.uid));
+    if (uidSnap.exists()) {
+      addCandidate(uidSnap.id, uidSnap.data());
+    }
+
+    if (user.email) {
+      const emailSnap = await getDocs(
+        query(collection(db, "users"), where("email", "==", user.email)),
+      );
+      emailSnap.forEach((snap) => addCandidate(snap.id, snap.data()));
+    }
+
+    return candidates;
+  }, [buildFreshUserData, user]);
 
   useEffect(() => {
     // Timeout to prevent infinite loading
@@ -46,21 +94,34 @@ export function ModuleGuard({ moduleId, children }: ModuleGuardProps) {
 
     async function checkAccess() {
       try {
-        // Get company enabled modules
-        const companyModulesResult = userData!.companyId
-          ? await getCompanyEnabledModules(userData!.companyId)
+        const effectiveCompanyId = activeCompanyId || userData!.companyId;
+        const companyModulesResult = effectiveCompanyId
+          ? await getCompanyEnabledModules(effectiveCompanyId)
           : [];
 
         // If company has no modules configured, skip company-level check (same as home page)
         const companyModulesArg =
           companyModulesResult.length > 0 ? companyModulesResult : undefined;
 
-        const allowed = canAccessModule(userData, moduleId, companyModulesArg);
+        const freshCandidates = await getFreshUserCandidates();
+        const accessCandidates = [
+          ...freshCandidates,
+          userData as User & { id: string },
+        ];
+        const allowedUser = accessCandidates.find((candidate) =>
+          canAccessModule(candidate, moduleId, companyModulesArg),
+        );
+
+        const allowed = Boolean(allowedUser);
 
         if (!allowed) {
           toast.error("ไม่มีสิทธิ์เข้าถึง module นี้");
           router.push("/");
           return;
+        }
+
+        if (allowedUser && allowedUser !== userData) {
+          setUserData(allowedUser);
         }
 
         setHasAccess(true);
@@ -73,7 +134,17 @@ export function ModuleGuard({ moduleId, children }: ModuleGuardProps) {
     }
 
     checkAccess();
-  }, [user, userData, loading, moduleId, router, hasAccess]);
+  }, [
+    user,
+    userData,
+    loading,
+    moduleId,
+    router,
+    hasAccess,
+    activeCompanyId,
+    setUserData,
+    getFreshUserCandidates,
+  ]);
 
   if (loading || checking) {
     return (

@@ -1,6 +1,7 @@
 import { sendInvitationEmail } from "@/lib/email";
 import { adminAuth, adminDb } from "@/lib/firebase-admin";
 import crypto from "crypto";
+import { FieldValue } from "firebase-admin/firestore";
 import { NextRequest, NextResponse } from "next/server";
 
 /**
@@ -79,7 +80,9 @@ export async function POST(request: NextRequest) {
       baCode,
       fullName,
       seller,
+      sellerCategory: bodySellerCategory,
       supervisorId: bodySupervisorId,
+      supervisorEmail: bodySupervisorEmail,
     } = body;
 
     if (!email || !name || !role) {
@@ -91,43 +94,221 @@ export async function POST(request: NextRequest) {
 
     // Derive companyId early (needed for company-scoped checks below)
     const effectiveCompanyId = senderData.companyId || bodyCompanyId || "";
+    const normalizedEmail = email.toLowerCase().trim();
+    const invitedName = (fullName || name).trim();
+    const effectiveSellerCategory = bodySellerCategory || seller || null;
+    const normalizedSupervisorEmail = bodySupervisorEmail
+      ? String(bodySupervisorEmail).toLowerCase().trim()
+      : null;
 
     // Check if user already exists AND already belongs to this company
     const existingUserSnapshot = await db
       .collection("users")
-      .where("email", "==", email)
+      .where("email", "==", normalizedEmail)
       .limit(1)
       .get();
+    let existingCompanyUserDoc: any = null;
 
     if (!existingUserSnapshot.empty) {
       const existingUser = existingUserSnapshot.docs[0].data();
-      // Only block if the user is already a member of this specific company AND branch
+      // Same-company imports should update the user by email instead of creating
+      // a duplicate invitation that leaves BA/fullName/branch fields stale.
       if (
         existingUser.companyId &&
         effectiveCompanyId &&
         existingUser.companyId === effectiveCompanyId
       ) {
-        // If branchId is specified, check if user is already in that branch
-        const userBranchIds: string[] = Array.isArray(existingUser.branchIds)
-          ? existingUser.branchIds
-          : existingUser.branchId
-            ? [existingUser.branchId]
-            : [];
-        if (!branchId || userBranchIds.includes(branchId)) {
-          return NextResponse.json(
-            { error: "ผู้ใช้นี้เป็นสมาชิกของบริษัทนี้อยู่แล้ว" },
-            { status: 409 },
-          );
-        }
-        // User is in the company but not in this branch → allow invitation
+        existingCompanyUserDoc = existingUserSnapshot.docs[0];
       }
       // User exists but not in this company → allow invitation to proceed
+    }
+
+    // Get company data
+    let companyName = "";
+    if (effectiveCompanyId) {
+      const companySnapshot = await db
+        .collection("companies")
+        .doc(effectiveCompanyId)
+        .get();
+      if (companySnapshot.exists) {
+        companyName = companySnapshot.data()?.name || "";
+      }
+    }
+
+    let effectiveManagedBranchIds: string[] = Array.isArray(managedBranchIds)
+      ? managedBranchIds.filter(Boolean)
+      : [];
+
+    if (["supervisor", "manager"].includes(role) && effectiveCompanyId) {
+      const supervisorBranchSnapshot = await db
+        .collection("branches")
+        .where("companyId", "==", effectiveCompanyId)
+        .where("supervisorEmail", "==", normalizedEmail)
+        .get();
+      const branchIdsByEmail = supervisorBranchSnapshot.docs.map(
+        (doc) => doc.id,
+      );
+      effectiveManagedBranchIds = Array.from(
+        new Set([...effectiveManagedBranchIds, ...branchIdsByEmail]),
+      );
+    }
+
+    // Get branch data
+    const effectiveBranchId =
+      branchId || (effectiveManagedBranchIds[0] ?? null);
+    let branchName = "";
+    let branchCode = "";
+    let branchNames: string[] = [];
+    if (effectiveBranchId) {
+      const branchSnapshot = await db
+        .collection("branches")
+        .doc(effectiveBranchId)
+        .get();
+
+      if (branchSnapshot.exists) {
+        const branchData = branchSnapshot.data();
+        branchName = branchData?.name || "";
+        branchCode = branchData?.code || "";
+      }
+    }
+
+    // Look up all managed branch names for supervisor/manager
+    if (effectiveManagedBranchIds.length > 0) {
+      const branchLookups = await Promise.all(
+        effectiveManagedBranchIds.map((id: string) =>
+          db.collection("branches").doc(id).get(),
+        ),
+      );
+      branchNames = branchLookups
+        .filter((snap) => snap.exists)
+        .map((snap) => snap.data()?.name || "")
+        .filter(Boolean);
+    }
+
+    let resolvedSupervisorId =
+      bodySupervisorId ||
+      (senderData.role === "supervisor" ? senderDoc.id : null);
+    let resolvedSupervisorName = bodySupervisorId
+      ? null
+      : senderData.role === "supervisor"
+        ? senderData.name
+        : null;
+
+    if (bodySupervisorId) {
+      try {
+        const supDoc = await db.collection("users").doc(bodySupervisorId).get();
+        if (supDoc.exists) {
+          const sd = supDoc.data();
+          resolvedSupervisorName =
+            sd?.fullName || sd?.name || sd?.displayName || sd?.email || null;
+        }
+      } catch {
+        // ignore
+      }
+    } else if (normalizedSupervisorEmail) {
+      try {
+        const supervisorSnapshot = await db
+          .collection("users")
+          .where("email", "==", normalizedSupervisorEmail)
+          .limit(1)
+          .get();
+        if (!supervisorSnapshot.empty) {
+          const supervisorDoc = supervisorSnapshot.docs[0];
+          const supervisorData = supervisorDoc.data();
+          resolvedSupervisorId = supervisorData.uid || supervisorDoc.id;
+          resolvedSupervisorName =
+            supervisorData.fullName ||
+            supervisorData.name ||
+            supervisorData.displayName ||
+            supervisorData.email ||
+            null;
+        }
+      } catch {
+        // ignore
+      }
+    }
+
+    if (existingCompanyUserDoc) {
+      const existingUserData = existingCompanyUserDoc.data();
+      const existingUserId = existingUserData.uid || existingCompanyUserDoc.id;
+      const existingDisplayName =
+        fullName ||
+        existingUserData.fullName ||
+        existingUserData.name ||
+        invitedName;
+      const existingSellerCategory =
+        effectiveSellerCategory ||
+        existingUserData.sellerCategory ||
+        existingUserData.seller ||
+        null;
+      const updateData: Record<string, any> = {
+        name: existingDisplayName,
+        displayName: existingDisplayName,
+        role,
+        companyId: effectiveCompanyId,
+        companyName,
+        status: "active",
+        baCode: baCode || existingUserData.baCode || null,
+        fullName: fullName || existingUserData.fullName || null,
+        seller: existingSellerCategory,
+        sellerCategory: existingSellerCategory,
+        updatedAt: new Date(),
+      };
+
+      if (role === "employee") {
+        updateData.branchId = branchId || existingUserData.branchId || null;
+        updateData.branchName =
+          branchName || existingUserData.branchName || null;
+        updateData.branchCode =
+          branchCode || existingUserData.branchCode || null;
+        updateData.supervisorId = resolvedSupervisorId || null;
+        updateData.supervisorName = resolvedSupervisorName || null;
+        updateData.supervisorEmail = normalizedSupervisorEmail || null;
+        if (branchId) {
+          updateData.branchIds = FieldValue.arrayUnion(branchId);
+          updateData[`branchNames.${branchId}`] = branchName || "";
+        }
+      } else if (effectiveManagedBranchIds.length > 0) {
+        updateData.managedBranchIds = FieldValue.arrayUnion(
+          ...effectiveManagedBranchIds,
+        );
+      }
+
+      await existingCompanyUserDoc.ref.set(updateData, { merge: true });
+
+      if (["supervisor", "manager"].includes(role)) {
+        const supervisorDisplayName =
+          fullName ||
+          existingUserData.fullName ||
+          existingUserData.name ||
+          normalizedEmail;
+        await Promise.all(
+          effectiveManagedBranchIds.map((id) =>
+            db.collection("branches").doc(id).set(
+              {
+                supervisorId: existingUserId,
+                supervisorName: supervisorDisplayName,
+                supervisorEmail: normalizedEmail,
+                updatedAt: new Date(),
+              },
+              { merge: true },
+            ),
+          ),
+        );
+      }
+
+      return NextResponse.json({
+        success: true,
+        updatedExisting: true,
+        userId: existingUserId,
+        message: "Existing user updated successfully",
+      });
     }
 
     // Check if pending invitation already exists for this email in this company
     const existingInvitationSnapshot = await db
       .collection("invitations")
-      .where("email", "==", email)
+      .where("email", "==", normalizedEmail)
       .where("status", "==", "pending")
       .limit(1)
       .get();
@@ -146,49 +327,6 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Get company data
-    let companyName = "";
-    if (effectiveCompanyId) {
-      const companySnapshot = await db
-        .collection("companies")
-        .doc(effectiveCompanyId)
-        .get();
-      if (companySnapshot.exists) {
-        companyName = companySnapshot.data()?.name || "";
-      }
-    }
-
-    // Get branch data
-    const effectiveBranchId = branchId || (managedBranchIds?.[0] ?? null);
-    let branchName = "";
-    let branchCode = "";
-    let branchNames: string[] = [];
-    if (effectiveBranchId) {
-      const branchSnapshot = await db
-        .collection("branches")
-        .doc(effectiveBranchId)
-        .get();
-
-      if (branchSnapshot.exists) {
-        const branchData = branchSnapshot.data();
-        branchName = branchData?.name || "";
-        branchCode = branchData?.code || "";
-      }
-    }
-
-    // Look up all managed branch names for supervisor/manager
-    if (managedBranchIds && managedBranchIds.length > 0) {
-      const branchLookups = await Promise.all(
-        managedBranchIds.map((id: string) =>
-          db.collection("branches").doc(id).get(),
-        ),
-      );
-      branchNames = branchLookups
-        .filter((snap) => snap.exists)
-        .map((snap) => snap.data()?.name || "")
-        .filter(Boolean);
-    }
-
     // Generate secure token
     const invitationToken = crypto.randomBytes(32).toString("hex");
 
@@ -197,22 +335,17 @@ export async function POST(request: NextRequest) {
     expiresAt.setDate(expiresAt.getDate() + 7); // 7 days expiry
 
     const invitationData: Record<string, any> = {
-      email: email.toLowerCase().trim(),
-      name: (fullName || name).trim(),
+      email: normalizedEmail,
+      name: invitedName,
       role: role,
       companyId: effectiveCompanyId,
       companyName: companyName,
       branchName: branchName,
       branchCode: branchCode,
       // Supervisor priority: explicit body field > sender (if sender is supervisor)
-      supervisorId:
-        bodySupervisorId ||
-        (senderData.role === "supervisor" ? senderDoc.id : null),
-      supervisorName: bodySupervisorId
-        ? null
-        : senderData.role === "supervisor"
-          ? senderData.name
-          : null,
+      supervisorId: resolvedSupervisorId,
+      supervisorName: resolvedSupervisorName,
+      supervisorEmail: normalizedSupervisorEmail,
       token: invitationToken,
       status: "pending",
       expiresAt: expiresAt,
@@ -225,28 +358,15 @@ export async function POST(request: NextRequest) {
       // Phithan fields
       baCode: baCode || null,
       fullName: fullName || null,
-      seller: seller || null,
+      seller: effectiveSellerCategory,
+      sellerCategory: effectiveSellerCategory,
     };
-
-    // If supervisorId provided, look up supervisor name
-    if (bodySupervisorId) {
-      try {
-        const supDoc = await db.collection("users").doc(bodySupervisorId).get();
-        if (supDoc.exists) {
-          const sd = supDoc.data();
-          invitationData.supervisorName =
-            sd?.fullName || sd?.name || sd?.displayName || sd?.email || null;
-        }
-      } catch {
-        // ignore
-      }
-    }
 
     // Role-specific branch fields
     if (role === "employee") {
       invitationData.branchId = branchId || null;
     } else {
-      invitationData.managedBranchIds = managedBranchIds || [];
+      invitationData.managedBranchIds = effectiveManagedBranchIds;
     }
 
     const invitationRef = await db
@@ -277,7 +397,16 @@ export async function POST(request: NextRequest) {
             companyName: companyName,
             branchId: branchId || null,
             branchName: branchName,
+            branchCode: branchCode,
+            managedBranchIds: effectiveManagedBranchIds,
             role: role,
+            baCode: baCode || null,
+            fullName: fullName || null,
+            seller: effectiveSellerCategory,
+            sellerCategory: effectiveSellerCategory,
+            supervisorId: resolvedSupervisorId,
+            supervisorName: resolvedSupervisorName,
+            supervisorEmail: normalizedSupervisorEmail,
             actionRequired: true,
             actionType: "accept_reject",
           },
@@ -296,8 +425,8 @@ export async function POST(request: NextRequest) {
 
     try {
       await sendInvitationEmail({
-        to: email.toLowerCase().trim(),
-        name: name.trim(),
+        to: normalizedEmail,
+        name: invitedName,
         companyName: companyName,
         branchName: branchName,
         branchNames: branchNames.length > 0 ? branchNames : undefined,

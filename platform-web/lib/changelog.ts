@@ -1,4 +1,4 @@
-export const APP_VERSION = "1.5.1";
+export const APP_VERSION = "1.5.1.1";
 
 export interface ChangeEntry {
   type: "feature" | "fix" | "improvement";
@@ -15,6 +15,84 @@ export interface Release {
 }
 
 export const CHANGELOG: Release[] = [
+  {
+    version: "1.5.1.1",
+    date: "19 พฤษภาคม 2569",
+    title: "แก้ไขครั้งที่ 1 · Import ผู้ใช้/สาขา · ชื่อสาขา Mobile",
+    changes: [
+      {
+        type: "fix",
+        text: "[Web] หน้า Import Users อ่านหัวคอลัมน์ Excel ได้ยืดหยุ่นขึ้น เช่น E-Mail, fullName, baCode, branchCode, supervisorEmail และ seller",
+        before:
+          "หัวคอลัมน์ที่สะกดไม่ตรงเป๊ะทำให้ชื่อ/อีเมล/รหัสพนักงานไม่ถูกดึง",
+        after:
+          "Normalize header ก่อนอ่านข้อมูล จึงรองรับช่องว่าง ขีดกลาง ตัวพิมพ์ และ BOM จาก Excel",
+      },
+      {
+        type: "fix",
+        text: "[Web] Import Users อัปเดตผู้ใช้เดิมด้วย email ในบริษัทเดียวกัน แทนการ fail ว่ามีสมาชิกอยู่แล้ว",
+        before:
+          "ผู้ใช้เดิมไม่ได้รับ fullName, BA Code, seller, supervisor หรือ branch mapping จากไฟล์ import",
+        after: "อัปเดต user doc เดิมและเพิ่ม branchIds/branchNames ให้ถูกต้อง",
+      },
+      {
+        type: "fix",
+        text: "[Web] Import Branches เพิ่มคอลัมน์ supervisorEmail และบันทึก sellerCategory/supervisor fields ให้ครบ",
+      },
+      {
+        type: "fix",
+        text: "[Web/Mobile] รับคำเชิญแล้ว resolve ชื่อสาขาจาก branches ล่าสุด และบันทึก sellerCategory/branchNames ให้ตรงกัน",
+      },
+      {
+        type: "fix",
+        text: "[Mobile] ผู้ใช้ที่มีสาขาเดียวสามารถแสดงชื่อสาขาและเข้า Stock Counter ได้ แม้ข้อมูลอยู่ใน branchIds/branchNames แต่ branchId/branchName ว่าง",
+      },
+      {
+        type: "improvement",
+        text: "[Web] หน้า Users ค้นหาด้วยชื่อจริงภาษาไทย, BA Code, email, branch code และชื่อสาขาได้ พร้อมปรับ modal แก้ไขผู้ใช้ให้เลื่อนง่ายขึ้น",
+      },
+      {
+        type: "fix",
+        text: "[Web] หน้าแก้ไขงานนับสต็อกของสาขา: เลือกแบรนด์สินค้าแล้วบันทึกเฉพาะสินค้าของแบรนด์นั้นจริง เช่น PrimaNest 32 รายการ ไม่ดึงทุกแบรนด์กลับมา",
+        before:
+          "ปุ่มแบรนด์เป็นแค่ตัวกรองหน้าจอ ทำให้ตอนบันทึกยังส่ง productIds ทุกแบรนด์ที่ซ่อนอยู่",
+        after:
+          "ใช้ brand filter เป็นขอบเขตของการบันทึก และปรับตัวเลข/ปุ่มใน modal ให้ตรงกับรายการที่จะ save",
+      },
+      {
+        type: "fix",
+        text: "[Web] หน้า Users ป้องกันการเลือกหัวหน้างานคนละสาขาใน modal แก้ไขผู้ใช้",
+        before:
+          "Dropdown supervisor แสดงหัวหน้างานทุกคนในบริษัท แม้ไม่ได้อยู่หรือดูแลสาขาของพนักงาน",
+        after:
+          "กรองหัวหน้างานจาก branchIds/managedBranchIds ให้ตรงกับสาขาพนักงาน และ validate ซ้ำก่อนบันทึก",
+      },
+      {
+        type: "fix",
+        text: "[Mobile] แก้ขอบขาวด้านล่างใต้ tab bar บน iOS ให้พื้นหลังกลืนกับหน้า dashboard",
+        before:
+          "NativeTabs ปล่อย scroll-edge เป็นโปร่งใส และหน้า Home ครอบ bottom safe area เอง ทำให้ยังเห็นแถบขาวเฉพาะหน้าแรก",
+        after:
+          "กำหนดพื้นหลัง tab bar เป็นสีพื้นหลังของแอป ปิด transparent scroll-edge และให้ Home ใช้เฉพาะ top safe area",
+      },
+      {
+        type: "improvement",
+        text: "[Web] Modal แก้ไขผู้ใช้ปรับตัวเลือกสาขาที่รับผิดชอบเป็น 2 ฝั่ง: สาขาที่เลือกแล้ว / สาขาที่ยังไม่ได้เลือก เพื่อใช้งานกับสาขาหลายร้อยรายการได้ง่ายขึ้น",
+        before:
+          "รายการสาขาเป็น checkbox list เดียว ทำให้ดูยากเมื่อมี 500-600 สาขา",
+        after:
+          "แยก selected/available lists พร้อมค้นหา ลบ เพิ่มทีละสาขา และเพิ่มผลลัพธ์ที่ค้นหา",
+      },
+      {
+        type: "fix",
+        text: "[Web] แก้ปัญหาเปิดสิทธิ์ Watson Excel Validator แล้วกดเข้าไม่ได้ เพราะ route guard ตรวจ module id/company context ไม่ตรงกับหน้าเลือก Module",
+        before:
+          "หน้าแรกเห็น card และหน้าจัดการสิทธิ์ติ๊กถูกแล้ว แต่พอเข้า module ยังขึ้นว่าไม่มีสิทธิ์เข้าถึง module นี้",
+        after:
+          "รองรับ alias module id ระหว่าง watson กับ watson-excel-validator และให้ guard ใช้ active company พร้อม refresh user ล่าสุดก่อนปฏิเสธสิทธิ์",
+      },
+    ],
+  },
   {
     version: "1.5.1",
     date: "19 พฤษภาคม 2569",
@@ -41,7 +119,8 @@ export const CHANGELOG: Release[] = [
         type: "improvement",
         text: "[Web] ป้องกันการแก้ไขสิทธิ์ของ Role เดียวกันหรือสูงกว่า (แสดง 🔒)",
         before: "Admin เห็นปุ่ม toggle ของ Admin คนอื่น (แต่กดไม่ได้)",
-        after: "แสดง 🔒 พร้อม tooltip 'ไม่สามารถจัดการ role ระดับเดียวกันหรือสูงกว่า'",
+        after:
+          "แสดง 🔒 พร้อม tooltip 'ไม่สามารถจัดการ role ระดับเดียวกันหรือสูงกว่า'",
       },
       // ── Role Consolidation ──────────────────────────────────
       {
@@ -67,14 +146,17 @@ export const CHANGELOG: Release[] = [
         type: "fix",
         text: "[Web] แก้ BA Code ที่มีเลข 0 นำหน้า (เช่น 0087) ถูกตัดเหลือ 87 เมื่อนำเข้าผ่าน Excel",
         before: "BA Code: 0087 → นำเข้าได้ 87",
-        after: "BA Code: 0087 → นำเข้าได้ 0087 (อ่าน formatted text จาก raw cell)",
+        after:
+          "BA Code: 0087 → นำเข้าได้ 0087 (อ่าน formatted text จาก raw cell)",
       },
       // ── Team Structure ──────────────────────────────────────
       {
         type: "feature",
         text: "[Web] ใหม่! หน้า 'จัดการทีมงาน' — ออกแบบใหม่เป็นโครงสร้าง Tree: Manager → Supervisor → สาขา\n\n📌 วิธีใช้:\n1. ไปที่เมนู 🛡️ จัดการทีมงาน\n2. Tab 'Manager → Supervisor' — กดที่ชื่อ Manager เพื่อดู Supervisor ที่ดูแล กด ✏️ เพื่อเพิ่ม/ลบ Supervisor\n3. Tab 'Supervisor → สาขา' — กดที่ชื่อ Supervisor เพื่อดูสาขาที่ดูแล กด ✏️ เพื่อเพิ่ม/ลบสาขา\n4. Manager จะเห็นสาขารวมจาก Supervisor ทั้งหมดที่ดูแล",
-        before: "หน้าจัดการ Supervisor — แสดง flat list เหมือนกันทั้ง Manager/Supervisor",
-        after: "หน้าจัดการทีมงาน — 2 Tab: Manager → Supervisor (Tree) + Supervisor → สาขา พร้อม Supervisor อิสระ",
+        before:
+          "หน้าจัดการ Supervisor — แสดง flat list เหมือนกันทั้ง Manager/Supervisor",
+        after:
+          "หน้าจัดการทีมงาน — 2 Tab: Manager → Supervisor (Tree) + Supervisor → สาขา พร้อม Supervisor อิสระ",
       },
       {
         type: "improvement",

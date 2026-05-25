@@ -29,6 +29,26 @@ export interface ModuleInfo {
   order: number;
 }
 
+const MODULE_ID_ALIASES: Record<string, string[]> = {
+  watson: ["watson-excel-validator"],
+  "watson-excel-validator": ["watson"],
+};
+
+export function getModuleIdAliases(moduleId: string): string[] {
+  return Array.from(
+    new Set([moduleId, ...(MODULE_ID_ALIASES[moduleId] || [])]),
+  );
+}
+
+export function moduleListIncludes(
+  modules: string[] | undefined,
+  moduleId: string,
+): boolean {
+  if (!modules?.length) return false;
+  const aliases = getModuleIdAliases(moduleId);
+  return aliases.some((id) => modules.includes(id));
+}
+
 // ==================== Module Registry (Platform Level) ====================
 
 export async function getModules(): Promise<ModuleInfo[]> {
@@ -255,13 +275,16 @@ export function canAccessModule(
   if (userData.role === "super_admin") return true;
 
   // Layer 2: Company must have the module enabled
-  if (companyEnabledModules && !companyEnabledModules.includes(moduleId)) {
+  if (
+    companyEnabledModules &&
+    !moduleListIncludes(companyEnabledModules, moduleId)
+  ) {
     return false;
   }
 
   // Layer 3: User must have access to the module
   const userModules = userData.moduleAccess || [];
-  return userModules.includes(moduleId);
+  return moduleListIncludes(userModules, moduleId);
 }
 
 /**
@@ -275,7 +298,9 @@ export function getEffectiveModules(
   if (userData.role === "super_admin") return companyEnabledModules;
 
   const userModules = userData.moduleAccess || [];
-  return userModules.filter((m) => companyEnabledModules.includes(m));
+  return userModules.filter((m) =>
+    moduleListIncludes(companyEnabledModules, m),
+  );
 }
 
 // ==================== Module Whitelist (Email-based Access) ====================

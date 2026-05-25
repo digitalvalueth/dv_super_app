@@ -82,6 +82,47 @@ export async function POST(request: NextRequest) {
     // This prevents duplicates and eliminates need for query
     const userDocRef = db.collection("users").doc(uid);
 
+    const sellerCategory =
+      invitationData.sellerCategory || invitationData.seller || null;
+    let resolvedBranchName = invitationData.branchName || null;
+    let resolvedBranchCode = invitationData.branchCode || null;
+
+    if (invitationData.branchId) {
+      const branchDoc = await db
+        .collection("branches")
+        .doc(invitationData.branchId)
+        .get();
+      if (branchDoc.exists) {
+        const branchData = branchDoc.data();
+        resolvedBranchName = branchData?.name || resolvedBranchName;
+        resolvedBranchCode = branchData?.code || resolvedBranchCode;
+      }
+    }
+
+    let resolvedManagedBranchIds: string[] = Array.isArray(
+      invitationData.managedBranchIds,
+    )
+      ? invitationData.managedBranchIds.filter(Boolean)
+      : [];
+
+    if (
+      ["supervisor", "manager"].includes(invitationData.role) &&
+      invitationData.companyId &&
+      invitationData.email
+    ) {
+      const branchSnapshot = await db
+        .collection("branches")
+        .where("companyId", "==", invitationData.companyId)
+        .where("supervisorEmail", "==", invitationData.email.toLowerCase())
+        .get();
+      resolvedManagedBranchIds = Array.from(
+        new Set([
+          ...resolvedManagedBranchIds,
+          ...branchSnapshot.docs.map((doc) => doc.id),
+        ]),
+      );
+    }
+
     const userData: any = {
       uid: uid,
       email: invitationData.email,
@@ -96,26 +137,28 @@ export async function POST(request: NextRequest) {
       // Phithan fields
       baCode: invitationData.baCode || null,
       fullName: invitationData.fullName || null,
-      seller: invitationData.seller || null,
+      seller: sellerCategory,
+      sellerCategory: sellerCategory,
     };
 
     // Role-specific fields
     if (invitationData.role === "employee") {
       // Employee: single branch (primary)
       userData.branchId = invitationData.branchId || null;
-      userData.branchName = invitationData.branchName || null;
-      userData.branchCode = invitationData.branchCode || null;
+      userData.branchName = resolvedBranchName;
+      userData.branchCode = resolvedBranchCode;
       userData.supervisorId = invitationData.supervisorId || null;
       userData.supervisorName = invitationData.supervisorName || null;
+      userData.supervisorEmail = invitationData.supervisorEmail || null;
       // Multi-branch support: add branchId to branchIds array + branchNames map
       if (invitationData.branchId) {
         userData.branchIds = FieldValue.arrayUnion(invitationData.branchId);
         userData[`branchNames.${invitationData.branchId}`] =
-          invitationData.branchName || "";
+          resolvedBranchName || "";
       }
     } else {
       // Supervisor/Manager: multiple branches
-      userData.managedBranchIds = invitationData.managedBranchIds || [];
+      userData.managedBranchIds = resolvedManagedBranchIds;
     }
 
     // Use set with merge to create or update
@@ -133,13 +176,34 @@ export async function POST(request: NextRequest) {
         newUserData.branchIds = [invitationData.branchId];
         delete newUserData[`branchNames.${invitationData.branchId}`];
         newUserData.branchNames = {
-          [invitationData.branchId]: invitationData.branchName || "",
+          [invitationData.branchId]: resolvedBranchName || "",
         };
       }
       await userDocRef.set({
         ...newUserData,
         createdAt: new Date(),
       });
+    }
+
+    if (
+      ["supervisor", "manager"].includes(invitationData.role) &&
+      resolvedManagedBranchIds.length > 0
+    ) {
+      const supervisorName =
+        invitationData.fullName || invitationData.name || invitationData.email;
+      await Promise.all(
+        resolvedManagedBranchIds.map((branchId) =>
+          db.collection("branches").doc(branchId).set(
+            {
+              supervisorId: uid,
+              supervisorName,
+              supervisorEmail: invitationData.email.toLowerCase(),
+              updatedAt: new Date(),
+            },
+            { merge: true },
+          ),
+        ),
+      );
     }
 
     // Mark invitation as accepted

@@ -23,6 +23,7 @@ export interface User {
   baCode?: string; // รหัส BA / Employee ID
   fullName?: string; // ชื่อ-นามสกุล (TH)
   seller?: string; // ยี่ห้อ/seller ที่รับผิดชอบ
+  sellerCategory?: string; // Alias used by web dashboard imports
   createdAt: Timestamp;
   updatedAt: Timestamp;
 }
@@ -58,6 +59,10 @@ export interface NotificationData {
   companyName?: string;
   branchId?: string;
   branchName?: string;
+  branchCode?: string;
+  branchIds?: string[];
+  branchNames?: Record<string, string>;
+  managedBranchIds?: string[];
   fromBranchId?: string;
   fromBranchName?: string;
   toBranchId?: string;
@@ -68,6 +73,13 @@ export interface NotificationData {
   actionType?: "accept" | "reject" | "accept_reject";
   status?: "accepted" | "rejected" | "pending";
   invitationId?: string;
+  baCode?: string;
+  fullName?: string;
+  seller?: string;
+  sellerCategory?: string;
+  supervisorId?: string;
+  supervisorName?: string;
+  supervisorEmail?: string;
 }
 
 // ==================== Company ====================

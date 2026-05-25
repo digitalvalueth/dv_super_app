@@ -29,6 +29,7 @@ export interface User {
   baCode?: string; // รหัส BA / Employee ID
   fullName?: string; // ชื่อ-นามสกุล (TH)
   seller?: string; // ยี่ห้อ/seller ที่รับผิดชอบ
+  sellerCategory?: string; // Alias used by import/dashboard fields
   moduleAccess?: string[]; // Module IDs this user can access (must be ⊆ company.enabledModules)
   phoneNumber?: string;
   photoURL?: string;

@@ -534,6 +534,45 @@ export default function BranchesPage() {
     if (!selectedBranch) return;
 
     try {
+      const scopedCompanyId = selectedBranch.companyId || userData?.companyId;
+      if (!isSuperAdmin && !scopedCompanyId) {
+        toast.error("ไม่สามารถตรวจสอบผู้ใช้ในบริษัทได้");
+        return;
+      }
+
+      const usersSnapshot = await getDocs(
+        isSuperAdmin
+          ? query(collection(db, "users"))
+          : query(
+              collection(db, "users"),
+              where("companyId", "==", scopedCompanyId),
+            ),
+      );
+      const affectedUserIds = new Set<string>();
+      usersSnapshot.forEach((doc) => {
+        const data = doc.data() as any;
+        const branchIds: string[] = Array.isArray(data.branchIds)
+          ? data.branchIds
+          : [];
+        const managedBranchIds: string[] = Array.isArray(data.managedBranchIds)
+          ? data.managedBranchIds
+          : [];
+        if (
+          data.branchId === selectedBranch.id ||
+          branchIds.includes(selectedBranch.id) ||
+          managedBranchIds.includes(selectedBranch.id)
+        ) {
+          affectedUserIds.add(doc.id);
+        }
+      });
+
+      if (affectedUserIds.size > 0) {
+        toast.error(
+          `ไม่สามารถลบสาขานี้ได้ เพราะยังมีผู้ใช้ ${affectedUserIds.size} คนอ้างถึงอยู่`,
+        );
+        return;
+      }
+
       await deleteDoc(doc(db, "branches", selectedBranch.id));
       toast.success("ลบสาขาสำเร็จ");
       setShowDeleteConfirm(false);
