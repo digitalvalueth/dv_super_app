@@ -11,9 +11,11 @@ import {
   getAllCompanies,
   getAllUsers,
   getCompanyUsers,
+  getModuleIdAliases,
   getModules,
   getModuleWhitelist,
   ModuleInfo,
+  moduleListIncludes,
   seedInitialModules,
   setModuleWhitelist,
   updateCompanyEnabledModules,
@@ -98,15 +100,24 @@ export default function SuperAdminPage() {
     if (isSuperAdmin || isCompanyAdmin) loadData();
   }, [isSuperAdmin, isCompanyAdmin, loadData]);
 
+  const getToggledModules = (currentModules: string[], moduleId: string) => {
+    if (!moduleListIncludes(currentModules, moduleId)) {
+      return [...currentModules, moduleId];
+    }
+
+    const aliases = getModuleIdAliases(moduleId);
+    return currentModules.filter(
+      (module) => !moduleListIncludes(aliases, module),
+    );
+  };
+
   // ==================== Company Module Toggle ====================
   const handleToggleCompanyModule = async (
     companyId: string,
     currentModules: string[],
     moduleId: string,
   ) => {
-    const newModules = currentModules.includes(moduleId)
-      ? currentModules.filter((m) => m !== moduleId)
-      : [...currentModules, moduleId];
+    const newModules = getToggledModules(currentModules, moduleId);
 
     try {
       await updateCompanyEnabledModules(companyId, newModules);
@@ -124,9 +135,7 @@ export default function SuperAdminPage() {
     currentModules: string[],
     moduleId: string,
   ) => {
-    const newModules = currentModules.includes(moduleId)
-      ? currentModules.filter((m) => m !== moduleId)
-      : [...currentModules, moduleId];
+    const newModules = getToggledModules(currentModules, moduleId);
 
     try {
       await updateUserModuleAccess(userId, newModules);
@@ -968,7 +977,7 @@ function CompaniesTab({
                         {company.code}
                       </td>
                       {activeModules.map((mod) => {
-                        const isEnabled = enabled.includes(mod.id);
+                        const isEnabled = moduleListIncludes(enabled, mod.id);
                         return (
                           <td key={mod.id} className="text-center px-4 py-3">
                             <button
@@ -1358,7 +1367,7 @@ function UsersTab({
   const adminModules = adminUser?.moduleAccess || [];
   const visibleModules = isSuperAdmin
     ? modules
-    : modules.filter((mod) => adminModules.includes(mod.id));
+    : modules.filter((mod) => moduleListIncludes(adminModules, mod.id));
 
   // Role hierarchy for determining which users admin can manage
   const roleRank: Record<string, number> = {
@@ -1487,15 +1496,20 @@ function UsersTab({
                         );
                       }
 
-                      const hasAccess = userModules.includes(mod.id);
-                      const companyHasModule = companyEnabled.includes(mod.id);
+                      const hasAccess = moduleListIncludes(userModules, mod.id);
+                      const companyHasModule = moduleListIncludes(
+                        companyEnabled,
+                        mod.id,
+                      );
                       const userRank = roleRank[user.role] ?? 99;
                       // Admin can only toggle for users with lower rank
                       const canToggle = isSuperAdmin || userRank > adminRank;
                       // Company admin can toggle modules they have access to
                       // (visibleModules is already filtered to admin's modules)
-                      const isCompanyAdmin = !isSuperAdmin && adminUser?.role === "admin";
-                      const moduleAvailable = companyHasModule || isCompanyAdmin || isSuperAdmin;
+                      const isCompanyAdmin =
+                        !isSuperAdmin && adminUser?.role === "admin";
+                      const moduleAvailable =
+                        companyHasModule || isCompanyAdmin || isSuperAdmin;
 
                       return (
                         <td key={mod.id} className="text-center px-4 py-3">

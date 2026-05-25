@@ -89,7 +89,7 @@ export const CHANGELOG: Release[] = [
         before:
           "หน้าแรกเห็น card และหน้าจัดการสิทธิ์ติ๊กถูกแล้ว แต่พอเข้า module ยังขึ้นว่าไม่มีสิทธิ์เข้าถึง module นี้",
         after:
-          "รองรับ module id ทั้งแบบชื่อแสดงผล Watson Excel Validator, watson และ watson-excel-validator พร้อมให้ guard ใช้ active company และ refresh user ล่าสุดก่อนปฏิเสธสิทธิ์",
+          "รองรับ module id ทั้งแบบชื่อแสดงผล Watson Excel Validator, watson และ watson-excel-validator ในหน้าเลือก Module, route guard และตารางจัดการสิทธิ์ พร้อมให้ guard ใช้ active company และ refresh user ล่าสุดก่อนปฏิเสธสิทธิ์",
       },
     ],
   },
