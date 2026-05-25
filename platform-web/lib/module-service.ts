@@ -34,9 +34,24 @@ const MODULE_ID_ALIASES: Record<string, string[]> = {
   "watson-excel-validator": ["watson"],
 };
 
+export function normalizeModuleId(moduleId: string): string {
+  return moduleId
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+}
+
 export function getModuleIdAliases(moduleId: string): string[] {
+  const normalizedModuleId = normalizeModuleId(moduleId);
+
   return Array.from(
-    new Set([moduleId, ...(MODULE_ID_ALIASES[moduleId] || [])]),
+    new Set([
+      moduleId,
+      normalizedModuleId,
+      ...(MODULE_ID_ALIASES[moduleId] || []),
+      ...(MODULE_ID_ALIASES[normalizedModuleId] || []),
+    ]),
   );
 }
 
@@ -46,7 +61,12 @@ export function moduleListIncludes(
 ): boolean {
   if (!modules?.length) return false;
   const aliases = getModuleIdAliases(moduleId);
-  return aliases.some((id) => modules.includes(id));
+  const normalizedAliases = aliases.map(normalizeModuleId);
+
+  return modules.some(
+    (id) =>
+      aliases.includes(id) || normalizedAliases.includes(normalizeModuleId(id)),
+  );
 }
 
 // ==================== Module Registry (Platform Level) ====================
