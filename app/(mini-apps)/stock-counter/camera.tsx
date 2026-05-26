@@ -78,6 +78,41 @@ export default function CameraScreen() {
       .catch(() => {});
   }, []);
 
+  // Geofence check — block camera if user is outside branch radius
+  const geofenceCheckedRef = useRef(false);
+  useEffect(() => {
+    if (geofenceCheckedRef.current) return;
+    if (!user?.branchId || !prefetchedLocation?.coordinates) return;
+    geofenceCheckedRef.current = true;
+    (async () => {
+      try {
+        const { doc, getDoc } = await import("firebase/firestore");
+        const { db } = await import("@/config/firebase");
+        const { checkBranchGeofence, formatGeofenceWarning } =
+          await import("@/utils/geofence");
+        const branchSnap = await getDoc(doc(db, "branches", user.branchId!));
+        if (!branchSnap.exists()) return;
+        const b = branchSnap.data() as {
+          latitude?: number;
+          longitude?: number;
+          radiusMeters?: number;
+        };
+        const result = checkBranchGeofence(prefetchedLocation.coordinates, b);
+        if (result.hasBranchCoords && !result.withinRadius) {
+          Alert.alert(
+            "⚠️ อยู่นอกพื้นที่สาขา",
+            formatGeofenceWarning(result) +
+              "\n\nไม่สามารถถ่ายรูปจากนอกพื้นที่สาขาได้",
+            [{ text: "ย้อนกลับ", onPress: () => router.back() }],
+            { cancelable: false },
+          );
+        }
+      } catch (err) {
+        console.warn("Geofence check failed:", err);
+      }
+    })();
+  }, [user?.branchId, prefetchedLocation]);
+
   const handleCapture = useCallback(async () => {
     if (!cameraRef.current || isCapturing) return;
 

@@ -368,6 +368,32 @@ export async function setModuleWhitelist(
 }
 
 /**
+ * Additive whitelist update: merge emails into a module's whitelist
+ * without overwriting entries for other modules.
+ * Used during branch import to pre-register supervisor emails.
+ */
+export async function addEmailsToModuleWhitelist(
+  companyId: string,
+  moduleId: string,
+  emails: string[],
+): Promise<void> {
+  const companyRef = doc(db, "companies", companyId);
+  const companySnap = await getDoc(companyRef);
+  const existing = companySnap.exists()
+    ? companySnap.data()?.moduleWhitelist || {}
+    : {};
+
+  const existingEmails: string[] = existing[moduleId] || [];
+  const newEmails = emails.map((e) => e.toLowerCase().trim()).filter(Boolean);
+  existing[moduleId] = [...new Set([...existingEmails, ...newEmails])];
+
+  await updateDoc(companyRef, {
+    moduleWhitelist: existing,
+    updatedAt: serverTimestamp(),
+  });
+}
+
+/**
  * Sync user's moduleAccess based on company whitelist.
  * Called on login:
  * - If user HAS companyId → sync that company's whitelist
@@ -427,19 +453,56 @@ export async function syncModuleAccessFromWhitelist(
 
       // Found a match → assign user to this company + set moduleAccess
       if (grantedModules.length > 0) {
+        // Check if this email is a supervisor on any branch in this company
+        const branchSnap = await getDocs(
+          query(
+            collection(db, "branches"),
+            where("companyId", "==", company.id),
+            where("supervisorEmail", "==", normalizedEmail),
+          ),
+        );
+        const managedBranchIds = branchSnap.docs.map((d) => d.id);
+
         const userRef = doc(db, "users", userId);
-        await updateDoc(userRef, {
+
+        // Fetch display name for back-linking branches
+        const userSnap = await getDoc(userRef);
+        const userName = userSnap.exists()
+          ? userSnap.data()?.name || email
+          : email;
+
+        const userUpdate: Record<string, unknown> = {
           companyId: company.id,
           companyCode: company.code || "",
           companyName: company.name || "",
           moduleAccess: grantedModules,
           status: "active",
           updatedAt: serverTimestamp(),
-        });
+        };
+
+        if (managedBranchIds.length > 0) {
+          userUpdate.role = "supervisor";
+          userUpdate.managedBranchIds = managedBranchIds;
+
+          // Back-link each branch with the new supervisorId
+          await Promise.all(
+            branchSnap.docs.map((branchDoc) =>
+              updateDoc(branchDoc.ref, {
+                supervisorId: userId,
+                supervisorName: userName,
+              }),
+            ),
+          );
+        }
+
+        await updateDoc(userRef, userUpdate);
 
         console.log(
           `Auto-assigned user ${email} to company ${company.name} with modules:`,
           grantedModules,
+          managedBranchIds.length > 0
+            ? `(supervisor of ${managedBranchIds.length} branch(es))`
+            : "",
         );
         return grantedModules;
       }

@@ -1,6 +1,7 @@
 "use client";
 
 import { db } from "@/lib/firebase";
+import { addEmailsToModuleWhitelist } from "@/lib/module-service";
 import { useAuthStore } from "@/stores/auth.store";
 import {
   addDoc,
@@ -340,6 +341,29 @@ export default function ImportBranchesPage() {
       setProgress(Math.round(((i + 1) / updated.length) * 100));
     }
     setIsSaving(false);
+
+    // Pre-register supervisor emails that had no matching user yet:
+    // add them to the company's stock-counter module whitelist so they
+    // get auto-assigned access the first time they log in.
+    const unresolvedEmails = ok
+      .filter((r) => r.supervisorEmail && !r.supervisorId)
+      .map((r) => r.supervisorEmail!);
+
+    if (unresolvedEmails.length > 0) {
+      try {
+        await addEmailsToModuleWhitelist(
+          companyId,
+          "stock-counter",
+          unresolvedEmails,
+        );
+        toast.success(
+          `Pre-registered ${unresolvedEmails.length} supervisor email(s) — จะเห็น module เมื่อ login`,
+        );
+      } catch (err) {
+        console.error("Failed to pre-register supervisor emails:", err);
+      }
+    }
+
     toast.success(`เสร็จสิ้น: เพิ่ม ${success} • ล้มเหลว ${failed}`);
   };
 

@@ -162,11 +162,20 @@ export default function UsersPage() {
 
       usersSnapshot.forEach((doc) => {
         const data = doc.data() as any;
-        const branchIds: string[] | null = Array.isArray(data.branchIds)
+        const rawBranchIds: string[] = Array.isArray(data.branchIds)
           ? data.branchIds
           : data.branchId
             ? [data.branchId]
-            : null;
+            : [];
+        const rawManagedIds: string[] = Array.isArray(data.managedBranchIds)
+          ? data.managedBranchIds.filter(Boolean)
+          : [];
+        // Merge branchIds + managedBranchIds so supervisor/manager data from
+        // import (which only sets managedBranchIds) also shows branches.
+        const mergedIds = [
+          ...new Set([...rawBranchIds, ...rawManagedIds]),
+        ].filter(Boolean);
+        const branchIds: string[] | null = mergedIds.length ? mergedIds : null;
         const storedBranchNames: Record<string, string> | null =
           data.branchNames && typeof data.branchNames === "object"
             ? data.branchNames
@@ -181,6 +190,7 @@ export default function UsersPage() {
         const primaryBranchName =
           data.branchName ||
           (data.branchId ? branchNameById.get(data.branchId) : "") ||
+          (mergedIds[0] ? branchNameById.get(mergedIds[0]) : "") ||
           "";
 
         usersData.push({
@@ -520,7 +530,7 @@ export default function UsersPage() {
           editForm.companyId,
         )
       ) {
-        toast.error("หัวหน้างานต้องดูแลสาขาเดียวกับพนักงาน");
+        toast.error("ผู้ดูแลสาขาต้องดูแลสาขาเดียวกับพนักงาน");
         return;
       }
 
@@ -709,10 +719,10 @@ export default function UsersPage() {
           >
             <option value="all">ทุกบทบาท</option>
             <option value="super_admin">Super Admin</option>
-            <option value="admin">Admin</option>
-            <option value="supervisor">Supervisor</option>
-            <option value="manager">Manager</option>
-            <option value="employee">Employee</option>
+            <option value="admin">เจ้าของบริษัท</option>
+            <option value="supervisor">ผู้ดูแลสาขา</option>
+            <option value="manager">ผู้จัดการสาขา</option>
+            <option value="employee">พนักงาน</option>
           </select>
         </div>
       </div>
@@ -1243,7 +1253,8 @@ export default function UsersPage() {
                                 {editForm.role === "super_admin" &&
                                   "ผู้ดูแลระบบ"}
                                 {editForm.role === "admin" && "เจ้าของบริษัท"}
-                                {editForm.role === "supervisor" && "หัวหน้างาน"}
+                                {editForm.role === "supervisor" &&
+                                  "ผู้ดูแลสาขา"}
                                 {editForm.role === "manager" && "ผู้จัดการสาขา"}
                                 {editForm.role === "employee" && "พนักงาน"}
                               </div>
@@ -1279,7 +1290,7 @@ export default function UsersPage() {
                                 <option value="admin">เจ้าของบริษัท</option>
                               )}
                               {allowedRoles.includes("supervisor") && (
-                                <option value="supervisor">หัวหน้างาน</option>
+                                <option value="supervisor">ผู้ดูแลสาขา</option>
                               )}
                               {allowedRoles.includes("manager") && (
                                 <option value="manager">ผู้จัดการสาขา</option>
@@ -1291,8 +1302,8 @@ export default function UsersPage() {
                           )}
                           {!isEditingSelf && !isSuperAdmin && (
                             <p className="text-xs text-gray-500 dark:text-gray-400 mt-1.5">
-                              เจ้าของบริษัทสามารถจัดการได้เฉพาะ ผู้จัดการสาขา,
-                              หัวหน้างาน, พนักงาน
+                              เจ้าของบริษัทสามารถจัดการได้เฉพาะ ผู้ดูแลสาขา,
+                              ผู้จัดการสาขา, พนักงาน
                             </p>
                           )}
                         </div>
@@ -1330,7 +1341,7 @@ export default function UsersPage() {
 
                         <div>
                           <label className={fieldLabelClass}>
-                            Supervisor (หัวหน้าพนักงาน)
+                            ผู้ดูแลสาขา (หัวหน้าพนักงาน)
                           </label>
                           <select
                             value={editForm.supervisorId}
@@ -1352,7 +1363,7 @@ export default function UsersPage() {
                                 <option value={editForm.supervisorId} disabled>
                                   {selectedSupervisor
                                     ? `${selectedSupervisor.name} (${selectedSupervisor.email}) - คนละสาขา`
-                                    : "หัวหน้างานเดิมไม่อยู่ในรายการที่เลือกได้"}
+                                    : "ผู้ดูแลสาขาเดิมไม่อยู่ในรายการที่เลือกได้"}
                                 </option>
                               )}
                             {availableSupervisors.map((s) => (
@@ -1369,20 +1380,20 @@ export default function UsersPage() {
                           ) : editFormBranchIds.length === 0 ? (
                             <p className="text-xs text-amber-600 dark:text-amber-400 mt-1.5">
                               เลือกสาขาของพนักงานก่อน
-                              แล้วระบบจะแสดงเฉพาะหัวหน้างานที่ดูแลสาขานั้น
+                              แล้วระบบจะแสดงเฉพาะผู้ดูแลสาขาที่ดูแลสาขานั้น
                             </p>
                           ) : !selectedSupervisorIsValid ? (
                             <p className="text-xs text-red-600 dark:text-red-400 mt-1.5">
-                              หัวหน้างานเดิมไม่ได้ดูแลสาขาของพนักงานนี้
-                              กรุณาเลือกหัวหน้างานในสาขาเดียวกันหรือเลือกไม่ระบุ
+                              ผู้ดูแลสาขาเดิมไม่ได้ดูแลสาขาของพนักงานนี้
+                              กรุณาเลือกผู้ดูแลสาขาในสาขาเดียวกันหรือเลือกไม่ระบุ
                             </p>
                           ) : availableSupervisors.length === 0 ? (
                             <p className="text-xs text-amber-600 dark:text-amber-400 mt-1.5">
-                              ไม่พบหัวหน้างานที่ผูกกับสาขาที่เลือก
+                              ไม่พบผู้ดูแลสาขาที่ผูกกับสาขาที่เลือก
                             </p>
                           ) : (
                             <p className="text-xs text-gray-500 dark:text-gray-400 mt-1.5">
-                              แสดงเฉพาะหัวหน้างานที่มีสาขาตรงกับพนักงาน
+                              แสดงเฉพาะผู้ดูแลสาขาที่มีสาขาตรงกับพนักงาน
                             </p>
                           )}
                         </div>
@@ -1517,7 +1528,7 @@ function RoleBadge({ role }: { role: string }) {
         "bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-400",
     },
     supervisor: {
-      label: "หัวหน้างาน",
+      label: "ผู้ดูแลสาขา",
       className:
         "bg-orange-100 text-orange-800 dark:bg-orange-900/30 dark:text-orange-400",
     },

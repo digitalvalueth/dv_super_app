@@ -55,7 +55,11 @@ export default function SupervisorDashboard() {
 
   // Redirect non-supervisors
   useEffect(() => {
-    if (userData && userData.role !== "supervisor") {
+    if (
+      userData &&
+      userData.role !== "supervisor" &&
+      userData.role !== "manager"
+    ) {
       router.push("/dashboard");
     }
   }, [userData, router]);

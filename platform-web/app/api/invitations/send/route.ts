@@ -297,6 +297,28 @@ export async function POST(request: NextRequest) {
         );
       }
 
+      // Send in-app notification to inform the existing user their data was updated
+      try {
+        await db.collection("notifications").add({
+          userId: existingUserId,
+          type: "role_change",
+          title: "ข้อมูลบัญชีได้รับการอัปเดต",
+          message: `ข้อมูลของคุณใน${companyName ? `บริษัท ${companyName}` : ""}${branchName ? ` สาขา ${branchName}` : ""} ได้รับการอัปเดตแล้ว`,
+          data: {
+            companyId: effectiveCompanyId,
+            companyName,
+            branchId: branchId || null,
+            branchName,
+            role,
+            actionRequired: false,
+          },
+          read: false,
+          createdAt: new Date(),
+        });
+      } catch (notifError) {
+        console.error("Error creating update notification:", notifError);
+      }
+
       return NextResponse.json({
         success: true,
         updatedExisting: true,

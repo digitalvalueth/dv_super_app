@@ -213,6 +213,29 @@ export async function POST(request: NextRequest) {
       acceptedBy: uid,
     });
 
+    // Create in-app welcome notification so the user sees it in the mobile app
+    try {
+      await db.collection("notifications").add({
+        userId: uid,
+        type: "access_approved",
+        title: "ยินดีต้อนรับ! 🎉",
+        message: `คุณได้เข้าร่วม${invitationData.companyName ? `บริษัท ${invitationData.companyName}` : ""}${resolvedBranchName ? ` สาขา ${resolvedBranchName}` : ""} เรียบร้อยแล้ว`,
+        data: {
+          companyId: invitationData.companyId,
+          companyName: invitationData.companyName || "",
+          branchId: invitationData.branchId || null,
+          branchName: resolvedBranchName,
+          role: invitationData.role,
+          invitationId: invitationDoc.id,
+          actionRequired: false,
+        },
+        read: false,
+        createdAt: new Date(),
+      });
+    } catch (notifError) {
+      console.error("Error creating welcome notification:", notifError);
+    }
+
     return NextResponse.json(
       {
         success: true,

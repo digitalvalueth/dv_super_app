@@ -25,7 +25,7 @@ interface InviteEmailData {
 function generateInviteEmailHTML(data: InviteEmailData): string {
   const roleNames: Record<string, string> = {
     employee: "พนักงาน",
-    supervisor: "หัวหน้างาน",
+    supervisor: "ผู้ดูแลสาขา",
     manager: "ผู้จัดการสาขา",
   };
 

@@ -22,7 +22,6 @@ import {
   Mail,
   Menu,
   Package,
-  Receipt,
   Settings,
   Shield,
   Sparkles,
@@ -43,6 +42,7 @@ interface NavItem {
   superAdminOnly?: boolean;
   adminOnly?: boolean;
   supervisorOnly?: boolean;
+  supervisorOrManager?: boolean;
   hideForSupervisor?: boolean;
   hideForManager?: boolean;
 }
@@ -62,7 +62,7 @@ const standaloneItems: NavItem[] = [
     name: "Supervisor Dashboard",
     href: "/stock-counter/dashboard/supervisor",
     icon: Shield,
-    supervisorOnly: true,
+    supervisorOrManager: true,
   },
 ];
 
@@ -241,6 +241,7 @@ export function StockCounterSidebar() {
     if (item.superAdminOnly) return isSuperAdmin;
     if (item.adminOnly) return isAdminOrAbove;
     if (item.supervisorOnly) return isSupervisor;
+    if (item.supervisorOrManager) return isSupervisor || isManager;
     if (item.hideForSupervisor && isSupervisor) return false;
     if (item.hideForManager && isManager) return false;
     return true;

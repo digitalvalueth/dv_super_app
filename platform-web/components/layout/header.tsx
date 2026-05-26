@@ -12,9 +12,9 @@ import { toast } from "sonner";
 
 const roleLabels: Record<string, string> = {
   super_admin: "Super Admin",
-  admin: "ผู้ดูแลระบบ",
-  manager: "ผู้จัดการ",
-  supervisor: "หัวหน้างาน",
+  admin: "เจ้าของบริษัท",
+  manager: "ผู้จัดการสาขา",
+  supervisor: "ผู้ดูแลสาขา",
   staff: "พนักงาน",
 };
 

@@ -5,10 +5,13 @@ import { useAuthStore } from "@/stores/auth.store";
 import { Branch } from "@/types";
 import {
   addDoc,
+  arrayRemove,
+  arrayUnion,
   collection,
   deleteDoc,
   doc,
   documentId,
+  getDoc,
   getDocs,
   query,
   serverTimestamp,
@@ -37,6 +40,7 @@ interface BranchWithStats extends Branch {
   sellerCategory?: string;
   supervisorId?: string;
   supervisorName?: string;
+  supervisorEmail?: string;
 }
 
 interface Company {
@@ -148,6 +152,7 @@ export default function BranchesPage() {
               sellerCategory: data.sellerCategory || "",
               supervisorId: data.supervisorId || "",
               supervisorName: data.supervisorName || "",
+              supervisorEmail: data.supervisorEmail || "",
             };
           },
         );
@@ -220,6 +225,7 @@ export default function BranchesPage() {
           sellerCategory: data.sellerCategory || "",
           supervisorId: data.supervisorId || "",
           supervisorName: data.supervisorName || "",
+          supervisorEmail: data.supervisorEmail || "",
         });
       });
 
@@ -408,6 +414,7 @@ export default function BranchesPage() {
         sellerCategory: formData.sellerCategory.trim() || null,
         supervisorId: formData.supervisorId || null,
         supervisorName: supervisor?.name || null,
+        supervisorEmail: supervisor?.email || null,
         createdAt: serverTimestamp(),
       });
 
@@ -433,6 +440,13 @@ export default function BranchesPage() {
 
   const handleEditBranch = (branch: BranchWithStats) => {
     setSelectedBranch(branch);
+    // If the stored supervisorId no longer exists in the current list (e.g. user deleted),
+    // reset to "" so the dropdown shows "-- ไม่ระบุ --" and saving will clear the field.
+    const validSupervisorId = supervisors.some(
+      (s) => s.id === branch.supervisorId,
+    )
+      ? branch.supervisorId || ""
+      : "";
     setFormData({
       name: branch.name,
       code: branch.code || "",
@@ -443,7 +457,7 @@ export default function BranchesPage() {
       radiusMeters:
         branch.radiusMeters != null ? String(branch.radiusMeters) : "200",
       sellerCategory: branch.sellerCategory || "",
-      supervisorId: branch.supervisorId || "",
+      supervisorId: validSupervisorId,
     });
     setShowEditModal(true);
   };
@@ -506,8 +520,37 @@ export default function BranchesPage() {
         sellerCategory: formData.sellerCategory.trim() || null,
         supervisorId: formData.supervisorId || null,
         supervisorName: supervisor?.name || null,
+        supervisorEmail: supervisor?.email || null,
         updatedAt: serverTimestamp(),
       });
+
+      // Sync user documents when supervisor changes
+      const oldSupervisorId = selectedBranch.supervisorId || null;
+      const newSupervisorId = formData.supervisorId || null;
+      if (oldSupervisorId !== newSupervisorId) {
+        // Remove branch from old supervisor's managedBranchIds
+        if (oldSupervisorId) {
+          const oldRef = doc(db, "users", oldSupervisorId);
+          await updateDoc(oldRef, {
+            managedBranchIds: arrayRemove(selectedBranch.id),
+          });
+          // If no more managed branches, reset role to employee
+          const oldSnap = await getDoc(oldRef);
+          if (oldSnap.exists()) {
+            const remaining: string[] = oldSnap.data()?.managedBranchIds ?? [];
+            if (remaining.length === 0) {
+              await updateDoc(oldRef, { role: "employee" });
+            }
+          }
+        }
+        // Add branch to new supervisor's managedBranchIds
+        if (newSupervisorId) {
+          await updateDoc(doc(db, "users", newSupervisorId), {
+            managedBranchIds: arrayUnion(selectedBranch.id),
+            role: "supervisor",
+          });
+        }
+      }
 
       toast.success("อัปเดตสาขาสำเร็จ");
       setShowEditModal(false);
@@ -883,6 +926,16 @@ export default function BranchesPage() {
                           {branch.supervisorName}
                         </span>
                       </div>
+                    ) : branch.supervisorEmail ? (
+                      <div className="flex items-center gap-1 text-xs text-orange-600 dark:text-orange-400">
+                        <UserIcon className="w-3.5 h-3.5" />
+                        <span
+                          className="truncate max-w-32"
+                          title={branch.supervisorEmail}
+                        >
+                          {branch.supervisorEmail}
+                        </span>
+                      </div>
                     ) : (
                       <span className="text-xs text-gray-400">-</span>
                     )}
@@ -1056,7 +1109,7 @@ export default function BranchesPage() {
               {/* Supervisor */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                  Supervisor (หัวหน้างานสาขา)
+                  Supervisor (ผู้ดูแลสาขา)
                 </label>
                 <select
                   value={formData.supervisorId}
@@ -1292,7 +1345,7 @@ export default function BranchesPage() {
               {/* Supervisor (เพิ่มใน edit modal) */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                  Supervisor (หัวหน้างานสาขา)
+                  Supervisor (ผู้ดูแลสาขา)
                 </label>
                 <select
                   value={formData.supervisorId}

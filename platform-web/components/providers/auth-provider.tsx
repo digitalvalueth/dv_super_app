@@ -164,6 +164,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
             await setDoc(userDocRef, newUserData);
 
+            // Try to auto-assign from whitelist (handles pre-registered supervisor/user emails)
+            if (firebaseUser.email) {
+              syncModuleAccessFromWhitelist(
+                firebaseUser.uid,
+                firebaseUser.email,
+                // No companyId yet — will scan all companies
+              ).catch((err) =>
+                console.error("Whitelist sync error (new user):", err),
+              );
+            }
+
             // สร้าง login log แรก
             try {
               const userAgent = navigator.userAgent;

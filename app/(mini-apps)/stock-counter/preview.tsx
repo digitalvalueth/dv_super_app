@@ -134,9 +134,8 @@ export default function PreviewScreen() {
         };
         const result = checkBranchGeofence(watermarkData.coordinates, b);
         if (result.hasBranchCoords && !result.withinRadius) {
-          Alert.alert("⚠️ อยู่นอกพื้นที่สาขา", formatGeofenceWarning(result), [
-            { text: "รับทราบ" },
-          ]);
+          // Geofence is now enforced at camera open — this is a fallback log only
+          console.warn("Outside branch at preview:", result);
         }
       } catch (err) {
         console.warn("Geofence check failed:", err);
