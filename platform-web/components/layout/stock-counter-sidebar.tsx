@@ -41,6 +41,7 @@ interface NavItem {
   icon: React.ElementType;
   superAdminOnly?: boolean;
   adminOnly?: boolean;
+  adminOrManager?: boolean;
   supervisorOnly?: boolean;
   supervisorOrManager?: boolean;
   hideForSupervisor?: boolean;
@@ -87,7 +88,7 @@ const navGroups: NavGroup[] = [
         name: "จัดการทีมงาน",
         href: "/stock-counter/dashboard/managers",
         icon: Shield,
-        adminOnly: true,
+        adminOrManager: true,
       },
       {
         name: "ผู้ใช้งาน",
@@ -116,6 +117,12 @@ const navGroups: NavGroup[] = [
         icon: Upload,
         hideForSupervisor: true,
         hideForManager: true,
+      },
+      {
+        name: "อัปเดตชื่อ & BA Code",
+        href: "/stock-counter/dashboard/update-users",
+        icon: Upload,
+        adminOrManager: true,
       },
     ],
   },
@@ -240,6 +247,7 @@ export function StockCounterSidebar() {
   function canSeeItem(item: NavItem): boolean {
     if (item.superAdminOnly) return isSuperAdmin;
     if (item.adminOnly) return isAdminOrAbove;
+    if (item.adminOrManager) return isAdminOrAbove || isManager;
     if (item.supervisorOnly) return isSupervisor;
     if (item.supervisorOrManager) return isSupervisor || isManager;
     if (item.hideForSupervisor && isSupervisor) return false;

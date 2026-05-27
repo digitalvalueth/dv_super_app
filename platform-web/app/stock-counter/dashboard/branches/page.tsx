@@ -115,11 +115,36 @@ export default function BranchesPage() {
 
       // Manager/Supervisor: ดึงเฉพาะสาขาที่ถูก assign ให้เท่านั้น
       if (userData.role === "manager" || userData.role === "supervisor") {
-        const managedIds = userData.managedBranchIds?.length
+        let managedIds: string[] = userData.managedBranchIds?.length
           ? userData.managedBranchIds
           : userData.branchId
             ? [userData.branchId]
             : [];
+
+        // สำหรับ Manager: รวมสาขาจาก Supervisor ที่ดูแลด้วย
+        if (userData.role === "manager") {
+          const supervisorIds = (userData.managedSupervisorIds || []).slice(
+            0,
+            30,
+          );
+          if (supervisorIds.length > 0) {
+            const supervisorsSnap = await getDocs(
+              query(
+                collection(db, "users"),
+                where(documentId(), "in", supervisorIds),
+              ),
+            );
+            const branchSet = new Set<string>(managedIds);
+            supervisorsSnap.forEach((d) => {
+              const supData = d.data() as any;
+              (supData.managedBranchIds || []).forEach((id: string) =>
+                branchSet.add(id),
+              );
+            });
+            managedIds = [...branchSet];
+          }
+        }
+
         if (managedIds.length === 0) {
           setBranches([]);
           setLoading(false);
@@ -318,19 +343,9 @@ export default function BranchesPage() {
       (branch.supervisorId || "") === filterSupervisor;
 
     // Manager/Supervisor เห็นเฉพาะสาขาที่ถูก assign ให้เท่านั้น
+    // (fetchData แล้วกรองไว้แล้ว — ตรงนี้แค่กรอง search/seller/supervisor)
     if (userData?.role === "manager" || userData?.role === "supervisor") {
-      const managedIds = userData.managedBranchIds?.length
-        ? userData.managedBranchIds
-        : userData.branchId
-          ? [userData.branchId]
-          : [];
-      if (managedIds.length === 0) return false;
-      return (
-        matchesSearch &&
-        matchesSeller &&
-        matchesSupervisor &&
-        managedIds.includes(branch.id)
-      );
+      return matchesSearch && matchesSeller && matchesSupervisor;
     }
 
     return (
@@ -735,16 +750,9 @@ export default function BranchesPage() {
               <p className="text-sm text-blue-700 dark:text-blue-300 mb-2">
                 คุณมีหน้าที่ดูแลและจัดการสาขาเหล่านี้ในบริษัท{" "}
                 <strong>{userData.companyName || "ของคุณ"}</strong>
-                {(() => {
-                  const count = userData.managedBranchIds?.length
-                    ? userData.managedBranchIds.length
-                    : userData.branchId
-                      ? 1
-                      : 0;
-                  return count > 0 ? ` (${count} สาขา)` : "";
-                })()}
+                {branches.length > 0 ? ` (${branches.length} สาขา)` : ""}
               </p>
-              {!userData.managedBranchIds?.length && !userData.branchId && (
+              {branches.length === 0 && (
                 <p className="text-xs text-blue-600 dark:text-blue-400">
                   ⚠️ ยังไม่มีสาขาที่ถูกกำหนดให้คุณ กรุณาติดต่อเจ้าของบริษัท
                 </p>

@@ -5,6 +5,8 @@ import { notifyBranchAssigned, notifyBranchRemoved } from "@/lib/notifications";
 import { useAuthStore } from "@/stores/auth.store";
 import { User } from "@/types";
 import {
+  arrayRemove,
+  arrayUnion,
   collection,
   doc,
   getDocs,
@@ -12,7 +14,19 @@ import {
   updateDoc,
   where,
 } from "firebase/firestore";
-import { Building2, Check, ChevronDown, ChevronRight, Edit2, Network, Search, Shield, UserCog, Users2 } from "lucide-react";
+import {
+  ArrowRightLeft,
+  Building2,
+  Check,
+  ChevronDown,
+  ChevronRight,
+  Edit2,
+  Network,
+  Search,
+  Shield,
+  UserCog,
+  Users2,
+} from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 
@@ -46,10 +60,21 @@ export default function ManagersPage() {
   const [showSupModal, setShowSupModal] = useState(false);
   const [selectedSupIds, setSelectedSupIds] = useState<string[]>([]);
   const [supModalSearch, setSupModalSearch] = useState("");
+  // Move branch between supervisors
+  const [showMoveBranchModal, setShowMoveBranchModal] = useState(false);
+  const [movingBranch, setMovingBranch] = useState<{
+    id: string;
+    name: string;
+    fromSupId: string;
+  } | null>(null);
+  const [targetSupId, setTargetSupId] = useState<string>("");
 
   const isSuperAdmin = userData?.role === "super_admin";
   const canManageManagers =
-    userData?.role === "admin" || userData?.role === "super_admin";
+    userData?.role === "admin" ||
+    userData?.role === "super_admin" ||
+    userData?.role === "manager";
+  const isManagerRole = userData?.role === "manager";
 
   useEffect(() => {
     if (!userData) return;
@@ -198,14 +223,26 @@ export default function ManagersPage() {
   };
 
   // ── Computed: split by role ──
-  const onlyManagers = useMemo(() => managers.filter((m) => m.role === "manager"), [managers]);
-  const onlySupervisors = useMemo(() => managers.filter((m) => m.role === "supervisor"), [managers]);
-
-  const filteredManagers = managers.filter(
-    (manager) =>
-      manager.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      manager.email?.toLowerCase().includes(searchTerm.toLowerCase()),
+  const onlyManagers = useMemo(
+    () => managers.filter((m) => m.role === "manager"),
+    [managers],
   );
+  const onlySupervisors = useMemo(
+    () => managers.filter((m) => m.role === "supervisor"),
+    [managers],
+  );
+
+  const matchesSearch = (u: ManagerWithBranches, term: string) => {
+    if (!term) return true;
+    const t = term.toLowerCase();
+    return (
+      (u.fullName?.toLowerCase().includes(t) ||
+        u.name?.toLowerCase().includes(t) ||
+        u.displayName?.toLowerCase().includes(t) ||
+        u.email?.toLowerCase().includes(t)) ??
+      false
+    );
+  };
 
   // Filter branches for current user's company
   const availableBranches = branches.filter((branch) =>
@@ -227,7 +264,11 @@ export default function ManagersPage() {
   const toggleExpand = (id: string) => {
     setExpandedIds((prev) => {
       const next = new Set(prev);
-      next.has(id) ? next.delete(id) : next.add(id);
+      if (next.has(id)) {
+        next.delete(id);
+      } else {
+        next.add(id);
+      }
       return next;
     });
   };
@@ -240,14 +281,18 @@ export default function ManagersPage() {
   const getBranchCountForManager = (mgr: ManagerWithBranches) => {
     const sups = getSupervisorsForManager(mgr);
     const allBranchIds = new Set<string>();
-    sups.forEach((s) => s.managedBranchIds?.forEach((id) => allBranchIds.add(id)));
+    sups.forEach((s) =>
+      s.managedBranchIds?.forEach((id) => allBranchIds.add(id)),
+    );
     return allBranchIds.size;
   };
 
   // Supervisors not assigned to any manager
   const unassignedSupervisors = useMemo(() => {
     const assignedIds = new Set<string>();
-    onlyManagers.forEach((m) => m.managedSupervisorIds?.forEach((id) => assignedIds.add(id)));
+    onlyManagers.forEach((m) =>
+      m.managedSupervisorIds?.forEach((id) => assignedIds.add(id)),
+    );
     return onlySupervisors.filter((s) => !assignedIds.has(s.uid || s.id));
   }, [onlyManagers, onlySupervisors]);
 
@@ -278,10 +323,68 @@ export default function ManagersPage() {
     const term = supModalSearch.toLowerCase();
     const list = onlySupervisors;
     if (!term) return list;
-    return list.filter(
-      (s) => s.name?.toLowerCase().includes(term) || s.email?.toLowerCase().includes(term),
-    );
+    return list.filter((s) => {
+      const name = (s.fullName || s.name || s.displayName || "").toLowerCase();
+      const email = (s.email || "").toLowerCase();
+      return name.includes(term) || email.includes(term);
+    });
   }, [onlySupervisors, supModalSearch]);
+
+  // Supervisors scoped to the current manager (admin/super_admin see all)
+  const visibleSupervisors = useMemo(() => {
+    if (isManagerRole) {
+      const mySupIds = new Set(userData?.managedSupervisorIds || []);
+      // Match on doc ID first, then fallback to uid field — managedSupervisorIds
+      // stores Firestore doc IDs so checking s.id before s.uid avoids false misses
+      // when the document also carries a separate uid field.
+      return onlySupervisors.filter(
+        (s) => mySupIds.has(s.id) || (s.uid && mySupIds.has(s.uid)),
+      );
+    }
+    return onlySupervisors;
+  }, [onlySupervisors, isManagerRole, userData?.managedSupervisorIds]);
+
+  // Managers scoped to the current manager (admin/super_admin see all)
+  const visibleManagers = useMemo(() => {
+    if (isManagerRole) {
+      return onlyManagers.filter(
+        (m) => m.id === (userData?.uid || userData?.id),
+      );
+    }
+    return onlyManagers;
+  }, [onlyManagers, isManagerRole, userData?.uid, userData?.id]);
+
+  // Supervisors available as move-branch targets (exclude current source sup)
+  const moveBranchTargetList = useMemo(
+    () => visibleSupervisors.filter((s) => s.id !== movingBranch?.fromSupId),
+    [visibleSupervisors, movingBranch?.fromSupId],
+  );
+
+  const handleMoveBranch = async () => {
+    if (!movingBranch || !targetSupId) return;
+    try {
+      const targetSup = visibleSupervisors.find((s) => s.id === targetSupId);
+      await updateDoc(doc(db, "users", movingBranch.fromSupId), {
+        managedBranchIds: arrayRemove(movingBranch.id),
+      });
+      await updateDoc(doc(db, "users", targetSupId), {
+        managedBranchIds: arrayUnion(movingBranch.id),
+      });
+      await updateDoc(doc(db, "branches", movingBranch.id), {
+        supervisorId: targetSup?.id || targetSupId,
+        supervisorName: targetSup?.fullName || targetSup?.name || "",
+        supervisorEmail: targetSup?.email || "",
+      });
+      toast.success(`โยกสาขา "${movingBranch.name}" สำเร็จ`);
+      setShowMoveBranchModal(false);
+      setMovingBranch(null);
+      setTargetSupId("");
+      fetchData();
+    } catch (error) {
+      console.error(error);
+      toast.error("เกิดข้อผิดพลาดในการโยกสาขา");
+    }
+  };
 
   if (loading) {
     return (
@@ -323,23 +426,32 @@ export default function ManagersPage() {
     );
   }
 
-
   return (
     <div className="p-6 space-y-6">
       <div>
-        <h1 className="text-3xl font-bold text-gray-900 dark:text-white">จัดการทีมงาน</h1>
-        <p className="text-gray-600 dark:text-gray-400 mt-1">โครงสร้าง Manager → Supervisor → สาขา</p>
+        <h1 className="text-3xl font-bold text-gray-900 dark:text-white">
+          จัดการทีมงาน
+        </h1>
+        <p className="text-gray-600 dark:text-gray-400 mt-1">
+          โครงสร้าง Manager → Supervisor → สาขา
+        </p>
       </div>
 
       {/* Tabs */}
       <div className="flex gap-1 bg-gray-100 dark:bg-gray-800 rounded-xl p-1">
-        <button onClick={() => setActiveTab("manager-supervisor")}
-          className={`flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg text-sm font-medium transition-all ${activeTab === "manager-supervisor" ? "bg-white dark:bg-gray-700 text-blue-600 dark:text-blue-400 shadow-sm" : "text-gray-600 dark:text-gray-400 hover:text-gray-900"}`}>
-          <Network className="w-4 h-4" />Manager → Supervisor
+        <button
+          onClick={() => setActiveTab("manager-supervisor")}
+          className={`flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg text-sm font-medium transition-all ${activeTab === "manager-supervisor" ? "bg-white dark:bg-gray-700 text-blue-600 dark:text-blue-400 shadow-sm" : "text-gray-600 dark:text-gray-400 hover:text-gray-900"}`}
+        >
+          <Network className="w-4 h-4" />
+          Manager → Supervisor
         </button>
-        <button onClick={() => setActiveTab("supervisor-branch")}
-          className={`flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg text-sm font-medium transition-all ${activeTab === "supervisor-branch" ? "bg-white dark:bg-gray-700 text-blue-600 dark:text-blue-400 shadow-sm" : "text-gray-600 dark:text-gray-400 hover:text-gray-900"}`}>
-          <Building2 className="w-4 h-4" />Supervisor → สาขา
+        <button
+          onClick={() => setActiveTab("supervisor-branch")}
+          className={`flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg text-sm font-medium transition-all ${activeTab === "supervisor-branch" ? "bg-white dark:bg-gray-700 text-blue-600 dark:text-blue-400 shadow-sm" : "text-gray-600 dark:text-gray-400 hover:text-gray-900"}`}
+        >
+          <Building2 className="w-4 h-4" />
+          Supervisor → สาขา
         </button>
       </div>
 
@@ -347,23 +459,52 @@ export default function ManagersPage() {
       <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-4">
         <div className="relative">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
-          <input type="text" placeholder="ค้นหาชื่อ, อีเมล..." value={searchTerm}
+          <input
+            type="text"
+            placeholder="ค้นหาชื่อ, อีเมล..."
+            value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
-            className="w-full pl-10 pr-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500" />
+            className="w-full pl-10 pr-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500"
+          />
         </div>
       </div>
 
       {/* Stats */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         {[
-          { icon: <UserCog className="w-6 h-6 text-purple-600" />, bg: "bg-purple-100 dark:bg-purple-900/30", label: "Manager", value: onlyManagers.length },
-          { icon: <Shield className="w-6 h-6 text-green-600" />, bg: "bg-green-100 dark:bg-green-900/30", label: "Supervisor", value: onlySupervisors.length },
-          { icon: <Building2 className="w-6 h-6 text-blue-600" />, bg: "bg-blue-100 dark:bg-blue-900/30", label: "สาขาทั้งหมด", value: availableBranches.length },
+          {
+            icon: <UserCog className="w-6 h-6 text-purple-600" />,
+            bg: "bg-purple-100 dark:bg-purple-900/30",
+            label: "Manager",
+            value: onlyManagers.length,
+          },
+          {
+            icon: <Shield className="w-6 h-6 text-green-600" />,
+            bg: "bg-green-100 dark:bg-green-900/30",
+            label: "Supervisor",
+            value: onlySupervisors.length,
+          },
+          {
+            icon: <Building2 className="w-6 h-6 text-blue-600" />,
+            bg: "bg-blue-100 dark:bg-blue-900/30",
+            label: "สาขาทั้งหมด",
+            value: availableBranches.length,
+          },
         ].map((s, i) => (
-          <div key={i} className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-6">
+          <div
+            key={i}
+            className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-6"
+          >
             <div className="flex items-center gap-4">
               <div className={`${s.bg} p-3 rounded-lg`}>{s.icon}</div>
-              <div><p className="text-sm text-gray-600 dark:text-gray-400">{s.label}</p><p className="text-2xl font-bold text-gray-900 dark:text-white">{s.value}</p></div>
+              <div>
+                <p className="text-sm text-gray-600 dark:text-gray-400">
+                  {s.label}
+                </p>
+                <p className="text-2xl font-bold text-gray-900 dark:text-white">
+                  {s.value}
+                </p>
+              </div>
             </div>
           </div>
         ))}
@@ -372,60 +513,126 @@ export default function ManagersPage() {
       {/* ═══ Tab 1: Manager → Supervisor ═══ */}
       {activeTab === "manager-supervisor" && (
         <div className="space-y-3">
-          {onlyManagers.filter((m) => m.name?.toLowerCase().includes(searchTerm.toLowerCase()) || m.email?.toLowerCase().includes(searchTerm.toLowerCase())).map((mgr) => {
-            const sups = getSupervisorsForManager(mgr);
-            const branchCount = getBranchCountForManager(mgr);
-            const isExp = expandedIds.has(mgr.id);
-            return (
-              <div key={mgr.id} className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden">
-                <div className="flex items-center gap-3 p-4 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700/50" onClick={() => toggleExpand(mgr.id)}>
-                  {isExp ? <ChevronDown className="w-5 h-5 text-gray-400 shrink-0" /> : <ChevronRight className="w-5 h-5 text-gray-400 shrink-0" />}
-                  <div className="bg-purple-100 dark:bg-purple-900/30 p-2 rounded-lg shrink-0"><UserCog className="w-5 h-5 text-purple-600 dark:text-purple-400" /></div>
-                  <div className="flex-1 min-w-0">
-                    <p className="font-semibold text-gray-900 dark:text-white truncate">{mgr.fullName || mgr.name || mgr.displayName}</p>
-                    <p className="text-sm text-gray-500 dark:text-gray-400 truncate">{mgr.email}</p>
+          {visibleManagers
+            .filter((m) => matchesSearch(m, searchTerm))
+            .map((mgr) => {
+              const sups = getSupervisorsForManager(mgr);
+              const branchCount = getBranchCountForManager(mgr);
+              const isExp = expandedIds.has(mgr.id);
+              return (
+                <div
+                  key={mgr.id}
+                  className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden"
+                >
+                  <div
+                    className="flex items-center gap-3 p-4 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700/50"
+                    onClick={() => toggleExpand(mgr.id)}
+                  >
+                    {isExp ? (
+                      <ChevronDown className="w-5 h-5 text-gray-400 shrink-0" />
+                    ) : (
+                      <ChevronRight className="w-5 h-5 text-gray-400 shrink-0" />
+                    )}
+                    <div className="bg-purple-100 dark:bg-purple-900/30 p-2 rounded-lg shrink-0">
+                      <UserCog className="w-5 h-5 text-purple-600 dark:text-purple-400" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="font-semibold text-gray-900 dark:text-white truncate">
+                        {mgr.fullName || mgr.name || mgr.displayName}
+                      </p>
+                      <p className="text-sm text-gray-500 dark:text-gray-400 truncate">
+                        {mgr.email}
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-3 shrink-0">
+                      <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400">
+                        <Users2 className="w-3.5 h-3.5" />
+                        {sups.length} Sup
+                      </span>
+                      <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400">
+                        <Building2 className="w-3.5 h-3.5" />
+                        {branchCount} สาขา
+                      </span>
+                      {!isManagerRole && (
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleEditSupervisors(mgr);
+                          }}
+                          className="p-2 text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg transition"
+                          title="จัดการ Supervisor"
+                        >
+                          <Edit2 className="w-4 h-4" />
+                        </button>
+                      )}
+                    </div>
                   </div>
-                  <div className="flex items-center gap-3 shrink-0">
-                    <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400"><Users2 className="w-3.5 h-3.5" />{sups.length} Sup</span>
-                    <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400"><Building2 className="w-3.5 h-3.5" />{branchCount} สาขา</span>
-                    <button onClick={(e) => { e.stopPropagation(); handleEditSupervisors(mgr); }} className="p-2 text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg transition" title="จัดการ Supervisor"><Edit2 className="w-4 h-4" /></button>
-                  </div>
+                  {isExp && (
+                    <div className="border-t border-gray-100 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-800/50 px-4 py-3 space-y-2">
+                      {sups.length === 0 ? (
+                        <p className="text-sm text-gray-400 text-center py-3">
+                          ยังไม่ได้กำหนด Supervisor — กดปุ่ม ✏️ เพื่อเพิ่ม
+                        </p>
+                      ) : (
+                        sups.map((s) => (
+                          <div
+                            key={s.id}
+                            className="flex items-center gap-3 p-3 bg-white dark:bg-gray-700 rounded-lg border border-gray-200 dark:border-gray-600"
+                          >
+                            <div className="bg-green-100 dark:bg-green-900/30 p-1.5 rounded-lg">
+                              <Shield className="w-4 h-4 text-green-600 dark:text-green-400" />
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <p className="text-sm font-medium text-gray-900 dark:text-white truncate">
+                                {s.fullName || s.name}
+                              </p>
+                              <p className="text-xs text-gray-500 dark:text-gray-400 truncate">
+                                {s.email}
+                              </p>
+                            </div>
+                            <span className="text-xs font-medium text-blue-600 dark:text-blue-400">
+                              {s.managedBranchIds?.length || 0} สาขา
+                            </span>
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  )}
                 </div>
-                {isExp && (
-                  <div className="border-t border-gray-100 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-800/50 px-4 py-3 space-y-2">
-                    {sups.length === 0 ? (
-                      <p className="text-sm text-gray-400 text-center py-3">ยังไม่ได้กำหนด Supervisor — กดปุ่ม ✏️ เพื่อเพิ่ม</p>
-                    ) : sups.map((s) => (
-                      <div key={s.id} className="flex items-center gap-3 p-3 bg-white dark:bg-gray-700 rounded-lg border border-gray-200 dark:border-gray-600">
-                        <div className="bg-green-100 dark:bg-green-900/30 p-1.5 rounded-lg"><Shield className="w-4 h-4 text-green-600 dark:text-green-400" /></div>
-                        <div className="flex-1 min-w-0">
-                          <p className="text-sm font-medium text-gray-900 dark:text-white truncate">{s.fullName || s.name}</p>
-                          <p className="text-xs text-gray-500 dark:text-gray-400 truncate">{s.email}</p>
-                        </div>
-                        <span className="text-xs font-medium text-blue-600 dark:text-blue-400">{s.managedBranchIds?.length || 0} สาขา</span>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            );
-          })}
-          {onlyManagers.length === 0 && (
+              );
+            })}
+          {visibleManagers.length === 0 && (
             <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-12 text-center">
               <UserCog className="w-12 h-12 text-gray-400 mx-auto mb-3" />
-              <p className="text-gray-500 dark:text-gray-400">ยังไม่มี Manager</p>
+              <p className="text-gray-500 dark:text-gray-400">
+                ยังไม่มี Manager
+              </p>
             </div>
           )}
           {/* Unassigned supervisors */}
           {unassignedSupervisors.length > 0 && (
             <div className="mt-6">
-              <h3 className="text-sm font-semibold text-gray-500 dark:text-gray-400 mb-3">Supervisor อิสระ (ยังไม่ถูกกำหนดให้ Manager)</h3>
+              <h3 className="text-sm font-semibold text-gray-500 dark:text-gray-400 mb-3">
+                Supervisor อิสระ (ยังไม่ถูกกำหนดให้ Manager)
+              </h3>
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
                 {unassignedSupervisors.map((s) => (
-                  <div key={s.id} className="flex items-center gap-2 p-3 bg-amber-50 dark:bg-amber-900/10 border border-amber-200 dark:border-amber-800 rounded-lg">
+                  <div
+                    key={s.id}
+                    className="flex items-center gap-2 p-3 bg-amber-50 dark:bg-amber-900/10 border border-amber-200 dark:border-amber-800 rounded-lg"
+                  >
                     <Shield className="w-4 h-4 text-amber-600 shrink-0" />
-                    <div className="min-w-0"><p className="text-sm font-medium text-gray-900 dark:text-white truncate">{s.fullName || s.name}</p><p className="text-xs text-gray-500 truncate">{s.email}</p></div>
-                    <span className="text-xs text-amber-600 shrink-0 ml-auto">{s.managedBranchIds?.length || 0} สาขา</span>
+                    <div className="min-w-0">
+                      <p className="text-sm font-medium text-gray-900 dark:text-white truncate">
+                        {s.fullName || s.name}
+                      </p>
+                      <p className="text-xs text-gray-500 truncate">
+                        {s.email}
+                      </p>
+                    </div>
+                    <span className="text-xs text-amber-600 shrink-0 ml-auto">
+                      {s.managedBranchIds?.length || 0} สาขา
+                    </span>
                   </div>
                 ))}
               </div>
@@ -437,37 +644,101 @@ export default function ManagersPage() {
       {/* ═══ Tab 2: Supervisor → สาขา ═══ */}
       {activeTab === "supervisor-branch" && (
         <div className="space-y-3">
-          {onlySupervisors.filter((s) => s.name?.toLowerCase().includes(searchTerm.toLowerCase()) || s.email?.toLowerCase().includes(searchTerm.toLowerCase())).map((sup) => {
-            const isExp = expandedIds.has(sup.id);
-            const supBranches = sup.managedBranches || [];
-            return (
-              <div key={sup.id} className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden">
-                <div className="flex items-center gap-3 p-4 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700/50" onClick={() => toggleExpand(sup.id)}>
-                  {isExp ? <ChevronDown className="w-5 h-5 text-gray-400 shrink-0" /> : <ChevronRight className="w-5 h-5 text-gray-400 shrink-0" />}
-                  <div className="bg-green-100 dark:bg-green-900/30 p-2 rounded-lg shrink-0"><Shield className="w-5 h-5 text-green-600 dark:text-green-400" /></div>
-                  <div className="flex-1 min-w-0">
-                    <p className="font-semibold text-gray-900 dark:text-white truncate">{sup.fullName || sup.name || sup.displayName}</p>
-                    <p className="text-sm text-gray-500 dark:text-gray-400 truncate">{sup.email}</p>
-                  </div>
-                  <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 shrink-0"><Building2 className="w-3.5 h-3.5" />{supBranches.length} สาขา</span>
-                  <button onClick={(e) => { e.stopPropagation(); handleEditBranches(sup); }} className="p-2 text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg transition shrink-0" title="จัดการสาขา"><Edit2 className="w-4 h-4" /></button>
-                </div>
-                {isExp && (
-                  <div className="border-t border-gray-100 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-800/50 px-4 py-3">
-                    {supBranches.length === 0 ? (
-                      <p className="text-sm text-gray-400 text-center py-3">ยังไม่ได้กำหนดสาขา</p>
+          {visibleSupervisors
+            .filter((s) => matchesSearch(s, searchTerm))
+            .map((sup) => {
+              const isExp = expandedIds.has(sup.id);
+              const supBranches = sup.managedBranches || [];
+              return (
+                <div
+                  key={sup.id}
+                  className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden"
+                >
+                  <div
+                    className="flex items-center gap-3 p-4 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700/50"
+                    onClick={() => toggleExpand(sup.id)}
+                  >
+                    {isExp ? (
+                      <ChevronDown className="w-5 h-5 text-gray-400 shrink-0" />
                     ) : (
-                      <div className="flex flex-wrap gap-1.5">{supBranches.map((b) => (<span key={b.id} className="inline-flex items-center px-2.5 py-1 rounded-lg text-xs bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800">{b.name}</span>))}</div>
+                      <ChevronRight className="w-5 h-5 text-gray-400 shrink-0" />
+                    )}
+                    <div className="bg-green-100 dark:bg-green-900/30 p-2 rounded-lg shrink-0">
+                      <Shield className="w-5 h-5 text-green-600 dark:text-green-400" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="font-semibold text-gray-900 dark:text-white truncate">
+                        {sup.fullName || sup.name || sup.displayName}
+                      </p>
+                      <p className="text-sm text-gray-500 dark:text-gray-400 truncate">
+                        {sup.email}
+                      </p>
+                    </div>
+                    <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 shrink-0">
+                      <Building2 className="w-3.5 h-3.5" />
+                      {supBranches.length} สาขา
+                    </span>
+                    {!isManagerRole && (
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleEditBranches(sup);
+                        }}
+                        className="p-2 text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg transition shrink-0"
+                        title="จัดการสาขา"
+                      >
+                        <Edit2 className="w-4 h-4" />
+                      </button>
                     )}
                   </div>
-                )}
-              </div>
-            );
-          })}
-          {onlySupervisors.length === 0 && (
+                  {isExp && (
+                    <div className="border-t border-gray-100 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-800/50 px-4 py-3">
+                      {supBranches.length === 0 ? (
+                        <p className="text-sm text-gray-400 text-center py-3">
+                          ยังไม่ได้กำหนดสาขา
+                        </p>
+                      ) : (
+                        <div className="flex flex-wrap gap-1.5">
+                          {supBranches.map((b) => (
+                            <span
+                              key={b.id}
+                              className="inline-flex items-center gap-1.5 pl-2.5 pr-1.5 py-1 rounded-lg text-xs bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800"
+                            >
+                              {b.name}
+                              {(isManagerRole ||
+                                visibleSupervisors.length > 1) && (
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setMovingBranch({
+                                      id: b.id,
+                                      name: b.name,
+                                      fromSupId: sup.id,
+                                    });
+                                    setTargetSupId("");
+                                    setShowMoveBranchModal(true);
+                                  }}
+                                  className="text-blue-400 hover:text-blue-700 dark:hover:text-blue-200 transition shrink-0"
+                                  title="โยกสาขาไปยัง Supervisor อื่น"
+                                >
+                                  <ArrowRightLeft className="w-3 h-3" />
+                                </button>
+                              )}
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          {visibleSupervisors.length === 0 && (
             <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-12 text-center">
               <Shield className="w-12 h-12 text-gray-400 mx-auto mb-3" />
-              <p className="text-gray-500 dark:text-gray-400">ยังไม่มี Supervisor</p>
+              <p className="text-gray-500 dark:text-gray-400">
+                ยังไม่มี Supervisor
+              </p>
             </div>
           )}
         </div>
@@ -478,28 +749,65 @@ export default function ManagersPage() {
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
           <div className="bg-white dark:bg-gray-800 rounded-xl shadow-xl max-w-2xl w-full max-h-[80vh] flex flex-col">
             <div className="p-6 border-b border-gray-200 dark:border-gray-700">
-              <h2 className="text-xl font-bold text-gray-900 dark:text-white">จัดการ Supervisor</h2>
-              <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">สำหรับ {selectedManager.fullName || selectedManager.name}</p>
+              <h2 className="text-xl font-bold text-gray-900 dark:text-white">
+                จัดการ Supervisor
+              </h2>
+              <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
+                สำหรับ {selectedManager.fullName || selectedManager.name}
+              </p>
             </div>
             <div className="flex-1 overflow-y-auto p-6">
               <div className="relative mb-4">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-                <input type="text" placeholder="ค้นหา Supervisor..." value={supModalSearch} onChange={(e) => setSupModalSearch(e.target.value)}
-                  className="w-full pl-9 pr-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm focus:ring-2 focus:ring-blue-500" />
+                <input
+                  type="text"
+                  placeholder="ค้นหา Supervisor..."
+                  value={supModalSearch}
+                  onChange={(e) => setSupModalSearch(e.target.value)}
+                  className="w-full pl-9 pr-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm focus:ring-2 focus:ring-blue-500"
+                />
               </div>
               <div className="space-y-2">
                 {filteredSupModalList.map((s) => {
                   const isSel = selectedSupIds.includes(s.uid || s.id);
                   return (
-                    <button key={s.id} onClick={() => setSelectedSupIds((prev) => isSel ? prev.filter((id) => id !== (s.uid || s.id)) : [...prev, s.uid || s.id])}
-                      className={`w-full flex items-center justify-between p-4 rounded-lg border-2 transition-all ${isSel ? "border-green-500 bg-green-50 dark:bg-green-900/20" : "border-gray-200 dark:border-gray-600 hover:border-gray-300 bg-white dark:bg-gray-700"}`}>
+                    <button
+                      key={s.id}
+                      onClick={() =>
+                        setSelectedSupIds((prev) =>
+                          isSel
+                            ? prev.filter((id) => id !== (s.uid || s.id))
+                            : [...prev, s.uid || s.id],
+                        )
+                      }
+                      className={`w-full flex items-center justify-between p-4 rounded-lg border-2 transition-all ${isSel ? "border-green-500 bg-green-50 dark:bg-green-900/20" : "border-gray-200 dark:border-gray-600 hover:border-gray-300 bg-white dark:bg-gray-700"}`}
+                    >
                       <div className="flex items-center gap-3">
-                        <div className={`p-2 rounded-lg ${isSel ? "bg-green-100" : "bg-gray-100 dark:bg-gray-600"}`}><Shield className={`w-5 h-5 ${isSel ? "text-green-600" : "text-gray-500"}`} /></div>
-                        <div className="text-left"><p className="font-semibold text-gray-900 dark:text-white">{s.fullName || s.name}</p><p className="text-sm text-gray-500 dark:text-gray-400">{s.email}</p></div>
+                        <div
+                          className={`p-2 rounded-lg ${isSel ? "bg-green-100" : "bg-gray-100 dark:bg-gray-600"}`}
+                        >
+                          <Shield
+                            className={`w-5 h-5 ${isSel ? "text-green-600" : "text-gray-500"}`}
+                          />
+                        </div>
+                        <div className="text-left">
+                          <p className="font-semibold text-gray-900 dark:text-white">
+                            {s.fullName || s.name}
+                          </p>
+                          <p className="text-sm text-gray-500 dark:text-gray-400">
+                            {s.email}
+                          </p>
+                        </div>
                       </div>
                       <div className="flex items-center gap-2">
-                        <span className="text-xs text-blue-600">{s.managedBranchIds?.length || 0} สาขา</span>
-                        <div className={`w-6 h-6 rounded-full border-2 flex items-center justify-center ${isSel ? "border-green-500 bg-green-500" : "border-gray-300"}`}>{isSel && <Check className="w-4 h-4 text-white" />}</div>
+                        <span className="text-xs text-blue-600">
+                          {s.managedBranchIds?.length || 0} สาขา
+                        </span>
+                        <div
+                          className={`w-6 h-6 rounded-full border-2 flex items-center justify-center ${isSel ? "border-green-500 bg-green-500" : "border-gray-300"}`}
+                        >
+                          {isSel && <Check className="w-4 h-4 text-white" />}
+                        </div>
                       </div>
                     </button>
                   );
@@ -507,10 +815,27 @@ export default function ManagersPage() {
               </div>
             </div>
             <div className="p-6 border-t border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800">
-              <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">เลือกแล้ว: <span className="font-semibold">{selectedSupIds.length}</span> Supervisor</p>
+              <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
+                เลือกแล้ว:{" "}
+                <span className="font-semibold">{selectedSupIds.length}</span>{" "}
+                Supervisor
+              </p>
               <div className="flex gap-3">
-                <button onClick={() => { setShowSupModal(false); setSelectedManager(null); }} className="flex-1 px-4 py-2 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-50 transition">ยกเลิก</button>
-                <button onClick={handleSubmitSupervisors} className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition">บันทึก</button>
+                <button
+                  onClick={() => {
+                    setShowSupModal(false);
+                    setSelectedManager(null);
+                  }}
+                  className="flex-1 px-4 py-2 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-50 transition"
+                >
+                  ยกเลิก
+                </button>
+                <button
+                  onClick={handleSubmitSupervisors}
+                  className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition"
+                >
+                  บันทึก
+                </button>
               </div>
             </div>
           </div>
@@ -522,37 +847,176 @@ export default function ManagersPage() {
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
           <div className="bg-white dark:bg-gray-800 rounded-xl shadow-xl max-w-2xl w-full max-h-[80vh] flex flex-col">
             <div className="p-6 border-b border-gray-200 dark:border-gray-700">
-              <h2 className="text-xl font-bold text-gray-900 dark:text-white">จัดการสาขาที่ดูแล</h2>
-              <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">{selectedManager.fullName || selectedManager.name}</p>
+              <h2 className="text-xl font-bold text-gray-900 dark:text-white">
+                จัดการสาขาที่ดูแล
+              </h2>
+              <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
+                {selectedManager.fullName || selectedManager.name}
+              </p>
             </div>
             <div className="flex-1 overflow-y-auto p-6">
               <div className="relative mb-4">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-                <input type="text" placeholder="ค้นหาสาขา..." value={modalSearchTerm} onChange={(e) => setModalSearchTerm(e.target.value)}
-                  className="w-full pl-9 pr-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm focus:ring-2 focus:ring-blue-500" />
+                <input
+                  type="text"
+                  placeholder="ค้นหาสาขา..."
+                  value={modalSearchTerm}
+                  onChange={(e) => setModalSearchTerm(e.target.value)}
+                  className="w-full pl-9 pr-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm focus:ring-2 focus:ring-blue-500"
+                />
               </div>
               <div className="space-y-2">
                 {filteredModalBranches.map((branch) => {
                   const isSel = selectedBranchIds.includes(branch.id);
                   return (
-                    <button key={branch.id} onClick={() => handleToggleBranch(branch.id)}
-                      className={`w-full flex items-center justify-between p-4 rounded-lg border-2 transition-all ${isSel ? "border-blue-500 bg-blue-50 dark:bg-blue-900/20" : "border-gray-200 dark:border-gray-600 hover:border-gray-300 bg-white dark:bg-gray-700"}`}>
+                    <button
+                      key={branch.id}
+                      onClick={() => handleToggleBranch(branch.id)}
+                      className={`w-full flex items-center justify-between p-4 rounded-lg border-2 transition-all ${isSel ? "border-blue-500 bg-blue-50 dark:bg-blue-900/20" : "border-gray-200 dark:border-gray-600 hover:border-gray-300 bg-white dark:bg-gray-700"}`}
+                    >
                       <div className="flex items-center gap-3">
-                        <div className={`p-2 rounded-lg ${isSel ? "bg-blue-100" : "bg-gray-100 dark:bg-gray-600"}`}><Building2 className={`w-5 h-5 ${isSel ? "text-blue-600" : "text-gray-500"}`} /></div>
-                        <div className="text-left"><p className="font-semibold text-gray-900 dark:text-white">{branch.name}</p><p className="text-sm text-gray-500 dark:text-gray-400">{branch.code}</p></div>
+                        <div
+                          className={`p-2 rounded-lg ${isSel ? "bg-blue-100" : "bg-gray-100 dark:bg-gray-600"}`}
+                        >
+                          <Building2
+                            className={`w-5 h-5 ${isSel ? "text-blue-600" : "text-gray-500"}`}
+                          />
+                        </div>
+                        <div className="text-left">
+                          <p className="font-semibold text-gray-900 dark:text-white">
+                            {branch.name}
+                          </p>
+                          <p className="text-sm text-gray-500 dark:text-gray-400">
+                            {branch.code}
+                          </p>
+                        </div>
                       </div>
-                      <div className={`w-6 h-6 rounded-full border-2 flex items-center justify-center ${isSel ? "border-blue-500 bg-blue-500" : "border-gray-300"}`}>{isSel && <Check className="w-4 h-4 text-white" />}</div>
+                      <div
+                        className={`w-6 h-6 rounded-full border-2 flex items-center justify-center ${isSel ? "border-blue-500 bg-blue-500" : "border-gray-300"}`}
+                      >
+                        {isSel && <Check className="w-4 h-4 text-white" />}
+                      </div>
                     </button>
                   );
                 })}
               </div>
             </div>
             <div className="p-6 border-t border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800">
-              <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">เลือกแล้ว: <span className="font-semibold">{selectedBranchIds.length}</span> สาขา</p>
+              <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
+                เลือกแล้ว:{" "}
+                <span className="font-semibold">
+                  {selectedBranchIds.length}
+                </span>{" "}
+                สาขา
+              </p>
               <div className="flex gap-3">
-                <button onClick={() => { setShowEditModal(false); setSelectedManager(null); }} className="flex-1 px-4 py-2 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-50 transition">ยกเลิก</button>
-                <button onClick={handleSubmit} className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition">บันทึก</button>
+                <button
+                  onClick={() => {
+                    setShowEditModal(false);
+                    setSelectedManager(null);
+                  }}
+                  className="flex-1 px-4 py-2 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-50 transition"
+                >
+                  ยกเลิก
+                </button>
+                <button
+                  onClick={handleSubmit}
+                  className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition"
+                >
+                  บันทึก
+                </button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ═══ Modal: โยกสาขาระหว่าง Supervisor ═══ */}
+      {showMoveBranchModal && movingBranch && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
+          <div className="bg-white dark:bg-gray-800 rounded-xl shadow-xl max-w-md w-full">
+            <div className="p-6 border-b border-gray-200 dark:border-gray-700">
+              <h2 className="text-xl font-bold text-gray-900 dark:text-white">
+                โยกสาขา
+              </h2>
+              <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
+                ย้าย{" "}
+                <span className="font-semibold text-gray-900 dark:text-white">
+                  {movingBranch.name}
+                </span>{" "}
+                ไปยัง Supervisor คนอื่น
+              </p>
+            </div>
+            <div className="p-6 space-y-2 max-h-80 overflow-y-auto">
+              {moveBranchTargetList.length === 0 ? (
+                <div className="text-center py-6 space-y-2">
+                  <p className="text-sm text-gray-500 dark:text-gray-400 font-medium">
+                    ไม่มี Supervisor อื่นในทีมของคุณ
+                  </p>
+                  <p className="text-xs text-gray-400 dark:text-gray-500">
+                    กรุณาเพิ่ม Supervisor คนที่สองในแท็บ &ldquo;จัดการทีม&rdquo;
+                    ก่อน
+                  </p>
+                </div>
+              ) : (
+                moveBranchTargetList.map((s) => (
+                  <button
+                    key={s.id}
+                    onClick={() => setTargetSupId(s.id)}
+                    className={`w-full flex items-center gap-3 p-3 rounded-lg border-2 transition-all ${
+                      targetSupId === s.id
+                        ? "border-green-500 bg-green-50 dark:bg-green-900/20"
+                        : "border-gray-200 dark:border-gray-600 hover:border-gray-300 bg-white dark:bg-gray-700"
+                    }`}
+                  >
+                    <div
+                      className={`p-2 rounded-lg ${
+                        targetSupId === s.id
+                          ? "bg-green-100 dark:bg-green-900/30"
+                          : "bg-gray-100 dark:bg-gray-600"
+                      }`}
+                    >
+                      <Shield
+                        className={`w-4 h-4 ${
+                          targetSupId === s.id
+                            ? "text-green-600"
+                            : "text-gray-500"
+                        }`}
+                      />
+                    </div>
+                    <div className="text-left flex-1 min-w-0">
+                      <p className="text-sm font-semibold text-gray-900 dark:text-white truncate">
+                        {s.fullName || s.name || s.email}
+                      </p>
+                      <p className="text-xs text-gray-500 dark:text-gray-400 truncate">
+                        {s.email}
+                      </p>
+                    </div>
+                    {targetSupId === s.id && (
+                      <Check className="w-4 h-4 text-green-600 shrink-0" />
+                    )}
+                  </button>
+                ))
+              )}
+            </div>
+            <div className="p-6 border-t border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 flex gap-3">
+              <button
+                onClick={() => {
+                  setShowMoveBranchModal(false);
+                  setMovingBranch(null);
+                  setTargetSupId("");
+                }}
+                className="flex-1 px-4 py-2 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-50 transition"
+              >
+                ยกเลิก
+              </button>
+              <button
+                onClick={handleMoveBranch}
+                disabled={!targetSupId}
+                className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition"
+              >
+                โยกสาขา
+              </button>
             </div>
           </div>
         </div>

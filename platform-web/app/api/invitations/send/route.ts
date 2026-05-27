@@ -327,6 +327,25 @@ export async function POST(request: NextRequest) {
       });
     }
 
+    // If user exists in Firestore under a different company (or no company yet),
+    // still update fullName and baCode so profile data stays current even if
+    // the user never re-accepts the new invitation.
+    if (!existingUserSnapshot.empty && (fullName || baCode)) {
+      const partialFields: Record<string, string | null> = {};
+      if (fullName) partialFields.fullName = fullName;
+      if (baCode) partialFields.baCode = baCode;
+      try {
+        await existingUserSnapshot.docs[0].ref.set(partialFields, {
+          merge: true,
+        });
+      } catch (patchErr) {
+        console.error(
+          "Error patching fullName/baCode for existing user:",
+          patchErr,
+        );
+      }
+    }
+
     // Check if pending invitation already exists for this email in this company
     const existingInvitationSnapshot = await db
       .collection("invitations")

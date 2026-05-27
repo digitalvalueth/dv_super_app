@@ -5,10 +5,13 @@ import { addEmailsToModuleWhitelist } from "@/lib/module-service";
 import { useAuthStore } from "@/stores/auth.store";
 import {
   addDoc,
+  arrayUnion,
   collection,
+  doc,
   getDocs,
   query,
   serverTimestamp,
+  updateDoc,
   where,
 } from "firebase/firestore";
 import {
@@ -310,7 +313,7 @@ export default function ImportBranchesPage() {
       const r = updated[i];
       if (r.status !== "pending") continue;
       try {
-        await addDoc(collection(db, "branches"), {
+        const branchRef = await addDoc(collection(db, "branches"), {
           companyId,
           companyName,
           companyCode,
@@ -327,6 +330,12 @@ export default function ImportBranchesPage() {
           supervisorName: r.supervisorName || null,
           createdAt: serverTimestamp(),
         });
+        // Update supervisor's managedBranchIds to include the new branch
+        if (r.supervisorId) {
+          await updateDoc(doc(db, "users", r.supervisorId), {
+            managedBranchIds: arrayUnion(branchRef.id),
+          });
+        }
         updated[i] = { ...r, status: "ok", message: "เพิ่มแล้ว" };
         success++;
       } catch (err) {
