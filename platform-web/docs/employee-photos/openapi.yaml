@@ -117,6 +117,20 @@ paths:
           description: ถึงวันที่ (ISO 8601)
           example: "2026-05-31T23:59:59Z"
 
+        - name: date_field
+          in: query
+          schema:
+            type: string
+            enum:
+              - createdAt
+              - updatedAt
+            default: createdAt
+          description: |
+            ฟิลด์วันที่ที่ใช้ในการกรองและเรียงลำดับข้อมูล
+            - `createdAt`: วันเวลาที่พนักงานถ่ายรูปและส่งข้อมูลเข้ามา
+            - `updatedAt`: วันเวลาที่มีการแก้ไข/อัปเดตล่าสุด (เช่น เมื่อแอดมินกดอนุมัติ/Approve หรือปฏิเสธ/Reject)
+          example: "updatedAt"
+
         - name: period_id
           in: query
           schema:

@@ -81,6 +81,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
       const status = p("status");
       const startDateStr = p("start_date");
       const endDateStr = p("end_date");
+      const dateField = p("date_field") === "updatedAt" ? "updatedAt" : "createdAt";
       const periodId = p("period_id");
 
       const limit = Math.min(
@@ -147,19 +148,19 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
         fsQuery = fsQuery.where("periodId", "==", periodId);
       }
 
-      // Date range — use createdAt inequality
+      // Date range
       const startDate = startDateStr ? new Date(startDateStr) : null;
       const endDate = endDateStr ? new Date(endDateStr) : null;
 
       if (startDate && !isNaN(startDate.getTime())) {
-        fsQuery = fsQuery.where("createdAt", ">=", startDate);
+        fsQuery = fsQuery.where(dateField, ">=", startDate);
       }
       if (endDate && !isNaN(endDate.getTime())) {
-        fsQuery = fsQuery.where("createdAt", "<=", endDate);
+        fsQuery = fsQuery.where(dateField, "<=", endDate);
       }
 
-      // Order by createdAt desc
-      fsQuery = fsQuery.orderBy("createdAt", "desc");
+      // Order by chosen date field desc
+      fsQuery = fsQuery.orderBy(dateField, "desc");
 
       // ── Execute query ───────────────────────────────────
       const snapshot = await fsQuery.get();
