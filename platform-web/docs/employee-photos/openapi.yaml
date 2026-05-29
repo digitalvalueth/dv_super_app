@@ -1,0 +1,437 @@
+openapi: 3.1.0
+info:
+  title: Employee Photos API
+  version: 1.0.0
+  description: |
+    API สำหรับให้ระบบภายนอกดึงข้อมูลรูปถ่ายจากพนักงาน (countingSessions)
+    รวมถึง metadata ครบถ้วน เช่น ชื่อพนักงาน, สาขา, สินค้า, ผลนับ, AI count, ตำแหน่ง GPS ฯลฯ
+
+    **Authentication:** ใช้ `X-API-Key` header — ขอ API Key ได้จากทีม FITTBSA
+
+servers:
+  - url: https://app.fittbsa.com
+    description: Production
+  - url: https://uat-app.fittbsa.com
+    description: Sandbox
+  - url: http://localhost:3000
+    description: Local
+
+security:
+  - ApiKeyAuth: []
+
+paths:
+  /api/employee-photos:
+    get:
+      summary: ดึงข้อมูลรูปถ่ายพนักงาน
+      operationId: getEmployeePhotos
+      tags:
+        - Employee Photos
+      description: |
+        ดึงข้อมูลจาก Firestore collection `countingSessions`
+        ส่งกลับ URL รูปถ่าย + ข้อมูลพนักงาน + ข้อมูลสาขา + ผลนับ + ตำแหน่ง GPS
+
+        **Query ได้หลาย filter** เช่น `branch_code`, `status`, `start_date`, `end_date`
+
+        **Pagination:** ใช้ `limit` + `offset`
+      parameters:
+        - name: branch_code
+          in: query
+          schema:
+            type: string
+          description: |
+            รหัสสาขาจาก `branches.code` เช่น `597`
+            ระบบจะ lookup หา branchId จาก branches collection แล้ว filter
+          example: "597"
+
+        - name: branch_id
+          in: query
+          schema:
+            type: string
+          description: Firestore document ID ของสาขา
+          example: "lQzayixeL6TTOptX1GDV"
+
+        - name: branch_name
+          in: query
+          schema:
+            type: string
+          description: ค้นหาชื่อสาขา (partial match, case-insensitive)
+          example: "วัตสัน"
+
+        - name: user_id
+          in: query
+          schema:
+            type: string
+          description: Firebase UID ของพนักงาน
+          example: "AbeseeuQlNW05SZg2ufkp9Fqqfy1"
+
+        - name: user_name
+          in: query
+          schema:
+            type: string
+          description: ค้นหาชื่อพนักงาน (partial match, case-insensitive)
+          example: "Watthachai"
+
+        - name: product_id
+          in: query
+          schema:
+            type: string
+          description: รหัสสินค้า
+          example: "SK-SI-019"
+
+        - name: barcode
+          in: query
+          schema:
+            type: string
+          description: บาร์โค้ดสินค้า (productSKU)
+          example: "8859109895190"
+
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum:
+              - completed
+              - pending-review
+              - approved
+              - rejected
+              - pending
+              - in_progress
+              - analyzed
+              - mismatch
+          description: สถานะการนับ
+          example: "completed"
+
+        - name: start_date
+          in: query
+          schema:
+            type: string
+            format: date-time
+          description: ตั้งแต่วันที่ (ISO 8601)
+          example: "2026-05-01T00:00:00Z"
+
+        - name: end_date
+          in: query
+          schema:
+            type: string
+            format: date-time
+          description: ถึงวันที่ (ISO 8601)
+          example: "2026-05-31T23:59:59Z"
+
+        - name: period_id
+          in: query
+          schema:
+            type: string
+          description: รอบการนับ เช่น 2026-05-H1
+          example: "2026-05-H1"
+
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 200
+            default: 50
+          description: จำนวนสูงสุดต่อ page
+
+        - name: offset
+          in: query
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+          description: เริ่มที่ record ที่เท่าไร
+
+      responses:
+        "200":
+          description: รายการรูปถ่ายพนักงานพร้อม metadata
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/EmployeePhoto"
+                  meta:
+                    type: object
+                    properties:
+                      total:
+                        type: integer
+                        description: จำนวน record ทั้งหมดที่ตรง filter
+                        example: 150
+                      limit:
+                        type: integer
+                        example: 50
+                      offset:
+                        type: integer
+                        example: 0
+                      returned:
+                        type: integer
+                        description: จำนวน record ที่ส่งกลับใน page นี้
+                        example: 50
+
+        "401":
+          description: Missing or invalid API Key
+          content:
+            application/json:
+              example:
+                success: false
+                error:
+                  error: Unauthorized
+                  message: "Missing or invalid API Key. Please provide X-API-Key header."
+                  code: AUTH_INVALID_KEY
+
+        "500":
+          description: Internal server error
+          content:
+            application/json:
+              example:
+                success: false
+                error:
+                  error: Internal Server Error
+                  message: "Something went wrong"
+                  code: INTERNAL_ERROR
+
+components:
+  securitySchemes:
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-API-Key
+      description: |
+        ขอ API Key ได้จากทีม FITTBSA
+        **Sandbox:** ใช้สำหรับทดสอบ
+        **Production:** ใช้สำหรับ production จริง
+
+  schemas:
+    EmployeePhoto:
+      type: object
+      properties:
+        id:
+          type: string
+          description: Firestore document ID ของ countingSession
+          example: "abc123def456"
+
+        imageUrl:
+          type: string
+          format: uri
+          description: URL รูปถ่ายจาก Firebase Storage (download URL พร้อม token)
+          example: "https://firebasestorage.googleapis.com/v0/b/fittbsa.firebasestorage.app/o/counting%2F..."
+
+        employee:
+          type: object
+          properties:
+            userId:
+              type: string
+              description: Firebase UID
+              example: "AbeseeuQlNW05SZg2ufkp9Fqqfy1"
+            userName:
+              type: string
+              description: ชื่อจาก Google Account
+              example: "Watthachai Taechalue"
+            userEmail:
+              type: string
+              format: email
+              example: "wattchaichai@gmail.com"
+            fullName:
+              type: string
+              nullable: true
+              description: ชื่อ-นามสกุลภาษาไทย (จาก users collection)
+              example: "วัฒชัย แต้ชาลือ"
+            baCode:
+              type: string
+              nullable: true
+              description: รหัส BA / Employee ID (จาก users collection)
+              example: "BA001"
+
+        branch:
+          type: object
+          properties:
+            branchId:
+              type: string
+              example: "lQzayixeL6TTOptX1GDV"
+            branchCode:
+              type: string
+              nullable: true
+              description: รหัสสาขา (จาก branches collection field `code`)
+              example: "597"
+            branchName:
+              type: string
+              example: "วัตสันสาขาเพชรไพบูลย์(597)"
+            companyId:
+              type: string
+              example: "APKzPZD2sOH36tNxDS5m"
+
+        product:
+          type: object
+          properties:
+            productId:
+              type: string
+              example: "SK-SI-019"
+            productName:
+              type: string
+              example: "NestMe Birdnest Age Delay Lifting Mask 25 ml"
+            barcode:
+              type: string
+              description: บาร์โค้ดสินค้า (productSKU)
+              example: "8859109895190"
+
+        counting:
+          type: object
+          properties:
+            aiCount:
+              type: integer
+              nullable: true
+              description: จำนวนที่ AI นับได้
+              example: 5
+            aiConfidence:
+              type: number
+              nullable: true
+              description: ค่าความมั่นใจของ AI (0-1)
+              example: 0.95
+            aiModel:
+              type: string
+              nullable: true
+              example: "gemini-2.5-flash"
+            manualCount:
+              type: integer
+              nullable: true
+              example: 5
+            finalCount:
+              type: integer
+              nullable: true
+              description: จำนวนสุดท้าย (หลังยืนยัน)
+              example: 5
+            standardCount:
+              type: integer
+              nullable: true
+              example: 6
+            beforeCountQty:
+              type: integer
+              nullable: true
+              example: 0
+            currentCountQty:
+              type: integer
+              nullable: true
+              example: 5
+            discrepancy:
+              type: integer
+              nullable: true
+              description: ส่วนต่าง (ค่าสัมบูรณ์)
+              example: 1
+            variance:
+              type: integer
+              nullable: true
+              example: -1
+            userReportedCount:
+              type: integer
+              nullable: true
+              description: จำนวนที่พนักงานแจ้ง (กรณี mismatch)
+            processingTime:
+              type: integer
+              nullable: true
+              description: เวลาประมวลผล AI (ms)
+              example: 5656
+
+        detection:
+          type: object
+          properties:
+            barcodeMatch:
+              type: boolean
+              nullable: true
+              description: barcode ตรงกับสินค้าที่กำหนดหรือไม่
+            matchedBarcode:
+              type: string
+              nullable: true
+            detectedBarcodes:
+              type: array
+              nullable: true
+              items:
+                type: string
+              description: barcode ทั้งหมดที่ตรวจพบในรูป
+              example: ["8852522128937"]
+
+        metadata:
+          type: object
+          properties:
+            status:
+              type: string
+              enum:
+                - completed
+                - pending-review
+                - approved
+                - rejected
+                - pending
+                - in_progress
+                - analyzed
+                - mismatch
+              example: "completed"
+            periodId:
+              type: string
+              nullable: true
+              example: "2026-05-H1"
+            periodMonth:
+              type: string
+              nullable: true
+              example: "2026-05"
+            periodHalf:
+              type: integer
+              nullable: true
+              enum: [1, 2]
+              example: 1
+            isLate:
+              type: boolean
+              description: ส่งในช่วง grace period
+              example: false
+            isSupplemental:
+              type: boolean
+              description: รูปเพิ่มเติม ไม่นับรวมกับจำนวนหลัก
+              example: false
+            deviceInfo:
+              type: string
+              nullable: true
+              example: "iPhone 17 Pro Max"
+            appVersion:
+              type: string
+              nullable: true
+              example: "1.0.0"
+            assignmentId:
+              type: string
+              nullable: true
+              example: "FXHfbqSMN6boHzqbB06H"
+
+        location:
+          type: object
+          nullable: true
+          description: ตำแหน่ง GPS จาก watermark data (parsed from remarks JSON)
+          properties:
+            address:
+              type: string
+              nullable: true
+              example: "13.75317, 100.65769"
+            latitude:
+              type: number
+              nullable: true
+              example: 13.753165449377216
+            longitude:
+              type: number
+              nullable: true
+              example: 100.6576949264076
+
+        timestamps:
+          type: object
+          properties:
+            createdAt:
+              type: string
+              format: date-time
+              nullable: true
+              example: "2026-05-25T04:47:21.000Z"
+            updatedAt:
+              type: string
+              format: date-time
+              nullable: true
+              example: "2026-05-25T04:47:29.000Z"
