@@ -1,4 +1,4 @@
-export const APP_VERSION = "1.5.1.1";
+export const APP_VERSION = "1.5.3";
 
 export interface ChangeEntry {
   type: "feature" | "fix" | "improvement";
@@ -15,6 +15,80 @@ export interface Release {
 }
 
 export const CHANGELOG: Release[] = [
+  {
+    version: "1.5.3",
+    date: "2 มิถุนายน 2569",
+    title: "Branch Admin ดูสินค้าอย่างเดียว · มอบหมายสินค้าแบบมี Preview",
+    changes: [
+      {
+        type: "improvement",
+        text: "[Web/Rules] Branch Admin (supervisor) ดูสินค้าได้อย่างเดียว — ซ่อนปุ่มเพิ่ม/แก้ไข/ลบ/มอบหมาย และปรับ Firestore Rules ให้แก้ไข/เพิ่มสินค้าไม่ได้",
+        before:
+          "เคยให้ Branch Admin แก้ไข/เพิ่มสินค้าในบริษัทตัวเองได้ (v1.5.2)",
+        after: "Branch Admin เป็นสิทธิ์ดูอย่างเดียวสำหรับสินค้า",
+      },
+      {
+        type: "feature",
+        text: "[Web] ปุ่ม 'มอบหมายทุกสินค้า' มี Preview ก่อนยืนยัน แสดงว่าจะมอบให้ใคร สาขาไหน และใครได้รับมอบหมายแล้ว (แยกตามสาขาของพนักงาน)",
+      },
+      {
+        type: "improvement",
+        text: "[Web] รวมตรรกะการมอบหมายสินค้าทั้งหมด (หน้า Products, Counting Periods และ Supervisor) ให้ใช้ค่าเดียวกัน — มอบหมายตามสาขาที่พนักงานได้รับ, รีเซ็ตความคืบหน้าเมื่อเริ่มรอบใหม่, นับจำนวนใหม่/อัปเดตตรงกันทุกปุ่ม",
+      },
+      {
+        type: "improvement",
+        text: "[Web] หน้า Counting Periods: ปุ่ม Auto-assign (รอบนี้/รายรอบ) ของ Supervisor/Manager มอบหมายให้เฉพาะสาขาที่ตนดูแล พร้อมแสดงสรุปว่าดูแลกี่สาขาและสาขาอะไรบ้าง",
+      },
+      {
+        type: "fix",
+        text: "[Web/API] แก้ bulk-assign ให้กรองสินค้าตามบริษัท ใช้ฟิลด์ productId ที่ถูกต้อง รองรับพนักงานหลายสาขา และอัปเดตงานเดิมแทนการข้าม",
+      },
+    ],
+  },
+  {
+    version: "1.5.2",
+    date: "19 พฤษภาคม 2569",
+    title:
+      "นับสต็อกหลายสาขา · เช็คเอาท์ค้าง · สิทธิ์ Branch Admin · ตำแหน่งภาษาอังกฤษ",
+    changes: [
+      {
+        type: "fix",
+        text: "[Mobile] แก้บั๊กร้ายแรง: พนักงาน 2 สาขา เลือกสาขาที่ถูกต้องแล้ว แต่ข้อมูลการนับถูกบันทึกลงสาขาอื่น",
+        before:
+          "หน้า preview/result ใช้ branchId หลักของผู้ใช้เสมอ ไม่สนใจสาขาที่เลือกจากรายการสินค้า",
+        after:
+          "บันทึกการนับด้วย assignmentBranchId ที่เลือกจริง ทั้งตอนสร้าง session, ยืนยันยอด และอัปเดต session เดิม",
+      },
+      {
+        type: "fix",
+        text: "[Mobile] หน้า Dashboard แสดงชื่อสาขาแทนรหัสสาขา (เช่น hEcZ94vTIf1D...) สำหรับคำเชิญที่เพิ่งตอบรับ",
+        before:
+          "Dashboard ใช้เฉพาะ branchNames ที่ cache ไว้ จึงตกมาแสดงรหัสสาขาเมื่อยังไม่มีชื่อ",
+        after:
+          "ดึงชื่อสาขาจาก Firestore เป็น fallback และตอนรับคำเชิญจะ resolve ชื่อสาขาให้ก่อนบันทึก",
+      },
+      {
+        type: "feature",
+        text: "[Web] เพิ่มเมนู 'ยังไม่เช็คเอาท์' แสดงพนักงานที่เช็คอินแล้วแต่ยังไม่เช็คเอาท์ในวันที่เลือก (จำกัดเฉพาะสาขาที่ดูแล)",
+      },
+      {
+        type: "fix",
+        text: "[Web] หน้าเช็คชื่อพนักงาน: Manager เห็นเฉพาะสาขาที่ตนดูแลผ่าน supervisor และสถิติคำนวณจากสาขาที่เห็นเท่านั้น",
+        before:
+          "Manager ที่ managedBranchIds ว่าง และสถิติยังนับ check-in จากทุกสาขา",
+        after:
+          "รวมสาขาจาก managedSupervisorIds และกรอง check-in/สถิติให้ตรงกับสาขาที่รับผิดชอบ",
+      },
+      {
+        type: "fix",
+        text: "[Functions] Auto-assign รอบเดือนสร้างงานเฉพาะสาขาที่มีผู้ดูแล (มี supervisor หรืออยู่ใน managedBranchIds) เท่านั้น ข้ามสาขากำพร้า",
+      },
+      {
+        type: "improvement",
+        text: "[Web/Mobile] เปลี่ยนชื่อตำแหน่งทั้งหมดเป็นภาษาอังกฤษให้สอดคล้องกัน: Super Admin, Admin, Manager, Branch Admin, Staff",
+      },
+    ],
+  },
   {
     version: "1.5.1.1",
     date: "19 พฤษภาคม 2569",

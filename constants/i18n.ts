@@ -111,11 +111,11 @@ const translations = {
       reloginMessage:
         "เพื่อความปลอดภัย กรุณาออกจากระบบแล้วเข้าสู่ระบบใหม่ จากนั้นลองลบบัญชีอีกครั้ง",
       roles: {
-        employee: "พนักงาน",
-        admin: "เจ้าของบริษัท",
-        super_admin: "ผู้ดูแลระบบ",
-        supervisor: "ผู้ดูแลสาขา",
-        manager: "ผู้จัดการสาขา",
+        employee: "Staff",
+        admin: "Admin",
+        super_admin: "Super Admin",
+        supervisor: "Branch Admin",
+        manager: "Manager",
       },
     },
   },
@@ -233,11 +233,11 @@ const translations = {
       reloginMessage:
         "For security, please sign out and sign back in, then try deleting your account again.",
       roles: {
-        employee: "Employee",
-        admin: "Company Owner",
+        employee: "Staff",
+        admin: "Admin",
         super_admin: "Super Admin",
-        supervisor: "Branch Supervisor",
-        manager: "Branch Manager",
+        supervisor: "Branch Admin",
+        manager: "Manager",
       },
     },
   },

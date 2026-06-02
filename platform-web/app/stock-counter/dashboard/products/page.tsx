@@ -1,5 +1,12 @@
 "use client";
 
+import AssignPreviewModal from "@/components/stock-counter/assign-preview-modal";
+import {
+  buildAssignPlan,
+  commitAssignPlan,
+  type AssignPlan,
+  type PeriodHalf,
+} from "@/lib/assign-products";
 import { db, storage } from "@/lib/firebase";
 import { useAuthStore } from "@/stores/auth.store";
 import { Branch, Product } from "@/types";
@@ -57,7 +64,14 @@ export default function ProductsPage() {
   const [showAddModal, setShowAddModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
-  const [showAssignConfirm, setShowAssignConfirm] = useState(false);
+  const [showAssignModal, setShowAssignModal] = useState(false);
+  const [assignPlan, setAssignPlan] = useState<AssignPlan | null>(null);
+  const [assignLoading, setAssignLoading] = useState(false);
+  const [assignContext, setAssignContext] = useState<{
+    month: number;
+    year: number;
+    half: PeriodHalf;
+  } | null>(null);
   const [formData, setFormData] = useState({
     productId: "",
     name: "",
@@ -80,6 +94,8 @@ export default function ProductsPage() {
   const [pendingCount, setPendingCount] = useState(0);
 
   const isSuperAdmin = !userData?.companyId;
+  // Branch Admin (supervisor) is view-only for products
+  const canManageProducts = userData?.role !== "supervisor";
 
   useEffect(() => {
     if (!userData) return;
@@ -400,97 +416,52 @@ export default function ProductsPage() {
   };
 
   // Function to assign all products to all employees
-  const handleAssignAllProducts = async () => {
-    if (!userData) return;
-    setShowAssignConfirm(false);
-    setAssigningAll(true);
-
+  const openAssignPreview = async () => {
+    if (!userData?.companyId) {
+      toast.error("ไม่พบ companyId");
+      return;
+    }
+    const now = new Date();
+    const ctx = {
+      month: now.getMonth() + 1,
+      year: now.getFullYear(),
+      half: (now.getDate() <= 15 ? 1 : 2) as PeriodHalf,
+    };
+    setAssignContext(ctx);
+    setAssignPlan(null);
+    setShowAssignModal(true);
+    setAssignLoading(true);
     try {
-      const companyId = userData.companyId;
-      const currentMonth = new Date().getMonth() + 1;
-      const currentYear = new Date().getFullYear();
-      const currentHalf: 1 | 2 = new Date().getDate() <= 15 ? 1 : 2;
+      const plan = await buildAssignPlan({
+        companyId: userData.companyId,
+        month: ctx.month,
+        year: ctx.year,
+        half: ctx.half,
+      });
+      setAssignPlan(plan);
+    } catch (error) {
+      console.error("Error building assign plan:", error);
+      toast.error("ไม่สามารถเตรียมข้อมูลการมอบหมายได้");
+      setShowAssignModal(false);
+    } finally {
+      setAssignLoading(false);
+    }
+  };
 
-      // Get all product IDs
-      const allProductIds = products.map((p) => p.productId);
-
-      if (allProductIds.length === 0) {
-        toast.error("ไม่มีสินค้าในระบบ");
-        return;
-      }
-
-      // Get all employees in the company
-      let usersQuery;
-      if (companyId) {
-        usersQuery = query(
-          collection(db, "users"),
-          where("companyId", "==", companyId),
-          where("role", "==", "employee"),
-        );
-      } else {
-        // Super admin - get all employees
-        usersQuery = query(
-          collection(db, "users"),
-          where("role", "==", "employee"),
-        );
-      }
-
-      const usersSnapshot = await getDocs(usersQuery);
-
-      if (usersSnapshot.empty) {
-        toast.error("ไม่พบพนักงานในระบบ");
-        return;
-      }
-
-      let assignedCount = 0;
-      let skippedCount = 0;
-
-      // For each employee, create or update assignment
-      for (const userDoc of usersSnapshot.docs) {
-        const user = userDoc.data() as any;
-        const userId = userDoc.id;
-        const userBranchId = user.branchId;
-        const userCompanyId = user.companyId;
-
-        // Check if assignment already exists for this user/month/year/half
-        const existingQuery = query(
-          collection(db, "assignments"),
-          where("userId", "==", userId),
-          where("month", "==", currentMonth),
-          where("year", "==", currentYear),
-          where("half", "==", currentHalf),
-        );
-        const existingSnapshot = await getDocs(existingQuery);
-
-        if (!existingSnapshot.empty) {
-          // Update existing assignment
-          const existingDoc = existingSnapshot.docs[0];
-          await updateDoc(doc(db, "assignments", existingDoc.id), {
-            productIds: allProductIds,
-            updatedAt: serverTimestamp(),
-          });
-          skippedCount++;
-        } else {
-          // Create new assignment
-          await addDoc(collection(db, "assignments"), {
-            companyId: userCompanyId,
-            branchId: userBranchId,
-            userId: userId,
-            productIds: allProductIds,
-            month: currentMonth,
-            year: currentYear,
-            half: currentHalf,
-            status: "pending",
-            createdAt: serverTimestamp(),
-            updatedAt: serverTimestamp(),
-          });
-          assignedCount++;
-        }
-      }
-
-      toast.success(
-        `มอบหมายสำเร็จ! สร้างใหม่ ${assignedCount} รายการ, อัปเดท ${skippedCount} รายการ`,
+  const handleConfirmAssign = async () => {
+    if (!assignPlan || !assignContext) return;
+    setAssigningAll(true);
+    try {
+      const { created, updated } = await commitAssignPlan(
+        assignPlan,
+        assignContext,
       );
+      toast.success(
+        `มอบหมายสำเร็จ! สร้างใหม่ ${created} คน, อัปเดต ${updated} คน (สินค้า ${assignPlan.productIds.length} รายการ)`,
+      );
+      setShowAssignModal(false);
+      setAssignPlan(null);
+      setAssignContext(null);
     } catch (error) {
       console.error("Error assigning products:", error);
       toast.error("ไม่สามารถมอบหมายสินค้าได้");
@@ -561,31 +532,34 @@ export default function ProductsPage() {
               </span>
             </Link>
           )}
-          <button
-            onClick={() => setShowAssignConfirm(true)}
-            disabled={assigningAll || products.length === 0}
-            className="inline-flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            {assigningAll ? (
-              <Loader2 className="w-5 h-5 animate-spin" />
-            ) : (
-              <Users className="w-5 h-5" />
-            )}
-            มอบหมายทุกสินค้าให้พนักงานทุกคน
-          </button>
-          <button
-            onClick={() => {
-              resetForm();
-              setShowAddModal(true);
-            }}
-            className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-          >
-            <Plus className="w-5 h-5" />
-            เพิ่มสินค้า
-          </button>
+          {canManageProducts && (
+            <>
+              <button
+                onClick={openAssignPreview}
+                disabled={assigningAll || products.length === 0}
+                className="inline-flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {assigningAll ? (
+                  <Loader2 className="w-5 h-5 animate-spin" />
+                ) : (
+                  <Users className="w-5 h-5" />
+                )}
+                มอบหมายทุกสินค้าให้พนักงานทุกคน
+              </button>
+              <button
+                onClick={() => {
+                  resetForm();
+                  setShowAddModal(true);
+                }}
+                className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+              >
+                <Plus className="w-5 h-5" />
+                เพิ่มสินค้า
+              </button>
+            </>
+          )}
         </div>
       </div>
-
       {/* Filters */}
       <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-4">
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -750,23 +724,31 @@ export default function ProductsPage() {
                   </td>
                   <td className="px-4 lg:px-6 py-4 text-right">
                     <div className="flex items-center justify-end gap-2">
-                      <button
-                        onClick={() => handleEditProduct(product)}
-                        className="p-2 text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg transition-colors"
-                        title="แก้ไข"
-                      >
-                        <Edit2 className="w-4 h-4" />
-                      </button>
-                      <button
-                        onClick={() => {
-                          setSelectedProduct(product);
-                          setShowDeleteConfirm(true);
-                        }}
-                        className="p-2 text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors"
-                        title="ลบ"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
+                      {canManageProducts ? (
+                        <>
+                          <button
+                            onClick={() => handleEditProduct(product)}
+                            className="p-2 text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg transition-colors"
+                            title="แก้ไข"
+                          >
+                            <Edit2 className="w-4 h-4" />
+                          </button>
+                          <button
+                            onClick={() => {
+                              setSelectedProduct(product);
+                              setShowDeleteConfirm(true);
+                            }}
+                            className="p-2 text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors"
+                            title="ลบ"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </>
+                      ) : (
+                        <span className="text-xs text-gray-400">
+                          ดูอย่างเดียว
+                        </span>
+                      )}
                     </div>
                   </td>
                 </tr>
@@ -869,35 +851,26 @@ export default function ProductsPage() {
         </div>
       )}
 
-      {showAssignConfirm && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white dark:bg-gray-800 rounded-xl max-w-sm w-full p-6">
-            <h2 className="text-xl font-semibold text-gray-900 dark:text-white mb-2">
-              ยืนยันการมอบหมาย
-            </h2>
-            <p className="text-gray-600 dark:text-gray-400 mb-6">
-              คุณต้องการมอบหมายสินค้าทั้งหมด{" "}
-              <strong className="text-gray-900 dark:text-white">
-                ({products.length} รายการ)
-              </strong>{" "}
-              ให้พนักงานทุกคนใช่หรือไม่?
-            </p>
-            <div className="flex gap-3">
-              <button
-                onClick={() => setShowAssignConfirm(false)}
-                className="flex-1 px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700"
-              >
-                ยกเลิก
-              </button>
-              <button
-                onClick={handleAssignAllProducts}
-                className="flex-1 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700"
-              >
-                ยืนยัน
-              </button>
-            </div>
-          </div>
-        </div>
+      {showAssignModal && (
+        <AssignPreviewModal
+          open={showAssignModal}
+          title="มอบหมายทุกสินค้าให้พนักงานทุกคน"
+          subtitle={
+            assignContext
+              ? `รอบ ${assignContext.half} • เดือน ${assignContext.month}/${assignContext.year}`
+              : undefined
+          }
+          loading={assignLoading}
+          committing={assigningAll}
+          plan={assignPlan}
+          onConfirm={handleConfirmAssign}
+          onClose={() => {
+            if (assigningAll) return;
+            setShowAssignModal(false);
+            setAssignPlan(null);
+            setAssignContext(null);
+          }}
+        />
       )}
     </div>
   );

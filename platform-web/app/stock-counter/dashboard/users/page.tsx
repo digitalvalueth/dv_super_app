@@ -719,10 +719,10 @@ export default function UsersPage() {
           >
             <option value="all">ทุกบทบาท</option>
             <option value="super_admin">Super Admin</option>
-            <option value="admin">เจ้าของบริษัท</option>
-            <option value="supervisor">ผู้ดูแลสาขา</option>
-            <option value="manager">ผู้จัดการสาขา</option>
-            <option value="employee">พนักงาน</option>
+            <option value="admin">Admin</option>
+            <option value="supervisor">Branch Admin</option>
+            <option value="manager">Manager</option>
+            <option value="employee">Staff</option>
           </select>
         </div>
       </div>
@@ -1251,12 +1251,12 @@ export default function UsersPage() {
                             <div>
                               <div className="w-full h-11 px-4 flex items-center border border-gray-300 dark:border-gray-600 rounded-lg bg-gray-100 dark:bg-gray-600 text-gray-700 dark:text-gray-300">
                                 {editForm.role === "super_admin" &&
-                                  "ผู้ดูแลระบบ"}
-                                {editForm.role === "admin" && "เจ้าของบริษัท"}
+                                  "Super Admin"}
+                                {editForm.role === "admin" && "Admin"}
                                 {editForm.role === "supervisor" &&
-                                  "ผู้ดูแลสาขา"}
-                                {editForm.role === "manager" && "ผู้จัดการสาขา"}
-                                {editForm.role === "employee" && "พนักงาน"}
+                                  "Branch Admin"}
+                                {editForm.role === "manager" && "Manager"}
+                                {editForm.role === "employee" && "Staff"}
                               </div>
                               <p className="text-xs text-yellow-600 dark:text-yellow-400 mt-1.5">
                                 ไม่สามารถเปลี่ยนบทบาทของตัวเองได้
@@ -1284,19 +1284,19 @@ export default function UsersPage() {
                               className={fieldClass}
                             >
                               {allowedRoles.includes("super_admin") && (
-                                <option value="super_admin">ผู้ดูแลระบบ</option>
+                                <option value="super_admin">Super Admin</option>
                               )}
                               {allowedRoles.includes("admin") && (
-                                <option value="admin">เจ้าของบริษัท</option>
+                                <option value="admin">Admin</option>
                               )}
                               {allowedRoles.includes("supervisor") && (
-                                <option value="supervisor">ผู้ดูแลสาขา</option>
+                                <option value="supervisor">Branch Admin</option>
                               )}
                               {allowedRoles.includes("manager") && (
-                                <option value="manager">ผู้จัดการสาขา</option>
+                                <option value="manager">Manager</option>
                               )}
                               {allowedRoles.includes("employee") && (
-                                <option value="employee">พนักงาน</option>
+                                <option value="employee">Staff</option>
                               )}
                             </select>
                           )}
@@ -1519,31 +1519,31 @@ function StatusBadge({ status }: { status?: string }) {
 function RoleBadge({ role }: { role: string }) {
   const config = {
     super_admin: {
-      label: "ผู้ดูแลระบบ",
+      label: "Super Admin",
       className: "bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400",
     },
     admin: {
-      label: "เจ้าของบริษัท",
+      label: "Admin",
       className:
         "bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-400",
     },
     supervisor: {
-      label: "ผู้ดูแลสาขา",
+      label: "Branch Admin",
       className:
         "bg-orange-100 text-orange-800 dark:bg-orange-900/30 dark:text-orange-400",
     },
     manager: {
-      label: "ผู้จัดการสาขา",
+      label: "Manager",
       className:
         "bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400",
     },
     employee: {
-      label: "พนักงาน",
+      label: "Staff",
       className:
         "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400",
     },
     staff: {
-      label: "พนักงาน",
+      label: "Staff",
       className:
         "bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-400",
     },

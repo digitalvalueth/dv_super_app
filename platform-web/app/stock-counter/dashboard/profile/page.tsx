@@ -120,12 +120,16 @@ export default function ProfilePage() {
   const getRoleBadge = (role?: string) => {
     const roleConfig = {
       super_admin: {
-        label: "ผู้ดูแลระบบ",
+        label: "Super Admin",
         color: "bg-purple-100 text-purple-700",
       },
-      admin: { label: "เจ้าของบริษัท", color: "bg-blue-100 text-blue-700" },
-      manager: { label: "ผู้จัดการสาขา", color: "bg-green-100 text-green-700" },
-      employee: { label: "พนักงาน", color: "bg-gray-100 text-gray-700" },
+      admin: { label: "Admin", color: "bg-blue-100 text-blue-700" },
+      manager: { label: "Manager", color: "bg-green-100 text-green-700" },
+      supervisor: {
+        label: "Branch Admin",
+        color: "bg-orange-100 text-orange-700",
+      },
+      employee: { label: "Staff", color: "bg-gray-100 text-gray-700" },
     };
 
     const config = roleConfig[role as keyof typeof roleConfig] || {

@@ -26,6 +26,8 @@ import { LinearGradient } from "expo-linear-gradient";
 import { router } from "expo-router";
 import {
   collection,
+  doc,
+  getDoc,
   getDocs,
   limit,
   orderBy,
@@ -99,13 +101,59 @@ export default function HomeScreen() {
   const [selectedBranchName, setSelectedBranchName] = useState<string>(
     user?.branchName ?? "",
   );
+  // Firestore fallback for branch names missing from user.branchNames
+  // (e.g. just-accepted invitations whose name wasn't cached on the profile).
+  const [resolvedBranchNames, setResolvedBranchNames] = useState<
+    Record<string, string>
+  >({});
+  const getBranchName = useCallback(
+    (bId: string) =>
+      (bId ? user?.branchNames?.[bId] : "") || resolvedBranchNames[bId] || bId,
+    [user?.branchNames, resolvedBranchNames],
+  );
   const primaryBranchId = user?.branchId || user?.branchIds?.[0] || "";
   const primaryBranchName =
     (primaryBranchId ? user?.branchNames?.[primaryBranchId] : "") ||
+    resolvedBranchNames[primaryBranchId] ||
     user?.branchName ||
     "";
   const effectiveBranchId = selectedBranchId || primaryBranchId;
   const effectiveBranchName = selectedBranchName || primaryBranchName;
+
+  // Resolve any branch names not present in user.branchNames from Firestore.
+  useEffect(() => {
+    const ids = new Set<string>();
+    if (primaryBranchId) ids.add(primaryBranchId);
+    user?.branchIds?.forEach((b) => b && ids.add(b));
+    const missing = Array.from(ids).filter(
+      (b) => !user?.branchNames?.[b] && !resolvedBranchNames[b],
+    );
+    if (missing.length === 0) return;
+    let cancelled = false;
+    (async () => {
+      const found: Record<string, string> = {};
+      await Promise.all(
+        missing.map(async (bId) => {
+          try {
+            const snap = await getDoc(doc(db, "branches", bId));
+            const name = snap.exists()
+              ? (snap.data().name as string) || ""
+              : "";
+            if (name) found[bId] = name;
+          } catch {
+            // ignore – fall back to ID display
+          }
+        }),
+      );
+      if (!cancelled && Object.keys(found).length > 0) {
+        setResolvedBranchNames((prev) => ({ ...prev, ...found }));
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [primaryBranchId, user?.branchIds, user?.branchNames]);
 
   // Load pinned apps from storage
   useEffect(() => {
@@ -451,7 +499,7 @@ export default function HomeScreen() {
                 style={{ marginTop: 12, marginBottom: 4 }}
               >
                 {user!.branchIds!.map((bId) => {
-                  const bName = user?.branchNames?.[bId] ?? bId;
+                  const bName = getBranchName(bId);
                   const isActive = bId === selectedBranchId;
                   return (
                     <TouchableOpacity

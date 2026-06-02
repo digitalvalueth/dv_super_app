@@ -1117,7 +1117,7 @@ export default function BranchesPage() {
               {/* Supervisor */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                  Supervisor (ผู้ดูแลสาขา)
+                  Branch Admin
                 </label>
                 <select
                   value={formData.supervisorId}
@@ -1353,7 +1353,7 @@ export default function BranchesPage() {
               {/* Supervisor (เพิ่มใน edit modal) */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                  Supervisor (ผู้ดูแลสาขา)
+                  Branch Admin
                 </label>
                 <select
                   value={formData.supervisorId}

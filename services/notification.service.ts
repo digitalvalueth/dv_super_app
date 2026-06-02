@@ -21,7 +21,7 @@ export const createNotification = async (
   type: NotificationType,
   title: string,
   message: string,
-  data?: NotificationData
+  data?: NotificationData,
 ): Promise<string> => {
   try {
     const notificationsRef = collection(db, "notifications");
@@ -48,14 +48,14 @@ export const createNotification = async (
  * Get all notifications for a user
  */
 export const getUserNotifications = async (
-  userId: string
+  userId: string,
 ): Promise<Notification[]> => {
   try {
     const notificationsRef = collection(db, "notifications");
     const q = query(
       notificationsRef,
       where("userId", "==", userId),
-      orderBy("createdAt", "desc")
+      orderBy("createdAt", "desc"),
     );
 
     const snapshot = await getDocs(q);
@@ -78,7 +78,7 @@ export const getUnreadCount = async (userId: string): Promise<number> => {
     const q = query(
       notificationsRef,
       where("userId", "==", userId),
-      where("read", "==", false)
+      where("read", "==", false),
     );
 
     const snapshot = await getDocs(q);
@@ -93,7 +93,7 @@ export const getUnreadCount = async (userId: string): Promise<number> => {
  * Mark a notification as read
  */
 export const markNotificationAsRead = async (
-  notificationId: string
+  notificationId: string,
 ): Promise<void> => {
   try {
     const notificationRef = doc(db, "notifications", notificationId);
@@ -117,7 +117,7 @@ export const markAllAsRead = async (userId: string): Promise<void> => {
     const q = query(
       notificationsRef,
       where("userId", "==", userId),
-      where("read", "==", false)
+      where("read", "==", false),
     );
 
     const snapshot = await getDocs(q);
@@ -125,7 +125,7 @@ export const markAllAsRead = async (userId: string): Promise<void> => {
       updateDoc(doc.ref, {
         read: true,
         readAt: Timestamp.now(),
-      })
+      }),
     );
 
     await Promise.all(updates);
@@ -140,7 +140,7 @@ export const markAllAsRead = async (userId: string): Promise<void> => {
  * Delete a notification
  */
 export const deleteNotification = async (
-  notificationId: string
+  notificationId: string,
 ): Promise<void> => {
   try {
     const notificationRef = doc(db, "notifications", notificationId);
@@ -164,7 +164,7 @@ export const sendCompanyInvite = async (
   companyId: string,
   companyName: string,
   branchId: string,
-  branchName: string
+  branchName: string,
 ): Promise<string> => {
   return createNotification(
     userId,
@@ -178,7 +178,7 @@ export const sendCompanyInvite = async (
       branchName,
       actionRequired: true,
       actionType: "accept_reject",
-    }
+    },
   );
 };
 
@@ -190,7 +190,7 @@ export const sendBranchTransfer = async (
   fromBranchId: string,
   fromBranchName: string,
   toBranchId: string,
-  toBranchName: string
+  toBranchName: string,
 ): Promise<string> => {
   return createNotification(
     userId,
@@ -203,7 +203,7 @@ export const sendBranchTransfer = async (
       toBranchId,
       toBranchName,
       actionRequired: false,
-    }
+    },
   );
 };
 
@@ -213,7 +213,7 @@ export const sendBranchTransfer = async (
 export const sendAccessApproved = async (
   userId: string,
   companyName: string,
-  branchName: string
+  branchName: string,
 ): Promise<string> => {
   return createNotification(
     userId,
@@ -224,7 +224,7 @@ export const sendAccessApproved = async (
       companyName,
       branchName,
       actionRequired: false,
-    }
+    },
   );
 };
 
@@ -233,7 +233,7 @@ export const sendAccessApproved = async (
  */
 export const sendAccessRejected = async (
   userId: string,
-  reason?: string
+  reason?: string,
 ): Promise<string> => {
   return createNotification(
     userId,
@@ -242,7 +242,7 @@ export const sendAccessRejected = async (
     reason || "คำขอเข้าใช้งานของคุณถูกปฏิเสธ กรุณาติดต่อผู้ดูแลระบบ",
     {
       actionRequired: false,
-    }
+    },
   );
 };
 
@@ -251,12 +251,14 @@ export const sendAccessRejected = async (
  */
 export const sendRoleChange = async (
   userId: string,
-  newRole: string
+  newRole: string,
 ): Promise<string> => {
   const roleNames: Record<string, string> = {
-    employee: "พนักงาน",
-    admin: "ผู้ดูแลระบบ",
-    super_admin: "ผู้ดูแลระบบสูงสุด",
+    employee: "Staff",
+    admin: "Admin",
+    super_admin: "Super Admin",
+    supervisor: "Branch Admin",
+    manager: "Manager",
   };
 
   return createNotification(
@@ -267,7 +269,7 @@ export const sendRoleChange = async (
     {
       newRole,
       actionRequired: false,
-    }
+    },
   );
 };
 
@@ -277,7 +279,7 @@ export const sendRoleChange = async (
 export const sendSystemNotification = async (
   userId: string,
   title: string,
-  message: string
+  message: string,
 ): Promise<string> => {
   return createNotification(userId, "system", title, message, {
     actionRequired: false,

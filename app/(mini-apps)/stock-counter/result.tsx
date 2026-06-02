@@ -109,6 +109,14 @@ export default function ResultScreen() {
       return;
     }
 
+    // Resolve the branch this count belongs to. Multi-branch employees pick a
+    // branch in the product list; that selection flows here as
+    // params.assignmentBranchId. Falling back to user.branchId only when no
+    // explicit branch was chosen avoids mis-tagging counts to the primary branch.
+    const countBranchId = params.assignmentBranchId || user.branchId || "";
+    const countBranchName =
+      user.branchNames?.[countBranchId] || user.branchName || "";
+
     try {
       setIsSaving(true);
 
@@ -150,6 +158,8 @@ export default function ResultScreen() {
 
         await updateDoc(doc(db, "countingSessions", params.sessionId), {
           status: sessionStatus,
+          branchId: countBranchId,
+          branchName: countBranchName,
           finalCount: barcodeCount,
           manualCount: barcodeCount,
           barcode: params.productBarcode || "",
@@ -171,7 +181,7 @@ export default function ResultScreen() {
         if (!hasDispute && !isSupplemental) {
           await writeShopCountConfirmed({
             sessionId: params.sessionId,
-            branchId: user.branchId || "",
+            branchId: countBranchId,
             productId: params.productId || "",
             userId: user.uid,
             userName: user.name || "",
@@ -235,7 +245,7 @@ export default function ResultScreen() {
         userId: user.uid,
         productId: params.productId,
         companyId: user.companyId || "",
-        branchId: user.branchId || "",
+        branchId: countBranchId,
         ...(effectivePeriod && {
           periodId: effectivePeriod.periodId,
           periodMonth: effectivePeriod.periodMonth,
@@ -252,7 +262,7 @@ export default function ResultScreen() {
         appVersion: "1.0.0",
         userName: user.name || "",
         userEmail: user.email || "",
-        branchName: user.branchName || "",
+        branchName: countBranchName,
         productName: params.productName || "",
         productSKU: params.productId || "",
         barcode: params.productBarcode || "",
@@ -283,7 +293,7 @@ export default function ResultScreen() {
       if (!hasDispute && !isSupplemental) {
         await writeShopCountConfirmed({
           sessionId: sessionId,
-          branchId: user.branchId || "",
+          branchId: countBranchId,
           productId: params.productId || "",
           userId: user.uid,
           userName: user.name || "",
