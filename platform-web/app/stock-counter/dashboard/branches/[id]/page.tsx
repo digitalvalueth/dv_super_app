@@ -702,7 +702,7 @@ export default function BranchDetailPage() {
       supervisor: {
         bg: "bg-orange-100 dark:bg-orange-900/30",
         text: "text-orange-700 dark:text-orange-400",
-        label: "Supervisor",
+        label: "Branch Admin",
       },
       manager: {
         bg: "bg-blue-100 dark:bg-blue-900/30",
@@ -712,7 +712,7 @@ export default function BranchDetailPage() {
       employee: {
         bg: "bg-green-100 dark:bg-green-900/30",
         text: "text-green-700 dark:text-green-400",
-        label: "Employee",
+        label: "Staff",
       },
       staff: {
         bg: "bg-gray-100 dark:bg-gray-700",

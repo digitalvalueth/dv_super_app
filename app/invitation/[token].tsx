@@ -54,10 +54,11 @@ interface InvitationData {
 }
 
 const ROLE_LABELS: Record<string, string> = {
-  employee: "พนักงาน",
-  supervisor: "ผู้ดูแลสาขา",
-  manager: "ผู้จัดการสาขา",
-  admin: "แอดมิน",
+  employee: "Staff",
+  supervisor: "Branch Admin",
+  manager: "Manager",
+  admin: "Admin",
+  super_admin: "Super Admin",
 };
 
 export default function InvitationScreen() {

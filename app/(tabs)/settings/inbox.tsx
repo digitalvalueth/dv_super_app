@@ -8,6 +8,7 @@ import {
   arrayUnion,
   collection,
   doc,
+  getDoc,
   onSnapshot,
   orderBy,
   query,
@@ -160,7 +161,19 @@ export default function InboxScreen() {
       // Update user with company/branch
       const userRef = doc(db, "users", user.uid);
       const newBranchId = notification.data.branchId;
-      const newBranchName = notification.data.branchName || "";
+      // Resolve branch name from Firestore when the invitation didn't carry it,
+      // so the dashboard never shows the raw branch ID.
+      let newBranchName = notification.data.branchName || "";
+      if (!newBranchName && newBranchId) {
+        try {
+          const branchSnap = await getDoc(doc(db, "branches", newBranchId));
+          if (branchSnap.exists()) {
+            newBranchName = (branchSnap.data().name as string) || "";
+          }
+        } catch {
+          // ignore – fall back to empty; dashboard has its own fallback
+        }
+      }
       await updateDoc(userRef, {
         companyId: notification.data.companyId,
         branchId: newBranchId,

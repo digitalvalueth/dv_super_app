@@ -329,8 +329,13 @@ export default function PreviewScreen() {
             productName: params.productName || "",
             productSKU: params.productBarcode || "",
             companyId: user.companyId || "",
-            branchId: user.branchId || "",
-            branchName: user.branchName || "",
+            branchId: params.assignmentBranchId || user.branchId || "",
+            branchName:
+              user.branchNames?.[
+                params.assignmentBranchId || user.branchId || ""
+              ] ||
+              user.branchName ||
+              "",
             beforeCountQty: beforeQty,
             ...(effectivePeriod && {
               periodId: effectivePeriod.periodId,

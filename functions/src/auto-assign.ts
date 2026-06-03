@@ -99,6 +99,17 @@ async function processCompany(
     `  Company ${companyId}: ${employeesSnap.docs.length} พนักงาน, ${productIds.length} สินค้า`,
   );
 
+  // 3. หาว่าสาขาไหน "มีผู้ดูแล" (managed) — สร้าง assignment เฉพาะสาขาเหล่านี้
+  //    เพื่อไม่ให้ assign งานให้พนักงานในสาขาที่ไม่มีผู้ดูแล/สาขากำพร้า
+  const managedBranchIds = await getManagedBranchIds(db, companyId);
+
+  if (managedBranchIds.size === 0) {
+    logger.info(
+      `  Company ${companyId}: ไม่มีสาขาที่มีผู้ดูแล ข้ามการ assign ทั้งหมด`,
+    );
+    return;
+  }
+
   const batch = db.batch();
   let batchCount = 0;
   let created = 0;
@@ -116,6 +127,12 @@ async function processCompany(
     const empBranchNames: Record<string, string> = emp.branchNames || {};
 
     for (const branchId of empBranchIds) {
+      // ข้ามสาขาที่ไม่มีผู้ดูแล (ไม่อยู่ในความรับผิดชอบของ supervisor/manager คนใด)
+      if (!branchId || !managedBranchIds.has(branchId)) {
+        skipped++;
+        continue;
+      }
+
       // เช็คว่ามี assignment สำหรับ userId + month + year + half + branchId อยู่แล้วไหม
       const existingSnap = await db
         .collection("assignments")
@@ -167,4 +184,43 @@ async function processCompany(
   }
 
   logger.info(`  Company ${companyId}: สร้าง ${created}, ข้าม ${skipped}`);
+}
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+/**
+ * คืนชุดของ branchId ที่ "มีผู้ดูแล" ในบริษัทนี้ โดยรวมจาก:
+ *  - branches ที่มี supervisorId กำหนดไว้
+ *  - managedBranchIds ของ user ที่เป็น supervisor / manager
+ */
+async function getManagedBranchIds(
+  db: admin.firestore.Firestore,
+  companyId: string,
+): Promise<Set<string>> {
+  const managed = new Set<string>();
+
+  // 1. branches ที่มี supervisorId
+  const branchesSnap = await db
+    .collection("branches")
+    .where("companyId", "==", companyId)
+    .get();
+  branchesSnap.docs.forEach((d) => {
+    const data = d.data();
+    if (data.supervisorId) {
+      managed.add(data.branchId || d.id);
+    }
+  });
+
+  // 2. managedBranchIds ของ supervisor / manager
+  const staffSnap = await db
+    .collection("users")
+    .where("companyId", "==", companyId)
+    .where("role", "in", ["supervisor", "manager"])
+    .get();
+  staffSnap.docs.forEach((d) => {
+    const ids: string[] = d.data().managedBranchIds || [];
+    ids.forEach((id) => id && managed.add(id));
+  });
+
+  return managed;
 }

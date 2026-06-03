@@ -28,10 +28,10 @@ export async function sendInvitationEmail(data: InvitationEmailData) {
 
   const roleText =
     role === "employee"
-      ? "พนักงาน"
+      ? "Staff"
       : role === "supervisor"
-        ? "ผู้ดูแลสาขา"
-        : "ผู้จัดการสาขา";
+        ? "Branch Admin"
+        : "Manager";
 
   // Collect all branch names to display
   const displayBranches =

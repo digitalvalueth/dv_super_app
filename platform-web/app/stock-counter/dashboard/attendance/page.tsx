@@ -7,6 +7,7 @@ import { format } from "date-fns";
 import { th } from "date-fns/locale";
 import {
   collection,
+  documentId,
   getDocs,
   orderBy,
   query,
@@ -158,23 +159,53 @@ export default function AttendancePage() {
 
       const isSuperOrManager =
         userData.role === "supervisor" || userData.role === "manager";
-      const managedIds = isSuperOrManager
+      let managedIds: string[] | null = isSuperOrManager
         ? userData.managedBranchIds?.length
-          ? userData.managedBranchIds
+          ? [...userData.managedBranchIds]
           : userData.branchId
             ? [userData.branchId]
             : []
         : null;
+
+      // Managers manage branches indirectly through their supervisors, so
+      // aggregate those supervisors' managedBranchIds as well.
+      if (userData.role === "manager") {
+        const supervisorIds = (userData.managedSupervisorIds || []).slice(
+          0,
+          30,
+        );
+        if (supervisorIds.length > 0) {
+          const supervisorsSnap = await getDocs(
+            query(
+              collection(db, "users"),
+              where(documentId(), "in", supervisorIds),
+            ),
+          );
+          const branchSet = new Set<string>(managedIds ?? []);
+          supervisorsSnap.forEach((d) => {
+            const supData = d.data() as any;
+            (supData.managedBranchIds || []).forEach((id: string) =>
+              branchSet.add(id),
+            );
+          });
+          managedIds = [...branchSet];
+        }
+      }
+
       const visibleCheckIns =
         managedIds && managedIds.length > 0
-          ? checkInsData.filter((c) => managedIds.includes(c.branchId ?? ""))
-          : checkInsData;
+          ? checkInsData.filter((c) => managedIds!.includes(c.branchId ?? ""))
+          : managedIds // supervisor/manager with no managed branches sees nothing
+            ? []
+            : checkInsData;
 
       setCheckIns(visibleCheckIns);
 
-      // Calculate stats
-      const checkInRecords = checkInsData.filter((c) => c.type === "check-in");
-      const checkOutRecords = checkInsData.filter(
+      // Calculate stats from the branch-scoped set the user can actually see
+      const checkInRecords = visibleCheckIns.filter(
+        (c) => c.type === "check-in",
+      );
+      const checkOutRecords = visibleCheckIns.filter(
         (c) => c.type === "check-out",
       );
       const lateRecords = checkInRecords.filter((c) => c.isLate);

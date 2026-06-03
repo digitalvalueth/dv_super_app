@@ -1,14 +1,20 @@
 "use client";
 
+import AssignPreviewModal from "@/components/stock-counter/assign-preview-modal";
+import {
+  buildAssignPlan,
+  commitAssignPlan,
+  type AssignPlan,
+} from "@/lib/assign-products";
 import { db } from "@/lib/firebase";
 import { useAuthStore } from "@/stores/auth.store";
 import { User } from "@/types";
 import { format } from "date-fns";
 import { th } from "date-fns/locale";
 import {
-  addDoc,
   collection,
   doc,
+  documentId,
   getDoc,
   getDocs,
   query,
@@ -20,6 +26,7 @@ import {
 } from "firebase/firestore";
 import {
   AlertTriangle,
+  Building2,
   Calendar,
   CheckCircle,
   ChevronLeft,
@@ -243,9 +250,26 @@ export default function CountingPeriodsPage() {
   const [companyEmployees, setCompanyEmployees] = useState<User[]>([]);
   const [restrictToSelectedUsers, setRestrictToSelectedUsers] = useState(false);
   const [selectedLateUserIds, setSelectedLateUserIds] = useState<string[]>([]);
+  const [showAssignModal, setShowAssignModal] = useState(false);
+  const [assignPlan, setAssignPlan] = useState<AssignPlan | null>(null);
+  const [assignLoading, setAssignLoading] = useState(false);
+  const [assignCommitting, setAssignCommitting] = useState(false);
+  const [assignContext, setAssignContext] = useState<{
+    month: number;
+    year: number;
+    half: PeriodHalf;
+    periodId: string | null;
+    label: string;
+  } | null>(null);
+  const [managedBranches, setManagedBranches] = useState<
+    { id: string; name: string }[]
+  >([]);
 
   const companyId = userData?.companyId ?? "";
   const isSuperAdmin = userData?.role === "super_admin";
+  // Supervisor / Manager มอบหมายได้เฉพาะสาขาที่ตนดูแล
+  const isBranchScoped =
+    userData?.role === "supervisor" || userData?.role === "manager";
   const isAdminOrAbove =
     userData?.role === "admin" ||
     userData?.role === "super_admin" ||
@@ -278,6 +302,73 @@ export default function CountingPeriodsPage() {
     void loadSuggestedTargetPeriod(companyId);
     void loadCompanyEmployees(companyId);
   }, [companyId]);
+
+  // โหลดสาขาที่ Supervisor / Manager ดูแล (ใช้จำกัดขอบเขตการมอบหมาย)
+  useEffect(() => {
+    if (!userData || !isBranchScoped) {
+      setManagedBranches([]);
+      return;
+    }
+    void loadManagedBranches();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [userData, isBranchScoped]);
+
+  async function loadManagedBranches() {
+    if (!userData) return;
+    try {
+      let managedIds: string[] = userData.managedBranchIds?.length
+        ? [...userData.managedBranchIds]
+        : userData.branchId
+          ? [userData.branchId]
+          : [];
+
+      // Manager: รวมสาขาจาก Supervisor ที่ตนดูแลด้วย
+      if (userData.role === "manager") {
+        const supervisorIds = (userData.managedSupervisorIds || []).slice(
+          0,
+          30,
+        );
+        if (supervisorIds.length > 0) {
+          const supervisorsSnap = await getDocs(
+            query(
+              collection(db, "users"),
+              where(documentId(), "in", supervisorIds),
+            ),
+          );
+          const branchSet = new Set<string>(managedIds);
+          supervisorsSnap.forEach((d) => {
+            const supData = d.data() as Partial<User>;
+            (supData.managedBranchIds || []).forEach((id) => branchSet.add(id));
+          });
+          managedIds = [...branchSet];
+        }
+      }
+
+      managedIds = managedIds.filter(Boolean);
+      if (managedIds.length === 0) {
+        setManagedBranches([]);
+        return;
+      }
+
+      // ดึงชื่อสาขา (Firestore "in" รองรับสูงสุด 30 ค่า)
+      const branches: { id: string; name: string }[] = [];
+      for (let i = 0; i < managedIds.length; i += 30) {
+        const chunk = managedIds.slice(i, i + 30);
+        const branchesSnap = await getDocs(
+          query(collection(db, "branches"), where(documentId(), "in", chunk)),
+        );
+        branchesSnap.forEach((d) => {
+          const data = d.data() as { name?: string };
+          branches.push({ id: d.id, name: data.name || d.id });
+        });
+      }
+      branches.sort((a, b) => a.name.localeCompare(b.name, "th"));
+      setManagedBranches(branches);
+    } catch (err) {
+      console.error("Error loading managed branches:", err);
+      setManagedBranches([]);
+    }
+  }
 
   async function loadCompanyEmployees(targetCompanyId: string) {
     try {
@@ -599,136 +690,92 @@ export default function CountingPeriodsPage() {
   }
 
   async function handleAutoAssign(period: CountingPeriod) {
-    await runAutoAssign(period.month, period.year, period.id, period.half);
+    await openAssignPreview(
+      period.month,
+      period.year,
+      period.id,
+      period.half,
+      `เดือน ${THAI_MONTHS[period.month]}/${period.year} รอบ ${period.half}`,
+    );
   }
 
   async function handleGlobalAutoAssign() {
     const now = new Date();
     const half: PeriodHalf = now.getDate() <= 15 ? 1 : 2;
-    await runAutoAssign(now.getMonth() + 1, now.getFullYear(), null, half);
+    const month = now.getMonth() + 1;
+    const year = now.getFullYear();
+    await openAssignPreview(
+      month,
+      year,
+      null,
+      half,
+      `เดือน ${THAI_MONTHS[month]}/${year} รอบ ${half}`,
+    );
   }
 
-  async function runAutoAssign(
+  async function openAssignPreview(
     month: number,
     year: number,
     periodId: string | null,
     half: PeriodHalf,
+    label: string,
   ) {
     if (!companyId) {
       toast.error("ไม่พบ companyId");
       return;
     }
-    const confirmed = window.confirm(
-      `มอบหมายสินค้าทั้งหมดให้พนักงานทุกคน สำหรับเดือน ${THAI_MONTHS[month]}/${year} รอบ ${half} ใช่หรือไม่?`,
-    );
-    if (!confirmed) return;
-
+    setAssignContext({ month, year, half, periodId, label });
+    setAssignPlan(null);
+    setShowAssignModal(true);
+    setAssignLoading(true);
     if (periodId) {
       setAssigningPeriodId(periodId);
     } else {
       setGlobalAssigning(true);
     }
     try {
-      // 1. Get all product IDs for this company
-      const productsSnap = await getDocs(
-        query(collection(db, "products"), where("companyId", "==", companyId)),
-      );
-      const allProductIds = productsSnap.docs
-        .map((d) => d.data().productId as string)
-        .filter(Boolean);
+      const plan = await buildAssignPlan({
+        companyId,
+        month,
+        year,
+        half,
+        // Supervisor / Manager มอบหมายเฉพาะสาขาที่ตนดูแล
+        branchIds: isBranchScoped
+          ? managedBranches.map((b) => b.id)
+          : undefined,
+      });
+      setAssignPlan(plan);
+    } catch (err) {
+      console.error(err);
+      toast.error("ไม่สามารถเตรียมข้อมูลการมอบหมายได้");
+      setShowAssignModal(false);
+    } finally {
+      setAssignLoading(false);
+      setAssigningPeriodId(null);
+      setGlobalAssigning(false);
+    }
+  }
 
-      if (allProductIds.length === 0) {
-        toast.error("ไม่พบรายการสินค้า");
-        return;
-      }
-
-      // 2. Get all active employees in this company
-      const usersSnap = await getDocs(
-        query(
-          collection(db, "users"),
-          where("companyId", "==", companyId),
-          where("role", "==", "employee"),
-        ),
-      );
-
-      if (usersSnap.empty) {
-        toast.error("ไม่พบพนักงานในระบบ");
-        return;
-      }
-
-      let assignedCount = 0;
-      let skippedCount = 0;
-
-      for (const userDoc of usersSnap.docs) {
-        const user = userDoc.data();
-        const userId = userDoc.id;
-
-        // รองรับพนักงานหลายสาขา: ใช้ branchIds array ถ้ามี, fallback เป็น branchId เดียว
-        const empBranchIds: string[] =
-          user.branchIds && user.branchIds.length > 0
-            ? user.branchIds
-            : [user.branchId || ""];
-        const empBranchNames: Record<string, string> = user.branchNames || {};
-
-        for (const branchId of empBranchIds) {
-          // Check if assignment already exists for this month/year/half/branchId
-          const existingSnap = await getDocs(
-            query(
-              collection(db, "assignments"),
-              where("userId", "==", userId),
-              where("month", "==", month),
-              where("year", "==", year),
-              where("half", "==", half),
-              where("branchId", "==", branchId),
-            ),
-          );
-
-          if (!existingSnap.empty) {
-            // Reset progress — เริ่มรอบใหม่ พนักงานนับสต็อกใหม่ทั้งหมด
-            await updateDoc(doc(db, "assignments", existingSnap.docs[0].id), {
-              productIds: allProductIds,
-              productCount: allProductIds.length,
-              completedProductIds: [],
-              inProgressProductIds: [],
-              notAvailableProductIds: [],
-              completedCount: 0,
-              status: "pending",
-              updatedAt: serverTimestamp(),
-            });
-            skippedCount++;
-          } else {
-            // Create new assignment
-            await addDoc(collection(db, "assignments"), {
-              userId,
-              userName: user.name || user.displayName || "",
-              userEmail: user.email || "",
-              companyId: user.companyId,
-              branchId,
-              branchName: empBranchNames[branchId] || user.branchName || "",
-              productIds: allProductIds,
-              productCount: allProductIds.length,
-              month,
-              year,
-              half,
-              status: "pending",
-              completedCount: 0,
-              createdAt: serverTimestamp(),
-              updatedAt: serverTimestamp(),
-            });
-            assignedCount++;
-          }
-        }
-      }
-
+  async function handleConfirmAssign() {
+    if (!assignPlan || !assignContext) return;
+    setAssignCommitting(true);
+    try {
+      const { created, updated } = await commitAssignPlan(assignPlan, {
+        month: assignContext.month,
+        year: assignContext.year,
+        half: assignContext.half,
+      });
       toast.success(
-        `มอบหมายสำเร็จ! รอบ ${half} สร้างใหม่ ${assignedCount} คน, อัปเดต ${skippedCount} คน (สินค้า ${allProductIds.length} รายการ)`,
+        `มอบหมายสำเร็จ! รอบ ${assignContext.half} สร้างใหม่ ${created} คน, อัปเดต ${updated} คน (สินค้า ${assignPlan.productIds.length} รายการ)`,
       );
+      setShowAssignModal(false);
+      setAssignPlan(null);
+      setAssignContext(null);
     } catch (err) {
       console.error(err);
       toast.error("มอบหมายไม่สำเร็จ");
     } finally {
-      setAssigningPeriodId(null);
-      setGlobalAssigning(false);
+      setAssignCommitting(false);
     }
   }
 
@@ -788,7 +835,10 @@ export default function CountingPeriodsPage() {
             {/* Global Auto-assign button */}
             <button
               onClick={handleGlobalAutoAssign}
-              disabled={globalAssigning}
+              disabled={
+                globalAssigning ||
+                (isBranchScoped && managedBranches.length === 0)
+              }
               className="flex items-center gap-2 px-4 py-2 bg-green-600 hover:bg-green-700 disabled:opacity-50 text-white rounded-lg text-sm font-medium transition-colors"
             >
               {globalAssigning ? (
@@ -816,6 +866,28 @@ export default function CountingPeriodsPage() {
           </div>
         )}
       </div>
+
+      {/* สรุปสาขาที่ดูแล (สำหรับ Supervisor / Manager) */}
+      {isBranchScoped && (
+        <div className="flex items-start gap-3 p-4 border border-indigo-200 dark:border-indigo-800 bg-indigo-50 dark:bg-indigo-900/20 rounded-xl">
+          <Building2 className="w-5 h-5 shrink-0 text-indigo-600 mt-0.5" />
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-semibold text-indigo-800 dark:text-indigo-300">
+              คุณดูแล {managedBranches.length} สาขา
+            </p>
+            {managedBranches.length > 0 ? (
+              <p className="text-xs text-indigo-700 dark:text-indigo-400 mt-1">
+                การมอบหมายสินค้าจะส่งให้พนักงานเฉพาะสาขาเหล่านี้:{" "}
+                {managedBranches.map((b) => b.name).join(", ")}
+              </p>
+            ) : (
+              <p className="text-xs text-indigo-700 dark:text-indigo-400 mt-1">
+                ยังไม่มีสาขาที่อยู่ในความดูแล จึงยังมอบหมายสินค้าไม่ได้
+              </p>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Current Period Indicator */}
       <div
@@ -1333,7 +1405,10 @@ export default function CountingPeriodsPage() {
                           {liveStatus !== "closed" && (
                             <button
                               onClick={() => handleAutoAssign(period)}
-                              disabled={assigningPeriodId === period.id}
+                              disabled={
+                                assigningPeriodId === period.id ||
+                                (isBranchScoped && managedBranches.length === 0)
+                              }
                               className="text-xs px-2 py-1 text-green-700 dark:text-green-400 hover:bg-green-50 dark:hover:bg-green-900/20 rounded transition-colors inline-flex items-center gap-1 disabled:opacity-50"
                             >
                               {assigningPeriodId === period.id ? (
@@ -1404,6 +1479,24 @@ export default function CountingPeriodsPage() {
           </div>
         </div>
       </div>
+
+      {showAssignModal && (
+        <AssignPreviewModal
+          open={showAssignModal}
+          title="มอบหมายสินค้าทั้งหมดให้พนักงานทุกคน"
+          subtitle={assignContext?.label}
+          loading={assignLoading}
+          committing={assignCommitting}
+          plan={assignPlan}
+          onConfirm={handleConfirmAssign}
+          onClose={() => {
+            if (assignCommitting) return;
+            setShowAssignModal(false);
+            setAssignPlan(null);
+            setAssignContext(null);
+          }}
+        />
+      )}
     </div>
   );
 }

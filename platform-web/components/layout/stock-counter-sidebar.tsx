@@ -19,6 +19,7 @@ import {
   GitCommit,
   Home,
   LayoutDashboard,
+  LogOut,
   Mail,
   Menu,
   Package,
@@ -162,6 +163,11 @@ const navGroups: NavGroup[] = [
         name: "เช็คชื่อพนักงาน",
         href: "/stock-counter/dashboard/attendance",
         icon: Clock,
+      },
+      {
+        name: "ยังไม่เช็คเอาท์",
+        href: "/stock-counter/dashboard/not-checked-out",
+        icon: LogOut,
       },
       {
         name: "ตั้งค่าเวลาทำงาน",

@@ -166,6 +166,7 @@ service cloud.firestore {
       allow read: if isSuperAdmin();
       
       // Super admin, admin, and manager can create/update products
+      // (supervisor / Branch Admin is view-only — no create/update)
       allow create, update: if (isSuperAdmin() || 
                                 (isAdmin() && isSameCompany(request.resource.data.companyId)) ||
                                 (isManager() && isSameCompany(request.resource.data.companyId)));

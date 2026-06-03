@@ -1,10 +1,13 @@
 "use client";
 
+import AssignPreviewModal from "@/components/stock-counter/assign-preview-modal";
+import type { AssignPlan } from "@/lib/assign-products";
 import { auth, db } from "@/lib/firebase";
 import { useAuthStore } from "@/stores/auth.store";
 import { collection, getDocs, query, where } from "firebase/firestore";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
+import { toast } from "sonner";
 
 interface Employee {
   id: string;
@@ -46,6 +49,14 @@ export default function SupervisorDashboard() {
   });
   const [loading, setLoading] = useState(true);
   const [bulkAssigning, setBulkAssigning] = useState(false);
+  const [showAssignModal, setShowAssignModal] = useState(false);
+  const [assignPlan, setAssignPlan] = useState<AssignPlan | null>(null);
+  const [assignLoading, setAssignLoading] = useState(false);
+  const [assignContext, setAssignContext] = useState<{
+    month: number;
+    year: number;
+    half: number;
+  } | null>(null);
   const [userFullNameMap, setUserFullNameMap] = useState<
     Record<string, string>
   >({});
@@ -172,42 +183,108 @@ export default function SupervisorDashboard() {
     fetchData();
   }, [userData]);
 
-  const handleBulkAssign = async () => {
-    if (bulkAssigning) return;
+  const openAssignPreview = async () => {
+    if (bulkAssigning || assignLoading) return;
 
     const currentDate = new Date();
     const half = currentDate.getDate() <= 15 ? 1 : 2;
-    const confirmAssign = confirm(
-      `ต้องการมอบหมายสินค้าทั้งหมดให้กับพนักงานทุกคน (รอบ ${half}) สำหรับเดือนนี้ใช่หรือไม่?`,
-    );
-
-    if (!confirmAssign) return;
+    const month = currentDate.getMonth() + 1;
+    const year = currentDate.getFullYear();
+    setAssignContext({ month, year, half });
+    setAssignPlan(null);
+    setShowAssignModal(true);
+    setAssignLoading(true);
 
     try {
-      setBulkAssigning(true);
-      const month = currentDate.getMonth() + 1;
-      const year = currentDate.getFullYear();
+      const user = auth.currentUser;
+      if (!user) {
+        toast.error("ไม่พบผู้ใช้");
+        setShowAssignModal(false);
+        return;
+      }
+      const token = await user.getIdToken();
+      const managedBranchIds = (userData as any)?.managedBranchIds;
 
       const response = await fetch("/api/assignments/bulk-assign", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ month, year, half }),
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          month,
+          year,
+          half,
+          companyId: userData?.companyId,
+          branchIds:
+            Array.isArray(managedBranchIds) && managedBranchIds.length > 0
+              ? managedBranchIds
+              : undefined,
+          dryRun: true,
+        }),
       });
 
       const data = await response.json();
+      if (response.ok && data.plan) {
+        setAssignPlan(data.plan as AssignPlan);
+      } else {
+        toast.error(data.error || "ไม่สามารถเตรียมข้อมูลการมอบหมายได้");
+        setShowAssignModal(false);
+      }
+    } catch (error) {
+      console.error("Error previewing bulk assign:", error);
+      toast.error("ไม่สามารถเตรียมข้อมูลการมอบหมายได้");
+      setShowAssignModal(false);
+    } finally {
+      setAssignLoading(false);
+    }
+  };
 
+  const handleConfirmAssign = async () => {
+    if (!assignContext) return;
+    try {
+      setBulkAssigning(true);
+      const user = auth.currentUser;
+      if (!user) {
+        toast.error("ไม่พบผู้ใช้");
+        return;
+      }
+      const token = await user.getIdToken();
+      const managedBranchIds = (userData as any)?.managedBranchIds;
+
+      const response = await fetch("/api/assignments/bulk-assign", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          month: assignContext.month,
+          year: assignContext.year,
+          half: assignContext.half,
+          companyId: userData?.companyId,
+          branchIds:
+            Array.isArray(managedBranchIds) && managedBranchIds.length > 0
+              ? managedBranchIds
+              : undefined,
+        }),
+      });
+
+      const data = await response.json();
       if (response.ok) {
-        alert(
-          `✅ มอบหมายงานสำเร็จ!\n- พนักงาน: ${data.employeeCount} คน\n- สินค้า: ${data.productCount} รายการ\n- งานที่สร้าง: ${data.assignmentCount} งาน`,
+        toast.success(
+          `มอบหมายสำเร็จ! สร้างใหม่ ${data.created} คน, อัปเดต ${data.updated} คน (สินค้า ${data.productCount} รายการ)`,
         );
-        // Refresh data
+        setShowAssignModal(false);
+        setAssignPlan(null);
+        setAssignContext(null);
         window.location.reload();
       } else {
-        alert(`❌ เกิดข้อผิดพลาด: ${data.error}`);
+        toast.error(data.error || "เกิดข้อผิดพลาดในการมอบหมายงาน");
       }
     } catch (error) {
       console.error("Error bulk assigning:", error);
-      alert("❌ เกิดข้อผิดพลาดในการมอบหมายงาน");
+      toast.error("เกิดข้อผิดพลาดในการมอบหมายงาน");
     } finally {
       setBulkAssigning(false);
     }
@@ -347,8 +424,8 @@ export default function SupervisorDashboard() {
       {/* Bulk Assign Button */}
       <div className="mb-6">
         <button
-          onClick={handleBulkAssign}
-          disabled={bulkAssigning}
+          onClick={openAssignPreview}
+          disabled={bulkAssigning || assignLoading}
           className="bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 text-white px-6 py-3 rounded-lg font-medium transition-colors flex items-center gap-2"
         >
           <svg
@@ -367,6 +444,28 @@ export default function SupervisorDashboard() {
           {bulkAssigning ? "กำลังมอบหมาย..." : "มอบหมายสินค้าทั้งหมดให้ทุกสาขา"}
         </button>
       </div>
+
+      {showAssignModal && (
+        <AssignPreviewModal
+          open={showAssignModal}
+          title="มอบหมายสินค้าทั้งหมดให้ทุกสาขา"
+          subtitle={
+            assignContext
+              ? `รอบ ${assignContext.half} • เดือน ${assignContext.month}/${assignContext.year}`
+              : undefined
+          }
+          loading={assignLoading}
+          committing={bulkAssigning}
+          plan={assignPlan}
+          onConfirm={handleConfirmAssign}
+          onClose={() => {
+            if (bulkAssigning) return;
+            setShowAssignModal(false);
+            setAssignPlan(null);
+            setAssignContext(null);
+          }}
+        />
+      )}
 
       {/* Employees Table */}
       <div className="bg-white rounded-lg shadow overflow-hidden">
