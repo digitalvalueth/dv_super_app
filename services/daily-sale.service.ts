@@ -1,4 +1,8 @@
 import { db } from "@/config/firebase";
+import {
+  computeDuplicateBarcodes,
+  stripUndefined,
+} from "@/services/daily-sale-duplicates";
 import { DailySale } from "@/types";
 import {
   addDoc,
@@ -13,13 +17,6 @@ import {
   updateDoc,
   where,
 } from "firebase/firestore";
-
-/** Strip undefined values from an object so Firestore doesn't reject them. */
-function stripUndefined<T extends Record<string, any>>(obj: T): Partial<T> {
-  return Object.fromEntries(
-    Object.entries(obj).filter(([, v]) => v !== undefined),
-  ) as Partial<T>;
-}
 
 export const createDailySale = async (
   data: Omit<DailySale, "id" | "createdAt" | "updatedAt">,
@@ -81,8 +78,7 @@ export const findDuplicateDailySaleBarcodes = async (
   barcodes: string[],
   excludeId?: string,
 ): Promise<string[]> => {
-  const target = new Set(barcodes.filter(Boolean));
-  if (target.size === 0) return [];
+  if (barcodes.filter(Boolean).length === 0) return [];
 
   const ref = collection(db, "dailySales");
   const q = query(
@@ -92,15 +88,11 @@ export const findDuplicateDailySaleBarcodes = async (
   );
   const snap = await getDocs(q);
 
-  const found = new Set<string>();
-  snap.docs.forEach((d) => {
-    if (excludeId && d.id === excludeId) return;
-    const data = d.data() as DailySale;
-    (data.items ?? []).forEach((it) => {
-      if (it.barcode && target.has(it.barcode)) found.add(it.barcode);
-    });
-  });
-  return Array.from(found);
+  const existingSales = snap.docs.map((d) => ({
+    ...(d.data() as DailySale),
+    id: d.id,
+  }));
+  return computeDuplicateBarcodes(existingSales, barcodes, excludeId);
 };
 
 export const getDailySalesByEmployee = async (

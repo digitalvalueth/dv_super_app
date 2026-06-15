@@ -7,6 +7,14 @@ import {
   PromoItem,
   updateDailySale,
 } from "@/services/daily-sale.service";
+import {
+  findInFormDuplicateBarcodes,
+} from "@/services/daily-sale-duplicates";
+import {
+  isNonPromo,
+  isPromoActiveOnDate as isPromoActiveOnDateStr,
+  selectBestPromo,
+} from "@/services/daily-sale-promo";
 import { useAuthStore } from "@/stores/auth.store";
 import { useTheme } from "@/stores/theme.store";
 import { DailySaleItem, SaleType } from "@/types";
@@ -71,13 +79,8 @@ const MONTHS_TH = [
 const DAY_LABELS = ["อา", "จ", "อ", "พ", "พฤ", "ศ", "ส"];
 
 // ─── Promotion helpers ─────────────────────────────────────
-const NON_PROMO_REMARKS = ["buy 1", "buy1"];
-const isNonPromo = (remark?: string) =>
-  NON_PROMO_REMARKS.includes(
-    String(remark ?? "")
-      .trim()
-      .toLowerCase(),
-  );
+// isNonPromo / isPromoActiveOnDate / selectBestPromo live in the pure
+// `@/services/daily-sale-promo` module so they can be unit-tested.
 
 // ─── Item state (includes UI-only fields) ──────────────────
 type ItemState = Partial<DailySaleItem> & {
@@ -392,66 +395,43 @@ export default function DailySaleRecord() {
   });
 
   /** Check if a promo is active on the exact saleDate */
-  const isPromoActiveOnDate = (promo: PromoItem): boolean => {
-    if (!promo.promoStart || !promo.promoEnd) return false;
-    const d = new Date(saleDate + "T00:00:00");
-    return promo.promoStart <= d && d <= promo.promoEnd;
-  };
+  const isPromoActiveOnDate = (promo: PromoItem): boolean =>
+    isPromoActiveOnDateStr(promo, saleDate);
 
   /** Apply promo master data when a barcode is scanned.
    *  - Filters to promos active on exact saleDate
    *  - Skips Buy1 (non-promo) entries
    *  - Auto-applies if exactly 1 real promo; sets availablePromos for user to pick if >1
+   *
+   *  The decision logic is extracted into the pure `selectBestPromo` helper.
    */
   const applyPromoToItem = (itemKey: string, barcode: string) => {
     const allPromos = promoMultiMap.get(barcode) ?? [];
-    const activePromos = allPromos.filter(isPromoActiveOnDate);
-    const realPromos = activePromos.filter((p) => !isNonPromo(p.remark));
+    const decision = selectBestPromo(allPromos, saleDate);
 
-    if (realPromos.length === 0) {
-      // No real promo — check if there's a Buy1 base-price entry
-      const buy1Entry = activePromos.find((p) => isNonPromo(p.remark));
-      if (buy1Entry) {
-        updateItem(itemKey, {
-          ...(buy1Entry.commPrice != null
-            ? { price: buy1Entry.commPrice }
-            : {}),
-          saleType: "normal",
-          promotionRemark: "",
-          promoStart: null,
-          promoEnd: null,
-          availablePromos: [],
-        });
-      }
-      // If no promos at all, leave the item unchanged (price from product catalog)
-    } else if (realPromos.length === 1) {
-      // Auto-apply the single real promo
-      const promo = realPromos[0];
+    if (decision.kind === "buy1") {
+      const buy1Entry = decision.buy1Entry!;
+      updateItem(itemKey, {
+        ...(buy1Entry.commPrice != null
+          ? { price: buy1Entry.commPrice }
+          : {}),
+        saleType: "normal",
+        promotionRemark: "",
+        promoStart: null,
+        promoEnd: null,
+        availablePromos: [],
+      });
+      // If no promos at all (kind === "none"), leave the item unchanged
+      // (price from product catalog).
+    } else if (decision.kind === "promotion") {
+      const promo = decision.selected!;
       updateItem(itemKey, {
         ...(promo.commPrice != null ? { price: promo.commPrice } : {}),
         saleType: "promotion",
         promotionRemark: promo.remark ?? "",
         promoStart: promo.promoStart,
         promoEnd: promo.promoEnd,
-        availablePromos: [],
-      });
-    } else {
-      // Multiple real promos — auto-apply the best discount (lowest commPrice)
-      // by default, but keep all options visible so the user can override.
-      const best = realPromos.reduce((acc, p) => {
-        const accPrice = acc.commPrice;
-        const pPrice = p.commPrice;
-        if (pPrice == null) return acc;
-        if (accPrice == null) return p;
-        return pPrice < accPrice ? p : acc;
-      }, realPromos[0]);
-      updateItem(itemKey, {
-        ...(best.commPrice != null ? { price: best.commPrice } : {}),
-        saleType: "promotion",
-        promotionRemark: best.remark ?? "",
-        promoStart: best.promoStart,
-        promoEnd: best.promoEnd,
-        availablePromos: realPromos,
+        availablePromos: decision.availablePromos,
       });
     }
   };
@@ -642,12 +622,9 @@ export default function DailySaleRecord() {
     const barcodes = validItems.map((it) => it.barcode!) as string[];
 
     // 1) Duplicates within the current form
-    const seen = new Set<string>();
-    const dupInForm = new Set<string>();
-    barcodes.forEach((bc) => {
-      if (seen.has(bc)) dupInForm.add(bc);
-      else seen.add(bc);
-    });
+    const dupInForm = new Set<string>(
+      findInFormDuplicateBarcodes(validItems),
+    );
 
     // 2) Duplicates against already-saved records (same employee + saleDate)
     let dupInDb: string[] = [];
