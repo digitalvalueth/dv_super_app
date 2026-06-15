@@ -18,6 +18,8 @@ import * as XLSX from "xlsx";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import { toast } from "sonner";
+import { previousPeriodRange } from "@/lib/reports/period";
+import { aggregateByBranch } from "@/lib/reports/aggregate";
 
 interface DailySaleItem {
   barcode: string;
@@ -238,65 +240,20 @@ export default function Page() {
   };
 
   // Compute the immediately-preceding equal-length window for comparison
-  const prevWindow = useMemo(() => {
-    if (!startDate || !endDate) return { prevStart: "", prevEnd: "" };
-    const s = new Date(startDate + "T00:00:00");
-    const e = new Date(endDate + "T00:00:00");
-    const days = Math.round((e.getTime() - s.getTime()) / 86400000) + 1;
-    const prevEnd = new Date(s);
-    prevEnd.setDate(prevEnd.getDate() - 1);
-    const prevStart = new Date(prevEnd);
-    prevStart.setDate(prevStart.getDate() - (days - 1));
-    return { prevStart: formatDateToYmd(prevStart), prevEnd: formatDateToYmd(prevEnd) };
-  }, [startDate, endDate]);
+  const prevWindow = useMemo(
+    () => previousPeriodRange(startDate, endDate),
+    [startDate, endDate],
+  );
 
-  const rows = useMemo<Row[]>(() => {
-    const inRange = (date: string, s: string, e: string) =>
-      (!s || date >= s) && (!e || date <= e);
-
-    // Current period aggregation by branch
-    const byBranch = new Map<
-      string,
-      { store: string; unitsSold: number; revenue: number; revenuePrev: number }
-    >();
-
-    for (const sale of brandSales) {
-      const key = sale.branchId || sale.branchName || "—";
-      if (!byBranch.has(key)) {
-        byBranch.set(key, {
-          store: sale.branchName || "ไม่ระบุสาขา",
-          unitsSold: 0,
-          revenue: 0,
-          revenuePrev: 0,
-        });
-      }
-      const entry = byBranch.get(key)!;
-      const itemUnits = (sale.items || []).reduce((sum, i) => sum + (i.quantity || 0), 0);
-      const itemRev = (sale.items || []).reduce((sum, i) => sum + (i.revenue || 0), 0);
-
-      if (inRange(sale.saleDate, startDate, endDate)) {
-        entry.unitsSold += itemUnits;
-        entry.revenue += itemRev;
-      }
-      if (inRange(sale.saleDate, prevWindow.prevStart, prevWindow.prevEnd)) {
-        entry.revenuePrev += itemRev;
-      }
-    }
-
-    const totalRevenue = Array.from(byBranch.values()).reduce((s, e) => s + e.revenue, 0);
-
-    return Array.from(byBranch.entries())
-      .map(([branchId, e]) => ({
-        branchId,
-        store: e.store,
-        unitsSold: e.unitsSold,
-        revenue: e.revenue,
-        revenuePrev: e.revenuePrev,
-        growth: e.revenuePrev > 0 ? ((e.revenue - e.revenuePrev) / e.revenuePrev) * 100 : 0,
-        contribution: totalRevenue > 0 ? (e.revenue / totalRevenue) * 100 : 0,
-      }))
-      .filter((r) => r.revenue > 0 || r.unitsSold > 0);
-  }, [brandSales, startDate, endDate, prevWindow]);
+  const rows = useMemo<Row[]>(
+    () =>
+      aggregateByBranch(
+        brandSales,
+        { start: startDate, end: endDate },
+        prevWindow,
+      ),
+    [brandSales, startDate, endDate, prevWindow],
+  );
 
   const filtered = useMemo(() => {
     let r = rows;

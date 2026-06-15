@@ -20,6 +20,8 @@ import * as XLSX from "xlsx";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import { toast } from "sonner";
+import { previousPeriodRange } from "@/lib/reports/period";
+import { aggregateByProduct } from "@/lib/reports/aggregate";
 
 interface DailySaleItem {
   barcode: string;
@@ -245,84 +247,20 @@ export default function Page() {
     }
   };
 
-  const prevWindow = useMemo(() => {
-    if (!startDate || !endDate) return { prevStart: "", prevEnd: "" };
-    const s = new Date(startDate + "T00:00:00");
-    const e = new Date(endDate + "T00:00:00");
-    const days = Math.round((e.getTime() - s.getTime()) / 86400000) + 1;
-    const prevEnd = new Date(s);
-    prevEnd.setDate(prevEnd.getDate() - 1);
-    const prevStart = new Date(prevEnd);
-    prevStart.setDate(prevStart.getDate() - (days - 1));
-    return { prevStart: formatDateToYmd(prevStart), prevEnd: formatDateToYmd(prevEnd) };
-  }, [startDate, endDate]);
+  const prevWindow = useMemo(
+    () => previousPeriodRange(startDate, endDate),
+    [startDate, endDate],
+  );
 
-  const products = useMemo<Product[]>(() => {
-    const inRange = (date: string, s: string, e: string) =>
-      (!s || date >= s) && (!e || date <= e);
-
-    const byProduct = new Map<
-      string,
-      {
-        code: string;
-        name: string;
-        unitsSold: number;
-        revenue: number;
-        revenuePrev: number;
-        byStore: Map<string, { store: string; units: number; revenue: number }>;
-      }
-    >();
-
-    for (const sale of brandSales) {
-      const inCur = inRange(sale.saleDate, startDate, endDate);
-      const inPrev = inRange(sale.saleDate, prevWindow.prevStart, prevWindow.prevEnd);
-      if (!inCur && !inPrev) continue;
-
-      for (const item of sale.items) {
-        const key = item.barcode || item.productDescription || "—";
-        if (!byProduct.has(key)) {
-          byProduct.set(key, {
-            code: item.barcode || "—",
-            name: item.productDescription || "สินค้าไม่ระบุชื่อ",
-            unitsSold: 0,
-            revenue: 0,
-            revenuePrev: 0,
-            byStore: new Map(),
-          });
-        }
-        const entry = byProduct.get(key)!;
-        if (inCur) {
-          entry.unitsSold += item.quantity || 0;
-          entry.revenue += item.revenue || 0;
-          const storeKey = sale.branchName || "ไม่ระบุสาขา";
-          if (!entry.byStore.has(storeKey)) {
-            entry.byStore.set(storeKey, { store: storeKey, units: 0, revenue: 0 });
-          }
-          const st = entry.byStore.get(storeKey)!;
-          st.units += item.quantity || 0;
-          st.revenue += item.revenue || 0;
-        }
-        if (inPrev) {
-          entry.revenuePrev += item.revenue || 0;
-        }
-      }
-    }
-
-    const totalRevenue = Array.from(byProduct.values()).reduce((s, e) => s + e.revenue, 0);
-
-    return Array.from(byProduct.values())
-      .map((e) => ({
-        code: e.code,
-        name: e.name,
-        unitsSold: e.unitsSold,
-        revenue: e.revenue,
-        revenuePrev: e.revenuePrev,
-        growth: e.revenuePrev > 0 ? ((e.revenue - e.revenuePrev) / e.revenuePrev) * 100 : 0,
-        contribution: totalRevenue > 0 ? (e.revenue / totalRevenue) * 100 : 0,
-        byStore: Array.from(e.byStore.values()).sort((a, b) => b.units - a.units),
-      }))
-      .filter((p) => p.revenue > 0 || p.unitsSold > 0);
-  }, [brandSales, startDate, endDate, prevWindow]);
+  const products = useMemo<Product[]>(
+    () =>
+      aggregateByProduct(
+        brandSales,
+        { start: startDate, end: endDate },
+        prevWindow,
+      ),
+    [brandSales, startDate, endDate, prevWindow],
+  );
 
   const filtered = useMemo(() => {
     let r = products;

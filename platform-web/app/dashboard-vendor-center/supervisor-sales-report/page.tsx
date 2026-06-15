@@ -26,6 +26,16 @@ import * as XLSX from "xlsx";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import { toast } from "sonner";
+import {
+  resolveScopedBranchIds,
+  type SupervisorDoc,
+} from "@/lib/reports/supervisor-scope";
+import {
+  aggregateByEmployee,
+  aggregateTeamByBranch,
+  teamSummary as computeTeamSummary,
+} from "@/lib/reports/aggregate";
+import type { DailySale as ReportDailySale } from "@/lib/reports/types";
 
 // Cache for Thai font base64 (Google Sans) used in PDF export
 let thaiFontBase64Cache: string | null = null;
@@ -135,54 +145,39 @@ export default function SupervisorSalesReport() {
         );
 
         // Resolve the team/branch scope (mirror attendance page logic).
+        // The Firestore reads (fetching the manager's supervisors) stay here;
+        // the pure scope decision is delegated to resolveScopedBranchIds.
         const role = userData!.role;
-        if (role === "admin" || role === "super_admin") {
-          // No branch restriction.
-          setScopedBranchIds(null);
-        } else {
-          // supervisor / manager
-          const ownManaged = userData!.managedBranchIds?.length
-            ? [...userData!.managedBranchIds]
-            : userData!.branchId
-              ? [userData!.branchId]
-              : [];
-          const branchSet = new Set<string>(ownManaged);
-
-          if (role === "manager") {
-            // Managers manage branches indirectly through their supervisors;
-            // read managedSupervisorIds from the live user doc to be safe (the
-            // auth store may not hydrate this field), then union their branches.
-            let supervisorIds: string[] = userData!.managedSupervisorIds || [];
-            if (!supervisorIds.length && userData!.uid) {
-              try {
-                const meSnap = await getDoc(
-                  fsDoc(db, "users", userData!.uid),
-                );
-                supervisorIds =
-                  (meSnap.data()?.managedSupervisorIds as string[]) || [];
-              } catch {
-                supervisorIds = [];
-              }
-            }
-            supervisorIds = supervisorIds.slice(0, 30);
-            if (supervisorIds.length > 0) {
-              const supervisorsSnap = await getDocs(
-                query(
-                  collection(db, "users"),
-                  where(documentId(), "in", supervisorIds),
-                ),
-              );
-              supervisorsSnap.forEach((d) => {
-                const supData = d.data() as any;
-                (supData.managedBranchIds || []).forEach((id: string) =>
-                  branchSet.add(id),
-                );
-              });
+        let supervisorDocs: SupervisorDoc[] = [];
+        if (role === "manager") {
+          // Managers manage branches indirectly through their supervisors;
+          // read managedSupervisorIds from the live user doc to be safe (the
+          // auth store may not hydrate this field), then fetch their branches.
+          let supervisorIds: string[] = userData!.managedSupervisorIds || [];
+          if (!supervisorIds.length && userData!.uid) {
+            try {
+              const meSnap = await getDoc(fsDoc(db, "users", userData!.uid));
+              supervisorIds =
+                (meSnap.data()?.managedSupervisorIds as string[]) || [];
+            } catch {
+              supervisorIds = [];
             }
           }
-
-          setScopedBranchIds([...branchSet]);
+          supervisorIds = supervisorIds.slice(0, 30);
+          if (supervisorIds.length > 0) {
+            const supervisorsSnap = await getDocs(
+              query(
+                collection(db, "users"),
+                where(documentId(), "in", supervisorIds),
+              ),
+            );
+            supervisorDocs = supervisorsSnap.docs.map(
+              (d) => d.data() as SupervisorDoc,
+            );
+          }
         }
+
+        setScopedBranchIds(resolveScopedBranchIds(userData!, supervisorDocs));
       } catch (err) {
         console.error("Error loading supervisor sales report data:", err);
       } finally {
@@ -334,64 +329,20 @@ export default function SupervisorSalesReport() {
   }, [teamSales, startDate, endDate]);
 
   // Team-level summary (4b: team total).
-  const teamSummary = useMemo(() => {
-    let revenue = 0;
-    let units = 0;
-    const billIds = new Set<string>();
-    const branchIds = new Set<string>();
-    const employeeKeys = new Set<string>();
-
-    for (const s of periodSales) {
-      revenue += s.totalRevenue || 0;
-      units += (s as any).totalUnits || 0;
-      billIds.add(s.id);
-      if (s.branchId) branchIds.add(s.branchId);
-      const empKey = s.employeeId || s.employeeName || "";
-      if (empKey) employeeKeys.add(empKey);
-    }
-
-    return {
-      revenue,
-      units,
-      bills: billIds.size,
-      branches: branchIds.size,
-      employees: employeeKeys.size,
-    };
-  }, [periodSales]);
+  const teamSummary = useMemo(
+    () => computeTeamSummary(periodSales as ReportDailySale[]),
+    [periodSales],
+  );
 
   // Per-branch breakdown (4b stats + 4c cross-branch comparison).
-  const branchRows = useMemo(() => {
-    const map = new Map<
-      string,
-      { branchId: string; branchName: string; revenue: number; units: number; bills: Set<string> }
-    >();
-    for (const s of periodSales) {
-      const key = s.branchId || s.branchName || "—";
-      if (!map.has(key)) {
-        map.set(key, {
-          branchId: s.branchId,
-          branchName: s.branchName || "ไม่ระบุสาขา",
-          revenue: 0,
-          units: 0,
-          bills: new Set<string>(),
-        });
-      }
-      const entry = map.get(key)!;
-      entry.revenue += s.totalRevenue || 0;
-      entry.units += (s as any).totalUnits || 0;
-      entry.bills.add(s.id);
-    }
-    const total = teamSummary.revenue || 0;
-    const rows = Array.from(map.values()).map((e) => ({
-      branchId: e.branchId,
-      branchName: e.branchName,
-      revenue: e.revenue,
-      units: e.units,
-      bills: e.bills.size,
-      share: total > 0 ? (e.revenue / total) * 100 : 0,
-    }));
-    return rows;
-  }, [periodSales, teamSummary.revenue]);
+  const branchRows = useMemo(
+    () =>
+      aggregateTeamByBranch(
+        periodSales as ReportDailySale[],
+        teamSummary.revenue || 0,
+      ),
+    [periodSales, teamSummary.revenue],
+  );
 
   const sortedBranchRows = useMemo(() => {
     const r = [...branchRows];
@@ -409,41 +360,10 @@ export default function SupervisorSalesReport() {
   }, [branchRows, branchSortField, branchSortAsc]);
 
   // Per-employee breakdown (4a by employee).
-  const employeeRows = useMemo(() => {
-    const map = new Map<
-      string,
-      {
-        employeeName: string;
-        branchName: string;
-        revenue: number;
-        units: number;
-        bills: Set<string>;
-      }
-    >();
-    for (const s of periodSales) {
-      const key = `${s.employeeId || s.employeeName || "—"}__${s.branchId || ""}`;
-      if (!map.has(key)) {
-        map.set(key, {
-          employeeName: s.employeeName || "ไม่ระบุพนักงาน",
-          branchName: s.branchName || "ไม่ระบุสาขา",
-          revenue: 0,
-          units: 0,
-          bills: new Set<string>(),
-        });
-      }
-      const entry = map.get(key)!;
-      entry.revenue += s.totalRevenue || 0;
-      entry.units += (s as any).totalUnits || 0;
-      entry.bills.add(s.id);
-    }
-    return Array.from(map.values()).map((e) => ({
-      employeeName: e.employeeName,
-      branchName: e.branchName,
-      revenue: e.revenue,
-      units: e.units,
-      bills: e.bills.size,
-    }));
-  }, [periodSales]);
+  const employeeRows = useMemo(
+    () => aggregateByEmployee(periodSales as ReportDailySale[]),
+    [periodSales],
+  );
 
   const sortedEmployeeRows = useMemo(() => {
     const r = [...employeeRows];

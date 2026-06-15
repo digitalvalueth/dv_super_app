@@ -22,6 +22,12 @@ import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import { toast } from "sonner";
 import { useActivityLogger } from "@/hooks/watson/useActivityLogger";
+import {
+  flattenToItemRows,
+  distinctBillCount,
+  computeTotals,
+} from "@/lib/reports/sales-filter";
+import type { DailySale as ReportDailySale } from "@/lib/reports/types";
 
 // Cache for Thai font base64 (Google Sans) used in PDF export
 let thaiFontBase64Cache: string | null = null;
@@ -333,58 +339,46 @@ export default function SalesReport() {
   // Also collect the set of distinct sale (bill) doc ids that survive the filters,
   // so the transaction/bill count metric stays in sync with the filtered dataset.
   const { rows: salesRows, billCount } = useMemo(() => {
-    const rows: any[] = [];
-    const billIds = new Set<string>();
+    // The pure filter pipeline (store / employee / date / search) and the
+    // distinct-bill count live in lib/reports/sales-filter; the per-row
+    // enrichment (RSP lookup, date formatting, brand) stays here because it
+    // depends on Firestore-loaded products/sales and the active brand.
+    const filters = {
+      startDate,
+      endDate,
+      branch: storeFilter,
+      employee: employeeFilter,
+      query: q,
+    };
 
-    for (const sale of brandSales) {
-      // Store filter
-      if (storeFilter !== "All Stores" && sale.branchName !== storeFilter) {
-        continue;
-      }
+    const rows = flattenToItemRows(
+      brandSales as ReportDailySale[],
+      filters,
+    ).map(({ sale, item }) => {
+      const prod = brandProducts.find(p => p.barcode === item.barcode);
+      const productRsp = prod?.beforeCount ? Math.max(...rawSales.flatMap(s => s.items).filter(i => i.barcode === item.barcode).map(i => i.price || 0)) : item.price;
 
-      // Salesperson filter
-      if (employeeFilter !== "All Salespersons" && sale.employeeName !== employeeFilter) {
-        continue;
-      }
+      return {
+        date: formatDateString(sale.saleDate),
+        rawDate: sale.saleDate,
+        brand: activeBrand,
+        store: sale.branchName,
+        employee: sale.employeeName || "—",
+        code: item.barcode || "—",
+        name: item.productDescription || "สินค้าไม่ระบุชื่อ",
+        status: (prod?.status || "ACTIVE").toUpperCase(),
+        rsp: productRsp || item.price,
+        units: item.quantity || 0,
+        revenue: item.revenue || 0,
+        unitSellingPrice: item.quantity > 0 ? (item.revenue / item.quantity) : item.price,
+        productId: prod?.productId || ""
+      };
+    });
 
-      // Date filter
-      if (startDate && sale.saleDate < startDate) continue;
-      if (endDate && sale.saleDate > endDate) continue;
-
-      for (const item of sale.items) {
-        // Search query filter
-        if (q) {
-          const qLower = q.toLowerCase();
-          const matchCode = (item.barcode || "").toLowerCase().includes(qLower);
-          const matchName = (item.productDescription || "").toLowerCase().includes(qLower);
-          if (!matchCode && !matchName) continue;
-        }
-
-        const prod = brandProducts.find(p => p.barcode === item.barcode);
-        const productRsp = prod?.beforeCount ? Math.max(...rawSales.flatMap(s => s.items).filter(i => i.barcode === item.barcode).map(i => i.price || 0)) : item.price;
-
-        // Count this bill (sale doc) only when at least one of its items passes
-        // all filters (including search), so the metric matches what is shown.
-        billIds.add(sale.id);
-
-        rows.push({
-          date: formatDateString(sale.saleDate),
-          rawDate: sale.saleDate,
-          brand: activeBrand,
-          store: sale.branchName,
-          employee: sale.employeeName || "—",
-          code: item.barcode || "—",
-          name: item.productDescription || "สินค้าไม่ระบุชื่อ",
-          status: (prod?.status || "ACTIVE").toUpperCase(),
-          rsp: productRsp || item.price,
-          units: item.quantity || 0,
-          revenue: item.revenue || 0,
-          unitSellingPrice: item.quantity > 0 ? (item.revenue / item.quantity) : item.price,
-          productId: prod?.productId || ""
-        });
-      }
-    }
-    return { rows, billCount: billIds.size };
+    return {
+      rows,
+      billCount: distinctBillCount(brandSales as ReportDailySale[], filters),
+    };
   }, [brandSales, storeFilter, employeeFilter, startDate, endDate, q, brandProducts, activeBrand]);
 
   const handleExport = () => {
@@ -578,12 +572,8 @@ export default function SalesReport() {
   }, [salesRows, sortField, sortAsc]);
 
   // Summary totals for the currently-filtered dataset
-  const totalRevenue = useMemo(
-    () => salesRows.reduce((sum, r) => sum + (r.revenue || 0), 0),
-    [salesRows]
-  );
-  const totalUnits = useMemo(
-    () => salesRows.reduce((sum, r) => sum + (r.units || 0), 0),
+  const { revenue: totalRevenue, units: totalUnits } = useMemo(
+    () => computeTotals(salesRows),
     [salesRows]
   );
 
