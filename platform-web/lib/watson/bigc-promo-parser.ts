@@ -8,6 +8,8 @@
 // it runs in node-env Vitest. The thin `parseBigCFile` wrapper (which imports
 // xlsx + reads a File) is the only non-pure export and is NOT unit-tested.
 
+import type { PromotionItem } from "@/types/watson/promotion";
+
 /** A single mapped promotion row, BigC → our shape. */
 export interface BigCPromoRow {
   /** Running "No" from the form (best-effort; "" if absent). */
@@ -517,6 +519,34 @@ export function parseBigCSheet(
   }
 
   return { items, period, periodSource, warnings, branches };
+}
+
+// ─── Map to the standard Watson promotion shape ───────────────────────
+
+/**
+ * Convert a BigC parse result into the canonical `PromotionItem[]` (the same
+ * shape/columns as the Watson promotion table: Watson Code, Barcode, Item
+ * Name, Start, End, Std/Comm Price IncV, Invoice 62% IncV/ExV, Remark), so
+ * BigC data renders and merges in the standard format.
+ *
+ * BigC has no Watson Code (itemCode = barcode) and its sell sheet carries no
+ * Invoice-62% figures, so those are left null (not fabricated). The single
+ * file-level promo period is applied to every item.
+ */
+export function bigCToPromotionItems(result: BigCParseResult): PromotionItem[] {
+  return result.items.map((row) => ({
+    itemCode: row.itemCode,
+    barcode: row.barcode,
+    itemName: row.itemName,
+    stdPrice: row.stdPrice ?? 0,
+    commPrice: row.commPrice,
+    invoice62IncV: null,
+    invoice62ExV: null,
+    promoPrice: row.commPrice ?? null,
+    promoStart: row.promoStart,
+    promoEnd: row.promoEnd,
+    remark: row.remark || "",
+  }));
 }
 
 // ─── Non-pure File wrapper (NOT unit-tested) ──────────────────────────

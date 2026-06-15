@@ -2,6 +2,7 @@ import { describe, it, expect, beforeAll } from "vitest";
 import {
   parseBigCSheet,
   parseBigCPeriodFromFileName,
+  bigCToPromotionItems,
   type BigCParseResult,
 } from "./bigc-promo-parser";
 
@@ -494,5 +495,84 @@ describe("parseBigCPeriodFromFileName", () => {
     const p = parseBigCPeriodFromFileName("BigC promotion.xlsb");
     expect(p.start).toBeNull();
     expect(p.end).toBeNull();
+  });
+});
+
+describe("bigCToPromotionItems (BigC → standard PromotionItem columns)", () => {
+  const start = new Date(Date.UTC(2026, 0, 5));
+  const end = new Date(Date.UTC(2026, 0, 28));
+  const result: BigCParseResult = {
+    items: [
+      {
+        no: "1",
+        barcode: "8859109863120",
+        itemCode: "8859109863120",
+        itemName: "P_พรีมาเนสท์ คอลลาเจน",
+        stdPrice: 690,
+        commPrice: 659,
+        remark: "2 For 1198",
+        promoStart: start,
+        promoEnd: end,
+      },
+      {
+        no: "2",
+        barcode: "8859109863137",
+        itemCode: "8859109863137",
+        itemName: "P_พรีมาเนสท์วีต้า",
+        stdPrice: null, // no sell price in the form
+        commPrice: null,
+        remark: "",
+        promoStart: start,
+        promoEnd: end,
+      },
+    ],
+    period: { start, end },
+    periodSource: "sheet",
+    warnings: [],
+    branches: ["HYP"],
+  };
+
+  it("maps each BigC row to the canonical PromotionItem shape", () => {
+    const items = bigCToPromotionItems(result);
+    expect(items).toHaveLength(2);
+    expect(items[0]).toEqual({
+      itemCode: "8859109863120",
+      barcode: "8859109863120",
+      itemName: "P_พรีมาเนสท์ คอลลาเจน",
+      stdPrice: 690,
+      commPrice: 659,
+      invoice62IncV: null,
+      invoice62ExV: null,
+      promoPrice: 659,
+      promoStart: start,
+      promoEnd: end,
+      remark: "2 For 1198",
+    });
+  });
+
+  it("uses barcode as itemCode (BigC has no Watson Code) and leaves Invoice-62 null", () => {
+    const items = bigCToPromotionItems(result);
+    expect(items[0].itemCode).toBe(items[0].barcode);
+    expect(items[0].invoice62IncV).toBeNull();
+    expect(items[0].invoice62ExV).toBeNull();
+  });
+
+  it("coerces a missing std price to 0 and keeps comm/promo price null", () => {
+    const items = bigCToPromotionItems(result);
+    expect(items[1].stdPrice).toBe(0);
+    expect(items[1].commPrice).toBeNull();
+    expect(items[1].promoPrice).toBeNull();
+    expect(items[1].remark).toBe("");
+  });
+
+  it("applies the file-level period to every item", () => {
+    const items = bigCToPromotionItems(result);
+    expect(items.every((i) => i.promoStart === start && i.promoEnd === end)).toBe(true);
+  });
+
+  it("returns an empty array for no items", () => {
+    expect(
+      bigCToPromotionItems({ ...result, items: [] }),
+    ).toEqual([]);
   });
 });

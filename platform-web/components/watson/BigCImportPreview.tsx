@@ -1,15 +1,24 @@
 "use client";
 
-// Self-contained PREVIEW-ONLY panel for BigC promotion .xlsb/.xlsx files.
-// Parses the file client-side and shows the mapped rows + warnings. It does
-// NOT write anything to Firestore this round (preview only).
+// Self-contained PREVIEW-ONLY panel for promotion files, currently wired for
+// the BigC .xlsb/.xlsx form. Pick a shop, choose a file, and see the mapped
+// rows in the STANDARD Watson promotion columns. It does NOT write anything to
+// Firestore this round (preview only).
 
 import {
+  bigCToPromotionItems,
   parseBigCFile,
   type BigCParseResult,
 } from "@/lib/watson/bigc-promo-parser";
 import { AlertTriangle, FileSpreadsheet, Loader2, X } from "lucide-react";
 import { useCallback, useRef, useState } from "react";
+
+/** Shops whose promo we can update. Extend this list as parsers are added. */
+export const SHOPS = ["BigC", "Lotus", "Watson"] as const;
+export type Shop = (typeof SHOPS)[number];
+
+/** Only BigC has a working parser/preview right now. */
+const SUPPORTED_SHOPS: Shop[] = ["BigC"];
 
 const fmtDate = (d: Date | null): string => {
   if (!d) return "—";
@@ -19,8 +28,8 @@ const fmtDate = (d: Date | null): string => {
   return `${y}-${m}-${day}`;
 };
 
-const fmtPrice = (n: number | null): string =>
-  n === null ? "—" : n.toLocaleString("th-TH");
+const fmtPrice = (n: number | null | undefined): string =>
+  n === null || n === undefined ? "—" : n.toLocaleString("th-TH");
 
 const periodSourceLabel = (s: BigCParseResult["periodSource"]): string => {
   switch (s) {
@@ -40,10 +49,24 @@ export interface BigCImportPreviewProps {
 
 export default function BigCImportPreview({ onClose }: BigCImportPreviewProps) {
   const fileRef = useRef<HTMLInputElement>(null);
+  const [shop, setShop] = useState<Shop | "">("");
   const [fileName, setFileName] = useState<string>("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string>("");
   const [result, setResult] = useState<BigCParseResult | null>(null);
+
+  const shopSupported = shop !== "" && SUPPORTED_SHOPS.includes(shop);
+
+  const handleShopChange = useCallback(
+    (e: React.ChangeEvent<HTMLSelectElement>) => {
+      setShop(e.target.value as Shop | "");
+      // Reset any prior parse when the target shop changes.
+      setResult(null);
+      setError("");
+      setFileName("");
+    },
+    [],
+  );
 
   const handleSelect = useCallback(
     async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -55,6 +78,15 @@ export default function BigCImportPreview({ onClose }: BigCImportPreviewProps) {
       setFileName(file.name);
       setError("");
       setResult(null);
+
+      // Only BigC has a parser; guard so a non-BigC file is never fed to it.
+      if (shop !== "BigC") {
+        setError(
+          `ยังไม่รองรับ format ของร้าน "${shop || "—"}" ในรอบนี้ (เร็ว ๆ นี้)`,
+        );
+        return;
+      }
+
       setLoading(true);
       try {
         const res = await parseBigCFile(file);
@@ -69,18 +101,25 @@ export default function BigCImportPreview({ onClose }: BigCImportPreviewProps) {
         setLoading(false);
       }
     },
-    [],
+    [shop],
   );
+
+  const items = result ? bigCToPromotionItems(result) : [];
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-      <div className="bg-white rounded-xl shadow-xl w-full max-w-5xl max-h-[90vh] flex flex-col">
+      <div className="bg-white rounded-xl shadow-xl w-full max-w-6xl max-h-[90vh] flex flex-col">
         {/* Header */}
         <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
           <div className="flex items-center gap-2">
             <FileSpreadsheet className="w-5 h-5 text-emerald-600" />
             <h2 className="text-base font-bold text-gray-900">
-              นำเข้า BigC (Preview)
+              นำเข้าโปรโมชั่น (Preview)
+              {shop && (
+                <span className="ml-2 text-sm font-medium text-emerald-700">
+                  · ร้าน: {shop}
+                </span>
+              )}
             </h2>
           </div>
           {onClose && (
@@ -99,23 +138,43 @@ export default function BigCImportPreview({ onClose }: BigCImportPreviewProps) {
           🔍 Preview เท่านั้น — ยังไม่บันทึกลงระบบ
         </div>
 
-        {/* File input */}
+        {/* Shop dropdown + file input */}
         <div className="px-5 pt-4">
-          <input
-            ref={fileRef}
-            type="file"
-            accept=".xlsb,.xlsx"
-            className="hidden"
-            onChange={handleSelect}
-          />
-          <div className="flex items-center gap-3 flex-wrap">
+          <div className="flex items-end gap-3 flex-wrap">
+            {/* Shop selector */}
+            <label className="flex flex-col gap-1 text-sm">
+              <span className="text-gray-600">อัปเดตโปรของร้าน</span>
+              <select
+                value={shop}
+                onChange={handleShopChange}
+                className="px-3 py-2 rounded-lg border border-gray-300 bg-white text-sm text-gray-900 min-w-[140px]"
+              >
+                <option value="">— เลือกร้าน —</option>
+                {SHOPS.map((s) => (
+                  <option key={s} value={s}>
+                    {s}
+                    {SUPPORTED_SHOPS.includes(s) ? "" : " (เร็ว ๆ นี้)"}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <input
+              ref={fileRef}
+              type="file"
+              accept=".xlsb,.xlsx"
+              className="hidden"
+              onChange={handleSelect}
+            />
             <button
               onClick={() => fileRef.current?.click()}
-              className="inline-flex items-center gap-1.5 px-3 py-2 text-sm rounded-lg bg-emerald-600 text-white hover:bg-emerald-700"
+              disabled={shop === ""}
+              className="inline-flex items-center gap-1.5 px-3 py-2 text-sm rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 disabled:bg-gray-200 disabled:text-gray-400 disabled:cursor-not-allowed"
             >
               <FileSpreadsheet className="w-4 h-4" />
-              เลือกไฟล์ BigC (.xlsb / .xlsx)
+              เลือกไฟล์ (.xlsb / .xlsx)
             </button>
+
             {fileName && (
               <span className="text-sm text-gray-600 truncate max-w-xs">
                 {fileName}
@@ -128,6 +187,16 @@ export default function BigCImportPreview({ onClose }: BigCImportPreviewProps) {
               </span>
             )}
           </div>
+          {shop === "" && (
+            <p className="mt-2 text-xs text-gray-400">
+              เลือกร้านก่อน แล้วจึงเลือกไฟล์
+            </p>
+          )}
+          {shop !== "" && !shopSupported && (
+            <p className="mt-2 text-xs text-amber-600">
+              ร้าน “{shop}” ยังไม่รองรับ format ในรอบนี้ — รองรับเฉพาะ BigC
+            </p>
+          )}
         </div>
 
         {/* Body */}
@@ -154,15 +223,13 @@ export default function BigCImportPreview({ onClose }: BigCImportPreviewProps) {
                 <div className="rounded-lg border border-gray-200 px-3 py-2">
                   <div className="text-xs text-gray-400">จำนวนรายการ</div>
                   <div className="text-sm font-medium text-gray-900">
-                    {result.items.length} รายการ
+                    {items.length} รายการ
                   </div>
                 </div>
                 <div className="rounded-lg border border-gray-200 px-3 py-2">
                   <div className="text-xs text-gray-400">สาขาที่ร่วมรายการ</div>
                   <div className="text-sm font-medium text-gray-900">
-                    {result.branches.length
-                      ? result.branches.join(", ")
-                      : "—"}
+                    {result.branches.length ? result.branches.join(", ") : "—"}
                   </div>
                 </div>
               </div>
@@ -182,34 +249,54 @@ export default function BigCImportPreview({ onClose }: BigCImportPreviewProps) {
                 </div>
               )}
 
-              {/* Mapped rows table */}
+              {/* Mapped rows — STANDARD Watson promotion columns */}
               <div className="overflow-x-auto rounded-lg border border-gray-200">
-                <table className="min-w-full text-sm">
+                <table className="min-w-full text-sm whitespace-nowrap">
                   <thead className="bg-gray-50 text-gray-500">
                     <tr>
-                      <th className="px-3 py-2 text-left font-medium">No</th>
+                      <th className="px-3 py-2 text-left font-medium">#</th>
+                      <th className="px-3 py-2 text-left font-medium">
+                        Watson Code
+                      </th>
                       <th className="px-3 py-2 text-left font-medium">Barcode</th>
                       <th className="px-3 py-2 text-left font-medium">
-                        ชื่อสินค้า
+                        Item Name
+                      </th>
+                      <th className="px-3 py-2 text-left font-medium">Start</th>
+                      <th className="px-3 py-2 text-left font-medium">End</th>
+                      <th className="px-3 py-2 text-right font-medium">
+                        Std Price IncV
                       </th>
                       <th className="px-3 py-2 text-right font-medium">
-                        ราคาปกติ
+                        Comm Price IncV
                       </th>
                       <th className="px-3 py-2 text-right font-medium">
-                        ราคาโปร
+                        Invoice 62% IncV
                       </th>
-                      <th className="px-3 py-2 text-left font-medium">หมายเหตุ</th>
+                      <th className="px-3 py-2 text-right font-medium">
+                        Invoice 62% ExV
+                      </th>
+                      <th className="px-3 py-2 text-left font-medium">Remark</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-100">
-                    {result.items.map((it, i) => (
+                    {items.map((it, i) => (
                       <tr key={i} className="hover:bg-gray-50">
-                        <td className="px-3 py-2 text-gray-500">{it.no || "—"}</td>
+                        <td className="px-3 py-2 text-gray-500">{i + 1}</td>
+                        <td className="px-3 py-2 font-mono text-gray-700">
+                          {it.itemCode || "—"}
+                        </td>
                         <td className="px-3 py-2 font-mono text-gray-700">
                           {it.barcode || "—"}
                         </td>
-                        <td className="px-3 py-2 text-gray-900">
+                        <td className="px-3 py-2 text-gray-900 whitespace-normal max-w-xs">
                           {it.itemName || "—"}
+                        </td>
+                        <td className="px-3 py-2 text-gray-600">
+                          {fmtDate(it.promoStart)}
+                        </td>
+                        <td className="px-3 py-2 text-gray-600">
+                          {fmtDate(it.promoEnd)}
                         </td>
                         <td className="px-3 py-2 text-right text-gray-700">
                           {fmtPrice(it.stdPrice)}
@@ -217,15 +304,21 @@ export default function BigCImportPreview({ onClose }: BigCImportPreviewProps) {
                         <td className="px-3 py-2 text-right text-emerald-700 font-medium">
                           {fmtPrice(it.commPrice)}
                         </td>
-                        <td className="px-3 py-2 text-gray-600">
+                        <td className="px-3 py-2 text-right text-gray-400">
+                          {fmtPrice(it.invoice62IncV)}
+                        </td>
+                        <td className="px-3 py-2 text-right text-gray-400">
+                          {fmtPrice(it.invoice62ExV)}
+                        </td>
+                        <td className="px-3 py-2 text-gray-600 whitespace-normal">
                           {it.remark || "—"}
                         </td>
                       </tr>
                     ))}
-                    {result.items.length === 0 && (
+                    {items.length === 0 && (
                       <tr>
                         <td
-                          colSpan={6}
+                          colSpan={11}
                           className="px-3 py-6 text-center text-gray-400"
                         >
                           ไม่พบรายการสินค้าในไฟล์
@@ -240,7 +333,7 @@ export default function BigCImportPreview({ onClose }: BigCImportPreviewProps) {
 
           {!result && !error && !loading && (
             <div className="text-center text-gray-400 py-10 text-sm">
-              เลือกไฟล์ BigC เพื่อดูตัวอย่างข้อมูลที่จะนำเข้า
+              เลือกร้านและไฟล์เพื่อดูตัวอย่างข้อมูลที่จะนำเข้า
             </div>
           )}
         </div>
