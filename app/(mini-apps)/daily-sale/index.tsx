@@ -1,4 +1,7 @@
-import { getDailySalesByEmployee } from "@/services/daily-sale.service";
+import {
+  deleteDailySale,
+  getDailySalesByEmployee,
+} from "@/services/daily-sale.service";
 import { useAuthStore } from "@/stores/auth.store";
 import { useTheme } from "@/stores/theme.store";
 import { DailySale } from "@/types";
@@ -7,6 +10,7 @@ import { router, useFocusEffect } from "expo-router";
 import { useCallback, useState } from "react";
 import {
   ActivityIndicator,
+  Alert,
   FlatList,
   RefreshControl,
   Text,
@@ -61,6 +65,36 @@ export default function DailySaleIndex() {
   const handleRefresh = () => {
     setRefreshing(true);
     load();
+  };
+
+  const handleEdit = (item: DailySale) => {
+    router.push({
+      pathname: "/(mini-apps)/daily-sale/record",
+      params: { id: item.id },
+    });
+  };
+
+  const handleDelete = (item: DailySale) => {
+    Alert.alert(
+      "ลบรายการนี้?",
+      `ยอดขายวันที่ ${formatDate(item.saleDate)} จะถูกลบถาวร`,
+      [
+        { text: "ยกเลิก", style: "cancel" },
+        {
+          text: "ลบ",
+          style: "destructive",
+          onPress: async () => {
+            try {
+              await deleteDailySale(item.id);
+              load();
+            } catch (e) {
+              console.error("Error deleting daily sale:", e);
+              Alert.alert("เกิดข้อผิดพลาด", "ไม่สามารถลบรายการได้ กรุณาลองใหม่");
+            }
+          },
+        },
+      ],
+    );
   };
 
   const totalItems = sales.reduce((sum, s) => sum + s.totalItems, 0);
@@ -131,6 +165,54 @@ export default function DailySaleIndex() {
           {item.branchName}
         </Text>
       ) : null}
+
+      {/* Actions */}
+      <View
+        style={{
+          flexDirection: "row",
+          justifyContent: "flex-end",
+          gap: 8,
+          marginTop: 10,
+        }}
+      >
+        <TouchableOpacity
+          onPress={() => handleEdit(item)}
+          style={{
+            flexDirection: "row",
+            alignItems: "center",
+            gap: 4,
+            paddingHorizontal: 12,
+            paddingVertical: 6,
+            borderRadius: 8,
+            borderWidth: 1,
+            borderColor: colors.border,
+          }}
+        >
+          <Ionicons name="create-outline" size={16} color="#2563EB" />
+          <Text style={{ fontSize: 12, color: "#2563EB", fontWeight: "600" }}>
+            แก้ไข
+          </Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          onPress={() => handleDelete(item)}
+          style={{
+            flexDirection: "row",
+            alignItems: "center",
+            gap: 4,
+            paddingHorizontal: 12,
+            paddingVertical: 6,
+            borderRadius: 8,
+            borderWidth: 1,
+            borderColor: "#FECACA",
+            backgroundColor: "#FEF2F2",
+          }}
+        >
+          <Ionicons name="trash-outline" size={16} color="#EF4444" />
+          <Text style={{ fontSize: 12, color: "#EF4444", fontWeight: "600" }}>
+            ลบ
+          </Text>
+        </TouchableOpacity>
+      </View>
     </View>
   );
 
