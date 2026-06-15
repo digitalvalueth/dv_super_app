@@ -7,6 +7,7 @@ import {
   ChevronLeft,
   ClipboardList,
   Globe,
+  History,
   LayoutDashboard,
   LineChart,
   LogOut,
@@ -18,10 +19,14 @@ import {
   RefreshCcw,
   Sparkles,
   Tag,
+  Users,
 } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { ReactNode, useState } from "react";
+import { BrandProvider, useBrand } from "./brand-context";
+import { useNotifications } from "@/hooks/useNotifications";
+import { useAuthStore } from "@/stores/auth.store";
 
 function NavItem({
   href,
@@ -61,10 +66,27 @@ export default function VendorCenterLayout({
 }: {
   children: ReactNode;
 }) {
+  return (
+    <BrandProvider>
+      <VendorCenterLayoutContent>{children}</VendorCenterLayoutContent>
+    </BrandProvider>
+  );
+}
+
+function VendorCenterLayoutContent({
+  children,
+}: {
+  children: ReactNode;
+}) {
   const pathname = usePathname();
+  const { unreadCount } = useNotifications();
+  const { userData } = useAuthStore();
+  const canSeeTeamReport = userData
+    ? ["supervisor", "manager", "admin", "super_admin"].includes(userData.role)
+    : false;
   const [brandOpen, setBrandOpen] = useState(false);
   const [langOpen, setLangOpen] = useState(false);
-  const [activeBrand, setActiveBrand] = useState("NEST ME");
+  const { activeBrand, setActiveBrand } = useBrand();
   const [activeLang, setActiveLang] = useState<"TH" | "EN">("EN");
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [isMobileOpen, setIsMobileOpen] = useState(false);
@@ -164,6 +186,14 @@ export default function VendorCenterLayout({
                 onNavigate={handleNavClick}
                 active={isCurrent("/dashboard-vendor-center/notifications")}
               />
+              <NavItem
+                href="/dashboard-vendor-center/activity-logs"
+                icon={History}
+                label="Activity Logs"
+                collapsed={collapsed}
+                onNavigate={handleNavClick}
+                active={isCurrent("/dashboard-vendor-center/activity-logs")}
+              />
             </nav>
           </div>
 
@@ -190,6 +220,18 @@ export default function VendorCenterLayout({
                 onNavigate={handleNavClick}
                 active={isCurrent("/dashboard-vendor-center/sales-report")}
               />
+              {canSeeTeamReport && (
+                <NavItem
+                  href="/dashboard-vendor-center/supervisor-sales-report"
+                  icon={Users}
+                  label="Team Sales Report"
+                  collapsed={collapsed}
+                  onNavigate={handleNavClick}
+                  active={isCurrent(
+                    "/dashboard-vendor-center/supervisor-sales-report",
+                  )}
+                />
+              )}
               <NavItem
                 href="/dashboard-vendor-center/inventory-report"
                 icon={ClipboardList}
@@ -320,7 +362,7 @@ export default function VendorCenterLayout({
               </button>
               {brandOpen && (
                 <div className="absolute right-0 mt-2 w-36 bg-white border rounded-md shadow-lg overflow-hidden z-20">
-                  {["NEST ME", "PRIMANEST"].map((b) => (
+                  {(["NEST ME", "PRIMANEST"] as const).map((b) => (
                     <button
                       key={b}
                       onClick={() => {
@@ -340,12 +382,17 @@ export default function VendorCenterLayout({
               )}
             </div>
 
-            <button className="relative text-white hover:text-white/80 transition">
+            <Link
+              href="/dashboard-vendor-center/notifications"
+              className="relative text-white hover:text-white/80 transition"
+            >
               <Bell className="w-5 h-5" />
-              <span className="absolute -top-1 -right-1 w-4 h-4 bg-red-500 text-white rounded-full flex items-center justify-center text-[10px] font-bold">
-                1
-              </span>
-            </button>
+              {unreadCount > 0 && (
+                <span className="absolute -top-1 -right-1 w-4 h-4 bg-red-500 text-white rounded-full flex items-center justify-center text-[10px] font-bold">
+                  {unreadCount}
+                </span>
+              )}
+            </Link>
             <div className="relative">
               <button
                 onClick={() => setLangOpen((v) => !v)}
