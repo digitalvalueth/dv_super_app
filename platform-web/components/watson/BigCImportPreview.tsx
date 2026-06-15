@@ -1,9 +1,9 @@
 "use client";
 
-// Self-contained PREVIEW-ONLY panel for promotion files, currently wired for
-// the BigC .xlsb/.xlsx form. Pick a shop, choose a file, and see the mapped
-// rows in the STANDARD Watson promotion columns. It does NOT write anything to
-// Firestore this round (preview only).
+// Self-contained PREVIEW-ONLY panel for a shop's promotion file (currently the
+// BigC .xlsb/.xlsx form). The target shop is chosen by the parent (page-level
+// dropdown) and passed in as `shop`. Shows the mapped rows in the STANDARD
+// promotion columns. Does NOT write to Firestore this round (preview only).
 
 import {
   bigCToPromotionItems,
@@ -12,13 +12,6 @@ import {
 } from "@/lib/watson/bigc-promo-parser";
 import { AlertTriangle, FileSpreadsheet, Loader2, X } from "lucide-react";
 import { useCallback, useRef, useState } from "react";
-
-/** Shops whose promo we can update. Extend this list as parsers are added. */
-export const SHOPS = ["BigC", "Lotus", "Watson"] as const;
-export type Shop = (typeof SHOPS)[number];
-
-/** Only BigC has a working parser/preview right now. */
-const SUPPORTED_SHOPS: Shop[] = ["BigC"];
 
 const fmtDate = (d: Date | null): string => {
   if (!d) return "—";
@@ -43,30 +36,21 @@ const periodSourceLabel = (s: BigCParseResult["periodSource"]): string => {
 };
 
 export interface BigCImportPreviewProps {
+  /** Target shop (chosen by the page dropdown). Labels the code column. */
+  shop?: string;
   /** Called by a parent close control (renders as a modal/panel). */
   onClose?: () => void;
 }
 
-export default function BigCImportPreview({ onClose }: BigCImportPreviewProps) {
+export default function BigCImportPreview({
+  shop = "BigC",
+  onClose,
+}: BigCImportPreviewProps) {
   const fileRef = useRef<HTMLInputElement>(null);
-  const [shop, setShop] = useState<Shop | "">("");
   const [fileName, setFileName] = useState<string>("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string>("");
   const [result, setResult] = useState<BigCParseResult | null>(null);
-
-  const shopSupported = shop !== "" && SUPPORTED_SHOPS.includes(shop);
-
-  const handleShopChange = useCallback(
-    (e: React.ChangeEvent<HTMLSelectElement>) => {
-      setShop(e.target.value as Shop | "");
-      // Reset any prior parse when the target shop changes.
-      setResult(null);
-      setError("");
-      setFileName("");
-    },
-    [],
-  );
 
   const handleSelect = useCallback(
     async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -78,15 +62,6 @@ export default function BigCImportPreview({ onClose }: BigCImportPreviewProps) {
       setFileName(file.name);
       setError("");
       setResult(null);
-
-      // Only BigC has a parser; guard so a non-BigC file is never fed to it.
-      if (shop !== "BigC") {
-        setError(
-          `ยังไม่รองรับ format ของร้าน "${shop || "—"}" ในรอบนี้ (เร็ว ๆ นี้)`,
-        );
-        return;
-      }
-
       setLoading(true);
       try {
         const res = await parseBigCFile(file);
@@ -101,10 +76,11 @@ export default function BigCImportPreview({ onClose }: BigCImportPreviewProps) {
         setLoading(false);
       }
     },
-    [shop],
+    [],
   );
 
   const items = result ? bigCToPromotionItems(result) : [];
+  const codeLabel = `${shop} Code`;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
@@ -115,11 +91,9 @@ export default function BigCImportPreview({ onClose }: BigCImportPreviewProps) {
             <FileSpreadsheet className="w-5 h-5 text-emerald-600" />
             <h2 className="text-base font-bold text-gray-900">
               นำเข้าโปรโมชั่น (Preview)
-              {shop && (
-                <span className="ml-2 text-sm font-medium text-emerald-700">
-                  · ร้าน: {shop}
-                </span>
-              )}
+              <span className="ml-2 text-sm font-medium text-emerald-700">
+                · ร้าน: {shop}
+              </span>
             </h2>
           </div>
           {onClose && (
@@ -138,27 +112,9 @@ export default function BigCImportPreview({ onClose }: BigCImportPreviewProps) {
           🔍 Preview เท่านั้น — ยังไม่บันทึกลงระบบ
         </div>
 
-        {/* Shop dropdown + file input */}
+        {/* File input */}
         <div className="px-5 pt-4">
-          <div className="flex items-end gap-3 flex-wrap">
-            {/* Shop selector */}
-            <label className="flex flex-col gap-1 text-sm">
-              <span className="text-gray-600">อัปเดตโปรของร้าน</span>
-              <select
-                value={shop}
-                onChange={handleShopChange}
-                className="px-3 py-2 rounded-lg border border-gray-300 bg-white text-sm text-gray-900 min-w-[140px]"
-              >
-                <option value="">— เลือกร้าน —</option>
-                {SHOPS.map((s) => (
-                  <option key={s} value={s}>
-                    {s}
-                    {SUPPORTED_SHOPS.includes(s) ? "" : " (เร็ว ๆ นี้)"}
-                  </option>
-                ))}
-              </select>
-            </label>
-
+          <div className="flex items-center gap-3 flex-wrap">
             <input
               ref={fileRef}
               type="file"
@@ -168,13 +124,11 @@ export default function BigCImportPreview({ onClose }: BigCImportPreviewProps) {
             />
             <button
               onClick={() => fileRef.current?.click()}
-              disabled={shop === ""}
-              className="inline-flex items-center gap-1.5 px-3 py-2 text-sm rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 disabled:bg-gray-200 disabled:text-gray-400 disabled:cursor-not-allowed"
+              className="inline-flex items-center gap-1.5 px-3 py-2 text-sm rounded-lg bg-emerald-600 text-white hover:bg-emerald-700"
             >
               <FileSpreadsheet className="w-4 h-4" />
-              เลือกไฟล์ (.xlsb / .xlsx)
+              เลือกไฟล์ {shop} (.xlsb / .xlsx)
             </button>
-
             {fileName && (
               <span className="text-sm text-gray-600 truncate max-w-xs">
                 {fileName}
@@ -187,16 +141,6 @@ export default function BigCImportPreview({ onClose }: BigCImportPreviewProps) {
               </span>
             )}
           </div>
-          {shop === "" && (
-            <p className="mt-2 text-xs text-gray-400">
-              เลือกร้านก่อน แล้วจึงเลือกไฟล์
-            </p>
-          )}
-          {shop !== "" && !shopSupported && (
-            <p className="mt-2 text-xs text-amber-600">
-              ร้าน “{shop}” ยังไม่รองรับ format ในรอบนี้ — รองรับเฉพาะ BigC
-            </p>
-          )}
         </div>
 
         {/* Body */}
@@ -249,14 +193,14 @@ export default function BigCImportPreview({ onClose }: BigCImportPreviewProps) {
                 </div>
               )}
 
-              {/* Mapped rows — STANDARD Watson promotion columns */}
+              {/* Mapped rows — standard promotion columns (per-shop code) */}
               <div className="overflow-x-auto rounded-lg border border-gray-200">
                 <table className="min-w-full text-sm whitespace-nowrap">
                   <thead className="bg-gray-50 text-gray-500">
                     <tr>
                       <th className="px-3 py-2 text-left font-medium">#</th>
                       <th className="px-3 py-2 text-left font-medium">
-                        Watson Code
+                        {codeLabel}
                       </th>
                       <th className="px-3 py-2 text-left font-medium">Barcode</th>
                       <th className="px-3 py-2 text-left font-medium">
@@ -333,7 +277,7 @@ export default function BigCImportPreview({ onClose }: BigCImportPreviewProps) {
 
           {!result && !error && !loading && (
             <div className="text-center text-gray-400 py-10 text-sm">
-              เลือกร้านและไฟล์เพื่อดูตัวอย่างข้อมูลที่จะนำเข้า
+              เลือกไฟล์ {shop} เพื่อดูตัวอย่างข้อมูลที่จะนำเข้า
             </div>
           )}
         </div>
