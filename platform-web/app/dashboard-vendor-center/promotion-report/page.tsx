@@ -1,8 +1,11 @@
 "use client";
 
+import { useBrand } from "../brand-context";
+import { useActivityLogger } from "@/hooks/watson/useActivityLogger";
 import { usePromotionUploadHistory } from "@/hooks/watson/usePromotionUploadHistory";
 import { parseWatsonDate } from "@/lib/parse-watson-date";
 import { getPromotionData, savePromotionData } from "@/lib/watson-firebase";
+import { findOverlappingPromotions } from "@/lib/watson/promo-validation";
 import { PromotionItem } from "@/types/watson/promotion";
 import {
   AlertTriangle,
@@ -237,6 +240,8 @@ const isRowIncomplete = (r: Row) =>
   });
 
 export default function PromotionReportPage() {
+  const { activeBrand } = useBrand();
+  const { logAction } = useActivityLogger();
   const [rows, setRows] = useState<Row[]>([emptyRow()]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -421,13 +426,57 @@ export default function PromotionReportPage() {
 
   // ── Save to Firestore ──────────────────────────────────────────────
   const handleSave = async () => {
-    setSaving(true);
     setError(null);
+
+    // ── Date-range overlap validation ────────────────────────────────
+    // Block saving when the same Watson Code has two promotions whose
+    // active date ranges overlap (ambiguous pricing). Normalize dates to
+    // Date (rows may carry Date or string) before comparing.
+    const toDate = (d: Date | string | null | undefined): Date | null => {
+      if (!d) return null;
+      const dt = d instanceof Date ? d : new Date(d as any);
+      return isNaN(dt.getTime()) ? null : dt;
+    };
+    const overlapItems = rows
+      .filter((r) => r.itemCode || r.barcode || r.itemName)
+      .map((r) => ({
+        itemCode: (r.itemCode || r.barcode || "").trim(),
+        itemName: r.itemName,
+        promoStart: toDate(r.promoStart),
+        promoEnd: toDate(r.promoEnd),
+      }));
+    const overlaps = findOverlappingPromotions(overlapItems);
+    if (overlaps.length > 0) {
+      const fmtRange = (start: Date | null, end: Date | null) =>
+        `${fmtDate(start) || "ไม่ระบุ"} ถึง ${fmtDate(end) || "ไม่ระบุ"}`;
+      const details = overlaps
+        .slice(0, 5)
+        .map(
+          (c) =>
+            `${c.itemCode}${c.itemName ? ` (${c.itemName})` : ""}: ${fmtRange(
+              c.rangeA.start,
+              c.rangeA.end,
+            )} ซ้อนกับ ${fmtRange(c.rangeB.start, c.rangeB.end)}`,
+        )
+        .join("; ");
+      const more =
+        overlaps.length > 5 ? ` และอีก ${overlaps.length - 5} รายการ` : "";
+      setError(
+        `ไม่สามารถบันทึกได้: พบรายการที่ช่วงวันโปรโมชั่นซ้อนทับกันสำหรับสินค้ารหัสเดียวกัน — ${details}${more} กรุณาแก้ไขช่วงวันที่ให้ไม่ทับซ้อนกันก่อนบันทึก`,
+      );
+      return;
+    }
+
+    setSaving(true);
     try {
       const items = rows
         .filter((r) => r.itemCode || r.barcode || r.itemName)
         .map(toFirestore);
       await savePromotionData(items);
+      logAction("save_promotions", `บันทึกรายการโปรโมชั่นทั้งหมด (${items.length} รายการ) ผ่านหน้าจอ`, {
+        itemCount: items.length,
+        brand: activeBrand,
+      });
       setSaved(true);
       setTimeout(() => setSaved(false), 3000);
     } catch (e: any) {
@@ -784,6 +833,13 @@ export default function PromotionReportPage() {
         .filter((r) => r.itemCode || r.barcode || r.itemName)
         .map(toFirestore);
       await savePromotionData(items);
+      logAction("import_promotions", `นำเข้าข้อมูลโปรโมชั่นจาก Excel สำเร็จ (เพิ่มใหม่ ${added}, อัปเดต ${updated})`, {
+        added,
+        updated,
+        duplicate,
+        total: items.length,
+        brand: activeBrand,
+      });
       setImportProgressResult({ added, updated, duplicate });
       setImportProgress("success");
       setSaved(true);
@@ -845,10 +901,14 @@ export default function PromotionReportPage() {
     }));
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "Promotion");
-    XLSX.writeFile(
-      wb,
-      `promotion_master_${new Date().toISOString().slice(0, 10)}.xlsx`,
-    );
+    const fileName = `promotion_master_${new Date().toISOString().slice(0, 10)}.xlsx`;
+    XLSX.writeFile(wb, fileName);
+
+    logAction("export_promotions", `ส่งออกไฟล์โปรโมชั่น Excel (${rows.filter(r => r.itemCode || r.barcode || r.itemName).length} รายการ)`, {
+      rowCount: rows.filter(r => r.itemCode || r.barcode || r.itemName).length,
+      brand: activeBrand,
+      fileName,
+    });
   };
 
   // ── Stats & filter ─────────────────────────────────────────────────
@@ -897,30 +957,49 @@ export default function PromotionReportPage() {
 
   const isFiltered = search || statusFilter !== "all" || dateFrom || dateTo;
 
-  // ─────────────────────────────────────────────────────────────────────
   return (
-    <div className="flex flex-col h-full min-h-screen bg-gray-50">
-      {/* ── Header ── */}
-      <div className="px-6 py-5 border-b border-gray-200 bg-white sticky top-0 z-10 shadow-sm">
-        <div className="flex items-center justify-between flex-wrap gap-3">
+    <div className="p-6 md:p-8 w-full space-y-6">
+      {/* ── Breadcrumbs & Title block ── */}
+      <div>
+        <h1 className="text-2xl font-bold text-gray-900">Promotion Master Data</h1>
+        <div className="text-xs text-gray-500 flex items-center gap-1 mt-1">
+          <span>Home</span>
+          <ChevronRight className="w-3 h-3" />
+          <span>Vendor</span>
+          <ChevronRight className="w-3 h-3" />
+          <span>Reports</span>
+          <ChevronRight className="w-3 h-3" />
+          <span className="text-gray-900 font-medium">Promotion Master</span>
+        </div>
+      </div>
+
+      {/* ── Action Toolbar Card ── */}
+      <div className="bg-white p-6 rounded-xl shadow-sm border space-y-5">
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
           <div>
-            <div className="text-xs text-gray-400 flex items-center gap-1 mb-1">
-              <span>Dashboard</span>
-              <ChevronRight className="w-3 h-3" />
-              <span className="text-gray-700 font-medium">
-                Promotion Master
-              </span>
-            </div>
-            <h1 className="text-xl font-bold text-gray-900">
-              Promotion Master Data
-            </h1>
-            <p className="text-sm text-gray-500 mt-0.5">
-              จัดการรายการโปรโมชั่น — ข้อมูลนี้จะถูกใช้โดยระบบบันทึกยอดขาย,
-              Watson, และ Dashboard ทั้งหมด
+            <p className="text-sm text-gray-500">
+              จัดการรายการโปรโมชั่น — ข้อมูลนี้จะถูกใช้โดยระบบบันทึกยอดขาย, Watson, และ Dashboard ทั้งหมด
             </p>
+            {/* Stats + error strip */}
+            <div className="flex items-center gap-2 mt-2 flex-wrap">
+              <span className="px-3 py-1 bg-green-50 text-green-700 rounded-full text-xs font-semibold border border-green-100 shadow-xs">
+                {activeCount} Active วันนี้
+              </span>
+              <span className="px-3 py-1 bg-gray-50 text-gray-600 rounded-full text-xs border font-medium">
+                {isFiltered
+                  ? `${filteredRows.length} / ${validRows.length} รายการ`
+                  : `${validRows.length} รายการทั้งหมด`}
+              </span>
+              {error && (
+                <span className="flex items-center gap-1 text-red-600 text-xs bg-red-50 px-3 py-1 rounded-full border border-red-100 font-semibold">
+                  <AlertTriangle className="w-3.5 h-3.5" />
+                  {error}
+                </span>
+              )}
+            </div>
           </div>
 
-          <div className="flex items-center gap-2 flex-wrap">
+          <div className="flex items-center gap-2 flex-wrap lg:justify-end shrink-0">
             <input
               ref={fileRef}
               type="file"
@@ -930,14 +1009,14 @@ export default function PromotionReportPage() {
             />
             <button
               onClick={() => fileRef.current?.click()}
-              className="inline-flex items-center gap-1.5 px-3 py-2 text-sm border border-gray-200 rounded-lg hover:bg-gray-50 text-gray-700 bg-white"
+              className="inline-flex items-center gap-1.5 px-3 py-2 text-sm border border-gray-200 rounded-lg hover:bg-gray-50 text-gray-700 bg-white cursor-pointer transition shadow-xs"
             >
               <Upload className="w-4 h-4" />
               นำเข้า Excel
             </button>
             <button
               onClick={() => setShowHistory((v) => !v)}
-              className={`inline-flex items-center gap-1.5 px-3 py-2 text-sm border rounded-lg transition-colors ${
+              className={`inline-flex items-center gap-1.5 px-3 py-2 text-sm border rounded-lg transition-colors cursor-pointer shadow-xs ${
                 showHistory
                   ? "bg-blue-50 border-blue-300 text-blue-700"
                   : "border-gray-200 text-gray-700 bg-white hover:bg-gray-50"
@@ -946,14 +1025,14 @@ export default function PromotionReportPage() {
               <Clock className="w-4 h-4" />
               ประวัติการอัปโหลด
               {uploadHistory.length > 0 && (
-                <span className="ml-0.5 text-xs bg-blue-100 text-blue-700 rounded-full px-1.5 py-0.5 font-medium">
+                <span className="ml-1 text-xs bg-blue-100 text-blue-700 rounded-full px-1.5 py-0.5 font-bold">
                   {uploadHistory.length}
                 </span>
               )}
             </button>
             <button
               onClick={handleExport}
-              className="inline-flex items-center gap-1.5 px-3 py-2 text-sm border border-gray-200 rounded-lg hover:bg-gray-50 text-gray-700 bg-white"
+              className="inline-flex items-center gap-1.5 px-3 py-2 text-sm border border-gray-250 rounded-lg hover:bg-gray-50 text-gray-700 bg-white cursor-pointer transition shadow-xs"
             >
               <Download className="w-4 h-4" />
               Export
@@ -964,7 +1043,7 @@ export default function PromotionReportPage() {
                 setEditMode((v) => !v);
                 setSelectedIds(new Set());
               }}
-              className={`inline-flex items-center gap-1.5 px-3 py-2 text-sm font-medium rounded-lg border transition-colors ${
+              className={`inline-flex items-center gap-1.5 px-3 py-2 text-sm font-medium rounded-lg border transition-colors cursor-pointer shadow-xs ${
                 editMode
                   ? "bg-amber-50 border-amber-300 text-amber-700 hover:bg-amber-100"
                   : "bg-white border-gray-200 text-gray-700 hover:bg-gray-50"
@@ -984,7 +1063,7 @@ export default function PromotionReportPage() {
               <button
                 onClick={handleSave}
                 disabled={saving}
-                className="inline-flex items-center gap-1.5 px-4 py-2 text-sm font-semibold rounded-lg text-white bg-[#5B8C3E] hover:bg-[#4A7830] disabled:opacity-60 transition-colors"
+                className="inline-flex items-center gap-1.5 px-4 py-2 text-sm font-semibold rounded-lg text-white bg-[#5B8C3E] hover:bg-[#4A7830] disabled:opacity-60 transition-colors cursor-pointer shadow-sm"
               >
                 {saving ? (
                   <Loader2 className="w-4 h-4 animate-spin" />
@@ -998,29 +1077,11 @@ export default function PromotionReportPage() {
             )}
           </div>
         </div>
-
-        {/* Stats + error strip */}
-        <div className="flex items-center gap-3 mt-3 flex-wrap">
-          <span className="px-3 py-1 bg-green-50 text-green-700 rounded-full text-xs font-medium border border-green-100">
-            {activeCount} Active วันนี้
-          </span>
-          <span className="px-3 py-1 bg-gray-100 text-gray-600 rounded-full text-xs">
-            {isFiltered
-              ? `${filteredRows.length} / ${validRows.length} รายการ`
-              : `${validRows.length} รายการทั้งหมด`}
-          </span>
-          {error && (
-            <span className="flex items-center gap-1 text-red-600 text-xs bg-red-50 px-3 py-1 rounded-full border border-red-100">
-              <AlertTriangle className="w-3.5 h-3.5" />
-              {error}
-            </span>
-          )}
-        </div>
       </div>
 
       {/* ── Upload History Panel ── */}
       {showHistory && (
-        <div className="mx-4 mb-2 rounded-xl border border-blue-200 bg-blue-50 overflow-hidden">
+        <div className="rounded-xl border border-blue-200 bg-blue-50 overflow-hidden shadow-xs">
           <div className="flex items-center justify-between px-4 py-3 border-b border-blue-200">
             <h3 className="text-sm font-semibold text-blue-800 flex items-center gap-2">
               <Clock className="w-4 h-4" />
@@ -1028,7 +1089,7 @@ export default function PromotionReportPage() {
             </h3>
             <button
               onClick={() => setShowHistory(false)}
-              className="text-blue-500 hover:text-blue-700"
+              className="text-blue-500 hover:text-blue-700 cursor-pointer"
             >
               <X className="w-4 h-4" />
             </button>
@@ -1047,26 +1108,14 @@ export default function PromotionReportPage() {
               <table className="w-full text-xs">
                 <thead>
                   <tr className="bg-blue-100 text-blue-700">
-                    <th className="text-left px-4 py-2 font-medium">
-                      ชื่อไฟล์
-                    </th>
-                    <th className="text-left px-3 py-2 font-medium">
-                      ผู้อัปโหลด
-                    </th>
-                    <th className="text-center px-3 py-2 font-medium">
-                      วันที่อัปโหลด
-                    </th>
-                    <th className="text-center px-3 py-2 font-medium">
-                      จำนวนทั้งหมด
-                    </th>
+                    <th className="text-left px-4 py-2 font-medium">ชื่อไฟล์</th>
+                    <th className="text-left px-3 py-2 font-medium">ผู้อัปโหลด</th>
+                    <th className="text-center px-3 py-2 font-medium">วันที่อัปโหลด</th>
+                    <th className="text-center px-3 py-2 font-medium">จำนวนทั้งหมด</th>
                     <th className="text-center px-3 py-2 font-medium">เพิ่ม</th>
-                    <th className="text-center px-3 py-2 font-medium">
-                      อัปเดต
-                    </th>
+                    <th className="text-center px-3 py-2 font-medium">อัปเดต</th>
                     <th className="text-center px-3 py-2 font-medium">ซ้ำ</th>
-                    <th className="text-center px-3 py-2 font-medium">
-                      ดาวน์โหลด
-                    </th>
+                    <th className="text-center px-3 py-2 font-medium">ดาวน์โหลด</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -1120,15 +1169,13 @@ export default function PromotionReportPage() {
                         {rec.hasFile ? (
                           <button
                             onClick={() => downloadFile(rec)}
-                            className="inline-flex items-center gap-1 px-2 py-1 rounded-lg text-xs bg-blue-600 hover:bg-blue-700 text-white transition-colors"
+                            className="inline-flex items-center gap-1 px-2 py-1 rounded-lg text-xs bg-blue-600 hover:bg-blue-700 text-white transition-colors cursor-pointer"
                           >
-                            <Download className="w-3 h-3" />
+                            <Download className="w-3.5 h-3.5" />
                             ดาวน์โหลด
                           </button>
                         ) : (
-                          <span className="text-gray-300 text-xs">
-                            ไม่มีไฟล์
-                          </span>
+                          <span className="text-gray-300 text-xs">ไม่มีไฟล์</span>
                         )}
                       </td>
                     </tr>
@@ -1140,10 +1187,10 @@ export default function PromotionReportPage() {
         </div>
       )}
 
-      {/* ── Table area ── */}
-      <div className="flex-1 overflow-auto p-4">
+      {/* ── Table & Search Toolbar area ── */}
+      <div className="space-y-4">
         {/* Search + filter bar */}
-        <div className="flex items-center gap-2 mb-3 flex-wrap">
+        <div className="flex items-center gap-2 flex-wrap">
           {/* Text search */}
           <div className="relative flex-1 min-w-50 max-w-xs">
             <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400 pointer-events-none" />
@@ -1157,7 +1204,7 @@ export default function PromotionReportPage() {
             {search && (
               <button
                 onClick={() => setSearch("")}
-                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 text-base leading-none"
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 text-base leading-none animate-none"
               >
                 ×
               </button>
@@ -1165,7 +1212,7 @@ export default function PromotionReportPage() {
           </div>
 
           {/* Date range filter */}
-          <div className="flex items-center gap-1.5 bg-white border border-gray-200 rounded-lg px-2.5 py-1.5">
+          <div className="flex items-center gap-1.5 bg-white border border-gray-200 rounded-lg px-2.5 py-1.5 shadow-xs">
             <span className="text-xs text-gray-400 whitespace-nowrap">โปร</span>
             <input
               type="date"
@@ -1186,7 +1233,7 @@ export default function PromotionReportPage() {
                   setDateFrom("");
                   setDateTo("");
                 }}
-                className="text-gray-400 hover:text-gray-600 text-base leading-none ml-1"
+                className="text-gray-400 hover:text-gray-600 text-base leading-none ml-1 cursor-pointer"
               >
                 ×
               </button>
@@ -1194,18 +1241,18 @@ export default function PromotionReportPage() {
           </div>
 
           {/* Status filter */}
-          <div className="flex items-center gap-1 bg-white border border-gray-200 rounded-lg p-1">
+          <div className="flex items-center gap-1 bg-white border border-gray-200 rounded-lg p-1 shadow-xs">
             {(["all", "active", "inactive"] as const).map((f) => (
               <button
                 key={f}
                 onClick={() => setStatusFilter(f)}
-                className={`px-3 py-1 text-xs rounded-md font-medium transition-colors ${
+                className={`px-3 py-1 text-xs rounded-md font-semibold transition-colors cursor-pointer ${
                   statusFilter === f
                     ? f === "active"
-                      ? "bg-green-500 text-white"
+                      ? "bg-green-500 text-white shadow-xs"
                       : f === "inactive"
-                        ? "bg-gray-400 text-white"
-                        : "bg-[#5B8C3E] text-white"
+                        ? "bg-gray-400 text-white shadow-xs"
+                        : "bg-[#5B8C3E] text-white shadow-xs"
                     : "text-gray-500 hover:bg-gray-50"
                 }`}
               >
@@ -1222,7 +1269,7 @@ export default function PromotionReportPage() {
           {editMode && (
             <button
               onClick={addRow}
-              className="ml-auto inline-flex items-center gap-1.5 px-3 py-2 text-sm border border-dashed border-[#5B8C3E] text-[#5B8C3E] rounded-lg hover:bg-green-50 font-medium transition-colors whitespace-nowrap"
+              className="ml-auto inline-flex items-center gap-1.5 px-3 py-2 text-sm border border-dashed border-[#5B8C3E] text-[#5B8C3E] rounded-lg hover:bg-green-50 font-medium transition-colors whitespace-nowrap cursor-pointer"
             >
               <Plus className="w-4 h-4" />
               เพิ่มรายการใหม่
@@ -1237,7 +1284,7 @@ export default function PromotionReportPage() {
                   `${selectedIds.size} รายการที่เลือก`,
                 )
               }
-              className="inline-flex items-center gap-1.5 px-3 py-2 text-sm font-medium rounded-lg bg-red-50 border border-red-200 text-red-600 hover:bg-red-100 transition-colors whitespace-nowrap"
+              className="inline-flex items-center gap-1.5 px-3 py-2 text-sm font-medium rounded-lg bg-red-50 border border-red-200 text-red-600 hover:bg-red-100 transition-colors whitespace-nowrap cursor-pointer"
             >
               <Trash2 className="w-4 h-4" />
               ลบที่เลือก ({selectedIds.size})
@@ -1422,7 +1469,7 @@ export default function PromotionReportPage() {
       </div>
 
       {/* ── Footer note ── */}
-      <div className="px-6 py-3 bg-amber-50 border-t border-amber-100 text-xs text-amber-700 flex items-start gap-2">
+      <div className="p-4 bg-amber-50 border border-amber-100 rounded-xl text-xs text-amber-700 flex items-start gap-2">
         <AlertTriangle className="w-3.5 h-3.5 mt-0.5 shrink-0" />
         <span>
           <strong>การบันทึกจะมีผลทันที</strong> —
