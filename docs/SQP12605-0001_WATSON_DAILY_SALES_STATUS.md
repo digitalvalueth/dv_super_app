@@ -18,9 +18,14 @@
 | `chore(vendor-center)` | commit `brand-context.tsx` + `useActivityLogger.ts` (dependency ของหน้า report — เดิม untracked) |
 | `feat(supervisor-report)` | **D** หน้า `supervisor-sales-report` ใหม่: scope ตามสาขาที่ดูแล (supervisor/manager/admin) + สรุปทีม + ตารางรายสาขา/รายคน + เทียบสาขา + Excel/PDF |
 
+**Unit tests (Vitest) — เพิ่มแล้ว:** ติดตั้ง Vitest (node env) ทั้ง 2 package + แยก pure logic ออกเป็น module สะอาดแล้ว refactor ให้โค้ดจริง import + เขียนเทสต์ครอบ (รัน `npm test`)
+- Mobile: 44 เทสต์ — promo selection (ราคาต่ำสุดชนะ, boundary date, Buy1), duplicate detection, revenue/totals, stripUndefined
+- Web: 89 เทสต์ — sales filter + distinct bill count, aggregate by branch/product/employee + % contribution, previous-period + growth, supervisor branch-scope (supervisor/manager union/admin/employee), promo pricing
+- ✅ รวม **133 เทสต์ผ่าน** · `tsc` สะอาด · `next build` ผ่าน · reviewer ยืนยัน extraction ไม่เปลี่ยนพฤติกรรม
+
 **ยังเหลือ:**
 - validate โปรซ้อนทับช่วงวันที่ในหน้าหลังบ้าน (P2 #8 — promotion-report มี WIP ของคุณค้างอยู่ ยังไม่แตะ)
-- ทดสอบจริงบนอุปกรณ์/เว็บ (repo ไม่มี test suite — verify ด้วย tsc + review เท่านั้น)
+- ทดสอบ **พฤติกรรม end-to-end จริงบนอุปกรณ์/เว็บ** (unit test ครอบ logic แล้ว แต่ยังไม่ได้รันแอปจริงกับข้อมูล Phithan — ต้อง login)
 
 > ⚠️ **หมายเหตุ branch:** ฟีเจอร์นี้ build บน WIP เดิมของคุณใน vendor-center จึงมีการ commit ไฟล์ infra ที่ฟีเจอร์ต้องพึ่ง (`brand-context.tsx`, `useActivityLogger.ts`) และ `layout.tsx` (ซึ่งพ่วง notification bell + ลิงก์ Activity Logs ที่ route ยังไม่ commit → ลิงก์นั้นจะ 404 จนกว่าจะ commit งาน activity-logs) — ตอน merge เข้า `dev` ให้ดูจุดนี้
 
