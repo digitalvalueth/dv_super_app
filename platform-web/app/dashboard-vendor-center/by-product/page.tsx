@@ -4,134 +4,109 @@ import {
   ArrowDown,
   ArrowLeft,
   ArrowUp,
-  Calendar,
   ChevronDown,
   ChevronRight,
+  Download,
+  FileText,
   Image as ImageIcon,
   Search,
 } from "lucide-react";
 import Link from "next/link";
-import { Fragment, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
+import { useBrand } from "../brand-context";
+import { db } from "@/lib/firebase";
+import { collection, getDocs, query, where } from "firebase/firestore";
+import * as XLSX from "xlsx";
+import jsPDF from "jspdf";
+import autoTable from "jspdf-autotable";
+import { toast } from "sonner";
+
+interface DailySaleItem {
+  barcode: string;
+  productDescription: string;
+  price: number;
+  quantity: number;
+  revenue: number;
+  saleType: "normal" | "promotion";
+}
+
+interface DailySale {
+  id: string;
+  companyId: string;
+  branchId: string;
+  branchName: string;
+  employeeId: string;
+  employeeName: string;
+  saleDate: string;
+  items: DailySaleItem[];
+  totalItems: number;
+  totalRevenue: number;
+}
 
 type Product = {
   code: string;
   name: string;
-  cat1: string;
-  cat2: string;
-  cat3: string;
   unitsSold: number;
   revenue: number;
-  revenueLastMonth: number;
-  growthMoM: number;
-  revenueLastYear: number;
-  growthYoY: number;
+  revenuePrev: number;
+  growth: number;
   contribution: number;
-  soh: { store: string; qty: number }[];
+  byStore: { store: string; units: number; revenue: number }[];
 };
 
-const products: Product[] = [
-  {
-    code: "FX-NRS-30",
-    name: "FITT-X Night Repair Serum 30ML",
-    cat1: "Skincare",
-    cat2: "Treatment",
-    cat3: "Serum",
-    unitsSold: 12,
-    revenue: 18600,
-    revenueLastMonth: 16400,
-    growthMoM: 13.4,
-    revenueLastYear: 14200,
-    growthYoY: 31.0,
-    contribution: 26.2,
-    soh: [
-      { store: "Siam Center", qty: 24 },
-      { store: "CentralWorld", qty: 18 },
-      { store: "EmQuartier", qty: 9 },
-    ],
-  },
-  {
-    code: "NM-GC-50",
-    name: "NEST ME Glow Cream 50G",
-    cat1: "Skincare",
-    cat2: "Moisturizer",
-    cat3: "Cream",
-    unitsSold: 8,
-    revenue: 12400,
-    revenueLastMonth: 13100,
-    growthMoM: -5.3,
-    revenueLastYear: 9700,
-    growthYoY: 27.8,
-    contribution: 17.4,
-    soh: [
-      { store: "Siam Center", qty: 14 },
-      { store: "Mega Bangna", qty: 6 },
-    ],
-  },
-  {
-    code: "PN-WT-200",
-    name: "PRIMANEST White Toner 200ML",
-    cat1: "Skincare",
-    cat2: "Cleanser",
-    cat3: "Toner",
-    unitsSold: 7,
-    revenue: 9870,
-    revenueLastMonth: 8800,
-    growthMoM: 12.2,
-    revenueLastYear: 9400,
-    growthYoY: 5.0,
-    contribution: 13.9,
-    soh: [
-      { store: "Siam Center", qty: 30 },
-      { store: "CentralWorld", qty: 22 },
-      { store: "Iconsiam", qty: 11 },
-    ],
-  },
-  {
-    code: "FX-DM-50",
-    name: "FITT-X Daily Moisturizer 50ML",
-    cat1: "Skincare",
-    cat2: "Moisturizer",
-    cat3: "Cream",
-    unitsSold: 6,
-    revenue: 8200,
-    revenueLastMonth: 7900,
-    growthMoM: 3.8,
-    revenueLastYear: 7000,
-    growthYoY: 17.1,
-    contribution: 11.5,
-    soh: [{ store: "Siam Center", qty: 8 }],
-  },
-  {
-    code: "NM-LT-VLV",
-    name: "NEST ME Lip Tint Velvet",
-    cat1: "Makeup",
-    cat2: "Lip",
-    cat3: "Tint",
-    unitsSold: 5,
-    revenue: 6500,
-    revenueLastMonth: 7200,
-    growthMoM: -9.7,
-    revenueLastYear: 6100,
-    growthYoY: 6.6,
-    contribution: 9.1,
-    soh: [
-      { store: "Siam Center", qty: 17 },
-      { store: "Terminal 21", qty: 7 },
-    ],
-  },
-];
-
 const fmt = (n: number) => n.toLocaleString("en-US");
+
 type SortKey =
   | "name"
   | "code"
   | "unitsSold"
   | "revenue"
-  | "revenueLastMonth"
-  | "growthMoM"
-  | "revenueLastYear"
-  | "growthYoY"
+  | "revenuePrev"
+  | "growth"
   | "contribution";
+
+const matchBrand = (name: string, brand: "NEST ME" | "PRIMANEST") => {
+  const norm = (name || "").toLowerCase().replace(/\s+/g, "").trim();
+  if (brand === "NEST ME") {
+    return norm.includes("nestme") || norm.includes("nest me");
+  }
+  return norm.includes("primanest") || norm.includes("prima");
+};
+
+const formatDateToYmd = (d: Date) => {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+};
+
+const formatDateString = (dateStr: string) => {
+  if (!dateStr) return "";
+  const parts = dateStr.split("-");
+  if (parts.length !== 3) return dateStr;
+  const d = new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]));
+  const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+  return `${parts[2]} ${months[d.getMonth()]} ${parts[0]}`;
+};
+
+async function registerThaiFont(doc: jsPDF): Promise<boolean> {
+  try {
+    const response = await fetch("/GoogleSans-VariableFont.ttf");
+    if (!response.ok) return false;
+    const arrayBuffer = await response.arrayBuffer();
+    const bytes = new Uint8Array(arrayBuffer);
+    let binary = "";
+    for (let i = 0; i < bytes.byteLength; i++) {
+      binary += String.fromCharCode(bytes[i]);
+    }
+    const base64 = btoa(binary);
+    doc.addFileToVFS("GoogleSans.ttf", base64);
+    doc.addFont("GoogleSans.ttf", "GoogleSans", "normal");
+    return true;
+  } catch {
+    return false;
+  }
+}
 
 function Header({
   k,
@@ -167,10 +142,187 @@ function Header({
 }
 
 export default function Page() {
+  const { activeBrand } = useBrand();
+  const [rawSales, setRawSales] = useState<DailySale[]>([]);
+  const [loading, setLoading] = useState(true);
+
   const [sortKey, setSortKey] = useState<SortKey>("revenue");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
   const [q, setQ] = useState("");
   const [expanded, setExpanded] = useState<string | null>(null);
+  const [startDate, setStartDate] = useState("");
+  const [endDate, setEndDate] = useState("");
+  const [activePeriodBtn, setActivePeriodBtn] = useState("7 Days");
+
+  useEffect(() => {
+    async function loadData() {
+      setLoading(true);
+      try {
+        const companiesSnap = await getDocs(collection(db, "companies"));
+        const phithan = companiesSnap.docs.find((d) => {
+          const name = (d.data().name || "").toLowerCase();
+          const code = (d.data().code || "").toLowerCase();
+          return name.includes("phithan") || name.includes("พิธาน") || code.includes("phithan");
+        });
+        const targetCompanyId = phithan?.id || "";
+
+        const salesRef = collection(db, "dailySales");
+        const salesQuery = targetCompanyId
+          ? query(salesRef, where("companyId", "==", targetCompanyId))
+          : query(salesRef);
+        const salesSnap = await getDocs(salesQuery);
+        setRawSales(salesSnap.docs.map((d) => ({ id: d.id, ...d.data() })) as DailySale[]);
+      } catch (err) {
+        console.error("Error loading by-product data:", err);
+      } finally {
+        setLoading(false);
+      }
+    }
+    loadData();
+  }, []);
+
+  const brandSales = useMemo(() => {
+    return rawSales
+      .map((sale) => {
+        const brandItems = (sale.items || []).filter((item) =>
+          matchBrand(item.productDescription || "", activeBrand),
+        );
+        if (brandItems.length === 0) return null;
+        return { ...sale, items: brandItems };
+      })
+      .filter(Boolean) as DailySale[];
+  }, [rawSales, activeBrand]);
+
+  const sortedDates = useMemo(() => {
+    const dates = brandSales.map((s) => s.saleDate).filter(Boolean);
+    return Array.from(new Set(dates)).sort((a, b) => b.localeCompare(a));
+  }, [brandSales]);
+
+  const latestDate = sortedDates[0] || "";
+
+  useEffect(() => {
+    if (latestDate) {
+      const parts = latestDate.split("-");
+      const d = new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]) - 6);
+      setStartDate(formatDateToYmd(d));
+      setEndDate(latestDate);
+      setActivePeriodBtn("7 Days");
+    }
+  }, [latestDate]);
+
+  const setPeriodFilter = (p: string) => {
+    if (!latestDate) return;
+    setActivePeriodBtn(p);
+    const parts = latestDate.split("-");
+    const year = Number(parts[0]);
+    const month = Number(parts[1]);
+    const day = Number(parts[2]);
+
+    if (p === "Yesterday") {
+      setStartDate(latestDate);
+      setEndDate(latestDate);
+    } else if (p === "7 Days") {
+      const d = new Date(year, month - 1, day - 6);
+      setStartDate(formatDateToYmd(d));
+      setEndDate(latestDate);
+    } else if (p === "MTD") {
+      setStartDate(`${year}-${String(month).padStart(2, "0")}-01`);
+      setEndDate(latestDate);
+    } else if (p === "Last Month") {
+      let lm = month - 1;
+      let ly = year;
+      if (lm === 0) {
+        lm = 12;
+        ly -= 1;
+      }
+      const firstDay = `${ly}-${String(lm).padStart(2, "0")}-01`;
+      const lastDayDate = new Date(ly, lm, 0);
+      setStartDate(firstDay);
+      setEndDate(formatDateToYmd(lastDayDate));
+    } else if (p === "YTD") {
+      setStartDate(`${year}-01-01`);
+      setEndDate(latestDate);
+    }
+  };
+
+  const prevWindow = useMemo(() => {
+    if (!startDate || !endDate) return { prevStart: "", prevEnd: "" };
+    const s = new Date(startDate + "T00:00:00");
+    const e = new Date(endDate + "T00:00:00");
+    const days = Math.round((e.getTime() - s.getTime()) / 86400000) + 1;
+    const prevEnd = new Date(s);
+    prevEnd.setDate(prevEnd.getDate() - 1);
+    const prevStart = new Date(prevEnd);
+    prevStart.setDate(prevStart.getDate() - (days - 1));
+    return { prevStart: formatDateToYmd(prevStart), prevEnd: formatDateToYmd(prevEnd) };
+  }, [startDate, endDate]);
+
+  const products = useMemo<Product[]>(() => {
+    const inRange = (date: string, s: string, e: string) =>
+      (!s || date >= s) && (!e || date <= e);
+
+    const byProduct = new Map<
+      string,
+      {
+        code: string;
+        name: string;
+        unitsSold: number;
+        revenue: number;
+        revenuePrev: number;
+        byStore: Map<string, { store: string; units: number; revenue: number }>;
+      }
+    >();
+
+    for (const sale of brandSales) {
+      const inCur = inRange(sale.saleDate, startDate, endDate);
+      const inPrev = inRange(sale.saleDate, prevWindow.prevStart, prevWindow.prevEnd);
+      if (!inCur && !inPrev) continue;
+
+      for (const item of sale.items) {
+        const key = item.barcode || item.productDescription || "—";
+        if (!byProduct.has(key)) {
+          byProduct.set(key, {
+            code: item.barcode || "—",
+            name: item.productDescription || "สินค้าไม่ระบุชื่อ",
+            unitsSold: 0,
+            revenue: 0,
+            revenuePrev: 0,
+            byStore: new Map(),
+          });
+        }
+        const entry = byProduct.get(key)!;
+        if (inCur) {
+          entry.unitsSold += item.quantity || 0;
+          entry.revenue += item.revenue || 0;
+          const storeKey = sale.branchName || "ไม่ระบุสาขา";
+          if (!entry.byStore.has(storeKey)) {
+            entry.byStore.set(storeKey, { store: storeKey, units: 0, revenue: 0 });
+          }
+          const st = entry.byStore.get(storeKey)!;
+          st.units += item.quantity || 0;
+          st.revenue += item.revenue || 0;
+        }
+        if (inPrev) {
+          entry.revenuePrev += item.revenue || 0;
+        }
+      }
+    }
+
+    const totalRevenue = Array.from(byProduct.values()).reduce((s, e) => s + e.revenue, 0);
+
+    return Array.from(byProduct.values())
+      .map((e) => ({
+        code: e.code,
+        name: e.name,
+        unitsSold: e.unitsSold,
+        revenue: e.revenue,
+        revenuePrev: e.revenuePrev,
+        growth: e.revenuePrev > 0 ? ((e.revenue - e.revenuePrev) / e.revenuePrev) * 100 : 0,
+        contribution: totalRevenue > 0 ? (e.revenue / totalRevenue) * 100 : 0,
+        byStore: Array.from(e.byStore.values()).sort((a, b) => b.units - a.units),
+      }))
+      .filter((p) => p.revenue > 0 || p.unitsSold > 0);
+  }, [brandSales, startDate, endDate, prevWindow]);
 
   const filtered = useMemo(() => {
     let r = products;
@@ -182,8 +334,8 @@ export default function Page() {
       );
     }
     return [...r].sort((a, b) => {
-      const va = a[sortKey] as any;
-      const vb = b[sortKey] as any;
+      const va = a[sortKey] as string | number;
+      const vb = b[sortKey] as string | number;
       if (typeof va === "number" && typeof vb === "number") {
         return sortDir === "asc" ? va - vb : vb - va;
       }
@@ -191,7 +343,7 @@ export default function Page() {
         ? String(va).localeCompare(String(vb))
         : String(vb).localeCompare(String(va));
     });
-  }, [sortKey, sortDir, q]);
+  }, [products, sortKey, sortDir, q]);
 
   const toggleSort = (k: SortKey) => {
     if (k === sortKey) setSortDir((d) => (d === "asc" ? "desc" : "asc"));
@@ -201,8 +353,127 @@ export default function Page() {
     }
   };
 
+  const totals = filtered.reduce(
+    (acc, p) => ({
+      unitsSold: acc.unitsSold + p.unitsSold,
+      revenue: acc.revenue + p.revenue,
+      revenuePrev: acc.revenuePrev + p.revenuePrev,
+    }),
+    { unitsSold: 0, revenue: 0, revenuePrev: 0 },
+  );
+
+  const periodLabel =
+    startDate && endDate ? `${formatDateString(startDate)} - ${formatDateString(endDate)}` : "";
+
+  const handleExportExcel = () => {
+    if (filtered.length === 0) {
+      toast.error("ไม่มีข้อมูลที่จะส่งออก");
+      return;
+    }
+    const headers = [
+      "#",
+      "Code",
+      "Product",
+      "Units Sold",
+      "Revenue (THB)",
+      "Prev Period (THB)",
+      "% Growth",
+      "% Contribution",
+    ];
+    const body = filtered.map((p, i) => [
+      i + 1,
+      p.code,
+      p.name,
+      p.unitsSold,
+      Math.round(p.revenue),
+      Math.round(p.revenuePrev),
+      `${p.growth >= 0 ? "+" : ""}${p.growth.toFixed(1)}%`,
+      `${p.contribution.toFixed(1)}%`,
+    ]);
+    const ws = XLSX.utils.aoa_to_sheet([
+      [`By Product - ${activeBrand} - ${periodLabel}`],
+      [],
+      headers,
+      ...body,
+    ]);
+    ws["!cols"] = [6, 18, 38, 12, 16, 16, 12, 14].map((w) => ({ wch: w }));
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "By Product");
+    const fileName = `${activeBrand.toLowerCase().replace(/\s+/g, "_")}_by_product_${new Date().toISOString().slice(0, 10)}.xlsx`;
+    XLSX.writeFile(wb, fileName);
+    toast.success("ดาวน์โหลดไฟล์ Excel เรียบร้อยแล้ว");
+  };
+
+  const handleExportPDF = async () => {
+    if (filtered.length === 0) {
+      toast.error("ไม่มีข้อมูลที่จะส่งออก");
+      return;
+    }
+    const doc = new jsPDF();
+    const hasThai = await registerThaiFont(doc);
+    const fontName = hasThai ? "GoogleSans" : "helvetica";
+    const pageWidth = doc.internal.pageSize.getWidth();
+
+    doc.setFont(fontName, "normal");
+    doc.setFontSize(16);
+    doc.text("By Product Sales Report", pageWidth / 2, 18, { align: "center" });
+    doc.setFontSize(10);
+    doc.text(`${activeBrand}  |  ${periodLabel}`, pageWidth / 2, 25, { align: "center" });
+
+    autoTable(doc, {
+      startY: 32,
+      head: [["#", "Code", "Product", "Units", "Revenue", "Prev Period", "% Growth", "% Contrib"]],
+      body: filtered.map((p, i) => [
+        (i + 1).toString(),
+        p.code,
+        p.name,
+        fmt(p.unitsSold),
+        fmt(Math.round(p.revenue)),
+        fmt(Math.round(p.revenuePrev)),
+        `${p.growth >= 0 ? "+" : ""}${p.growth.toFixed(1)}%`,
+        `${p.contribution.toFixed(1)}%`,
+      ]),
+      foot: [
+        [
+          "",
+          "",
+          "TOTAL",
+          fmt(totals.unitsSold),
+          fmt(Math.round(totals.revenue)),
+          fmt(Math.round(totals.revenuePrev)),
+          "",
+          "100.0%",
+        ],
+      ],
+      theme: "striped",
+      styles: { font: fontName, fontSize: 7, cellPadding: 2 },
+      headStyles: { fillColor: [229, 0, 126], font: fontName, fontSize: 7 },
+      footStyles: { fillColor: [252, 231, 243], textColor: [0, 0, 0], font: fontName, fontStyle: "normal" },
+      columnStyles: { 2: { cellWidth: 50 } },
+    });
+
+    const fileName = `${activeBrand.toLowerCase().replace(/\s+/g, "_")}_by_product_${new Date().toISOString().slice(0, 10)}.pdf`;
+    doc.save(fileName);
+    if (!hasThai) {
+      toast.warning("ส่งออก PDF แล้ว (ฟอนต์ไทยไม่พร้อมใช้งาน ข้อความไทยอาจแสดงไม่ถูกต้อง)");
+    } else {
+      toast.success("ดาวน์โหลดไฟล์ PDF เรียบร้อยแล้ว");
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="flex h-[80vh] items-center justify-center bg-gray-50">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-pink-500 mx-auto"></div>
+          <p className="mt-4 text-gray-500 font-medium">กำลังโหลดข้อมูลยอดขายตามสินค้า...</p>
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <div className="p-8 max-w-7xl mx-auto space-y-6">
+    <div className="p-6 md:p-8 w-full space-y-6">
       <div>
         <Link
           href="/dashboard-vendor-center"
@@ -210,9 +481,7 @@ export default function Page() {
         >
           <ArrowLeft className="w-3 h-3" /> Back to Dashboard
         </Link>
-        <h1 className="text-2xl font-bold text-gray-900">
-          Dashboard / By Product
-        </h1>
+        <h1 className="text-2xl font-bold text-gray-900">Dashboard / By Product</h1>
         <div className="text-xs text-gray-500 flex items-center gap-1 mt-1">
           <span>Home</span>
           <ChevronRight className="w-3 h-3" />
@@ -224,27 +493,82 @@ export default function Page() {
         </div>
       </div>
 
-      <div className="bg-white rounded-xl shadow-sm border p-3 flex flex-col md:flex-row gap-3 items-center">
-        <div className="relative flex-1 max-w-md w-full">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-          <input
-            value={q}
-            onChange={(e) => setQ(e.target.value)}
-            placeholder="Search by product name or SKU..."
-            className="w-full pl-9 pr-3 py-2 text-sm border rounded-md focus:outline-none focus:ring-2 focus:ring-pink-500 focus:border-pink-500"
-          />
+      {/* Filters */}
+      <div className="bg-white rounded-xl shadow-sm border p-4 space-y-4">
+        <div className="flex flex-wrap gap-2">
+          {["Yesterday", "7 Days", "MTD", "Last Month", "YTD"].map((p) => (
+            <button
+              key={p}
+              onClick={() => setPeriodFilter(p)}
+              className={`px-4 py-1.5 text-[13px] rounded-full font-semibold transition-colors ${
+                activePeriodBtn === p
+                  ? "bg-[#E5007E] text-white"
+                  : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+              }`}
+            >
+              {p}
+            </button>
+          ))}
         </div>
-        <button className="flex items-center gap-1.5 bg-gray-50 px-3 py-2 rounded-md text-xs text-gray-700 hover:bg-gray-100 border">
-          <Calendar className="w-3.5 h-3.5" />
-          Yesterday
-        </button>
-        <select className="bg-gray-50 px-3 py-2 rounded-md text-xs text-gray-700 hover:bg-gray-100 border">
-          <option>All Categories</option>
-          <option>Skincare</option>
-          <option>Makeup</option>
-        </select>
+        <div className="flex flex-wrap items-end gap-4">
+          <div className="flex items-center gap-2">
+            <label className="text-[13px] font-semibold text-gray-700">Start:</label>
+            <input
+              type="date"
+              value={startDate}
+              onChange={(e) => {
+                setStartDate(e.target.value);
+                setActivePeriodBtn("");
+              }}
+              className="px-3 py-1.5 border rounded-md text-sm focus:outline-none focus:border-pink-500"
+            />
+          </div>
+          <div className="flex items-center gap-2">
+            <label className="text-[13px] font-semibold text-gray-700">End:</label>
+            <input
+              type="date"
+              value={endDate}
+              onChange={(e) => {
+                setEndDate(e.target.value);
+                setActivePeriodBtn("");
+              }}
+              className="px-3 py-1.5 border rounded-md text-sm focus:outline-none focus:border-pink-500"
+            />
+          </div>
+          <div className="relative flex-1 min-w-[200px] max-w-md">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+            <input
+              value={q}
+              onChange={(e) => setQ(e.target.value)}
+              placeholder="Search by product name or SKU..."
+              className="w-full pl-9 pr-3 py-2 text-sm border rounded-md focus:outline-none focus:ring-2 focus:ring-pink-500 focus:border-pink-500"
+            />
+          </div>
+          <div className="flex items-center gap-2 ml-auto">
+            <button
+              onClick={handleExportExcel}
+              className="inline-flex items-center gap-1.5 bg-pink-600 hover:bg-pink-700 text-white px-3 py-2 rounded-lg text-xs font-semibold transition-colors shadow-sm"
+            >
+              <Download className="w-3.5 h-3.5" /> Excel
+            </button>
+            <button
+              onClick={handleExportPDF}
+              className="inline-flex items-center gap-1.5 bg-gray-800 hover:bg-gray-900 text-white px-3 py-2 rounded-lg text-xs font-semibold transition-colors shadow-sm"
+            >
+              <FileText className="w-3.5 h-3.5" /> PDF
+            </button>
+          </div>
+        </div>
+        {periodLabel && (
+          <div className="text-xs text-gray-500">
+            แสดงยอดขายแบรนด์ <span className="font-semibold text-gray-700">{activeBrand}</span> ช่วง{" "}
+            {periodLabel} (เทียบกับช่วงก่อนหน้า {prevWindow.prevStart && formatDateString(prevWindow.prevStart)} -{" "}
+            {prevWindow.prevEnd && formatDateString(prevWindow.prevEnd)})
+          </div>
+        )}
       </div>
 
+      {/* Table */}
       <div className="bg-white rounded-xl shadow-sm border overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
@@ -253,77 +577,25 @@ export default function Page() {
                 <th className="px-4 py-3 text-left w-10"></th>
                 <th className="px-4 py-3 text-left">#</th>
                 <th className="px-4 py-3 text-left">Image</th>
-                <Header
-                  k="code"
-                  label="Code"
-                  sortKey={sortKey}
-                  sortDir={sortDir}
-                  onSort={toggleSort}
-                />
-                <Header
-                  k="name"
-                  label="Product"
-                  sortKey={sortKey}
-                  sortDir={sortDir}
-                  onSort={toggleSort}
-                />
-                <th className="px-4 py-3 text-left">Cat 1</th>
-                <th className="px-4 py-3 text-left">Cat 2</th>
-                <th className="px-4 py-3 text-left">Cat 3</th>
-                <Header
-                  k="unitsSold"
-                  label="Unit Sold"
-                  align="right"
-                  sortKey={sortKey}
-                  sortDir={sortDir}
-                  onSort={toggleSort}
-                />
-                <Header
-                  k="revenue"
-                  label="Revenue"
-                  align="right"
-                  sortKey={sortKey}
-                  sortDir={sortDir}
-                  onSort={toggleSort}
-                />
-                <Header
-                  k="growthMoM"
-                  label="MoM"
-                  align="right"
-                  sortKey={sortKey}
-                  sortDir={sortDir}
-                  onSort={toggleSort}
-                />
-                <Header
-                  k="growthYoY"
-                  label="YoY"
-                  align="right"
-                  sortKey={sortKey}
-                  sortDir={sortDir}
-                  onSort={toggleSort}
-                />
-                <Header
-                  k="contribution"
-                  label="%Contrib"
-                  align="right"
-                  sortKey={sortKey}
-                  sortDir={sortDir}
-                  onSort={toggleSort}
-                />
+                <Header k="code" label="Code" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />
+                <Header k="name" label="Product" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />
+                <Header k="unitsSold" label="Unit Sold" align="right" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />
+                <Header k="revenue" label="Revenue" align="right" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />
+                <Header k="revenuePrev" label="Prev Period" align="right" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />
+                <Header k="growth" label="% Growth" align="right" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />
+                <Header k="contribution" label="%Contrib" align="right" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />
               </tr>
             </thead>
             <tbody className="divide-y">
               {filtered.map((p, i) => (
-                <Fragment key={p.code}>
+                <Fragment key={p.code + p.name}>
                   <tr className="hover:bg-gray-50">
                     <td className="px-4 py-3">
                       <button
-                        onClick={() =>
-                          setExpanded((e) => (e === p.code ? null : p.code))
-                        }
+                        onClick={() => setExpanded((e) => (e === p.code + p.name ? null : p.code + p.name))}
                         className="text-gray-400 hover:text-pink-600"
                       >
-                        {expanded === p.code ? (
+                        {expanded === p.code + p.name ? (
                           <ChevronDown className="w-4 h-4" />
                         ) : (
                           <ChevronRight className="w-4 h-4" />
@@ -336,44 +608,22 @@ export default function Page() {
                         <ImageIcon className="w-4 h-4" />
                       </div>
                     </td>
-                    <td className="px-4 py-3 text-gray-500 font-mono text-xs">
-                      {p.code}
-                    </td>
-                    <td className="px-4 py-3 font-medium text-gray-900">
-                      {p.name}
-                    </td>
-                    <td className="px-4 py-3 text-gray-600">{p.cat1}</td>
-                    <td className="px-4 py-3 text-gray-600">{p.cat2}</td>
-                    <td className="px-4 py-3 text-gray-600">{p.cat3}</td>
-                    <td className="px-4 py-3 text-right text-gray-700">
-                      {fmt(p.unitsSold)}
-                    </td>
-                    <td className="px-4 py-3 text-right font-semibold text-gray-900">
-                      ฿{fmt(p.revenue)}
-                    </td>
+                    <td className="px-4 py-3 text-gray-500 font-mono text-xs">{p.code}</td>
+                    <td className="px-4 py-3 font-medium text-gray-900">{p.name}</td>
+                    <td className="px-4 py-3 text-right text-gray-700">{fmt(p.unitsSold)}</td>
+                    <td className="px-4 py-3 text-right font-semibold text-gray-900">฿{fmt(Math.round(p.revenue))}</td>
+                    <td className="px-4 py-3 text-right text-gray-600">฿{fmt(Math.round(p.revenuePrev))}</td>
                     <td
                       className={`px-4 py-3 text-right font-semibold ${
-                        p.growthMoM >= 0 ? "text-green-600" : "text-red-500"
+                        p.revenuePrev === 0 ? "text-gray-400" : p.growth >= 0 ? "text-green-600" : "text-red-500"
                       }`}
                     >
-                      {p.growthMoM >= 0 ? "+" : ""}
-                      {p.growthMoM.toFixed(1)}%
-                    </td>
-                    <td
-                      className={`px-4 py-3 text-right font-semibold ${
-                        p.growthYoY >= 0 ? "text-green-600" : "text-red-500"
-                      }`}
-                    >
-                      {p.growthYoY >= 0 ? "+" : ""}
-                      {p.growthYoY.toFixed(1)}%
+                      {p.revenuePrev === 0 ? "—" : `${p.growth >= 0 ? "+" : ""}${p.growth.toFixed(1)}%`}
                     </td>
                     <td className="px-4 py-3 text-right">
                       <div className="inline-flex items-center gap-2">
                         <div className="w-12 bg-gray-100 rounded-full h-1.5 overflow-hidden">
-                          <div
-                            className="h-full bg-pink-500"
-                            style={{ width: `${p.contribution}%` }}
-                          />
+                          <div className="h-full bg-pink-500" style={{ width: `${p.contribution}%` }} />
                         </div>
                         <span className="text-xs font-medium text-gray-700 w-10 text-right">
                           {p.contribution.toFixed(1)}%
@@ -381,33 +631,57 @@ export default function Page() {
                       </div>
                     </td>
                   </tr>
-                  {expanded === p.code && (
+                  {expanded === p.code + p.name && (
                     <tr className="bg-pink-50/50">
-                      <td colSpan={13} className="px-12 py-4">
+                      <td colSpan={10} className="px-12 py-4">
                         <div className="text-xs font-bold text-pink-600 uppercase tracking-wider mb-2">
-                          Stock On Hand by Store
+                          Sales by Store
                         </div>
-                        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                          {p.soh.map((s) => (
-                            <div
-                              key={s.store}
-                              className="bg-white border rounded-md px-3 py-2 flex justify-between"
-                            >
-                              <span className="text-xs text-gray-600">
-                                {s.store}
-                              </span>
-                              <span className="text-sm font-bold text-gray-900">
-                                {s.qty}
-                              </span>
-                            </div>
-                          ))}
-                        </div>
+                        {p.byStore.length === 0 ? (
+                          <div className="text-xs text-gray-400">ไม่มียอดขายตามสาขาในช่วงนี้</div>
+                        ) : (
+                          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                            {p.byStore.map((s) => (
+                              <div
+                                key={s.store}
+                                className="bg-white border rounded-md px-3 py-2 flex justify-between items-center"
+                              >
+                                <span className="text-xs text-gray-600">{s.store}</span>
+                                <span className="text-xs text-gray-500">
+                                  {fmt(s.units)} ชิ้น /{" "}
+                                  <span className="font-bold text-gray-900">฿{fmt(Math.round(s.revenue))}</span>
+                                </span>
+                              </div>
+                            ))}
+                          </div>
+                        )}
                       </td>
                     </tr>
                   )}
                 </Fragment>
               ))}
+              {filtered.length === 0 && (
+                <tr>
+                  <td colSpan={10} className="px-4 py-12 text-center text-gray-400 font-medium">
+                    ไม่พบข้อมูลยอดขายในช่วงที่กำหนด
+                  </td>
+                </tr>
+              )}
             </tbody>
+            {filtered.length > 0 && (
+              <tfoot className="bg-pink-50 font-bold text-gray-900">
+                <tr>
+                  <td colSpan={5} className="px-4 py-3 text-right">
+                    TOTAL
+                  </td>
+                  <td className="px-4 py-3 text-right">{fmt(totals.unitsSold)}</td>
+                  <td className="px-4 py-3 text-right">฿{fmt(Math.round(totals.revenue))}</td>
+                  <td className="px-4 py-3 text-right">฿{fmt(Math.round(totals.revenuePrev))}</td>
+                  <td className="px-4 py-3 text-right text-gray-500">—</td>
+                  <td className="px-4 py-3 text-right">100.0%</td>
+                </tr>
+              </tfoot>
+            )}
           </table>
         </div>
       </div>
