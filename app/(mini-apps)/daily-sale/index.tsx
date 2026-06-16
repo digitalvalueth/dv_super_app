@@ -119,20 +119,26 @@ export default function DailySaleDashboard() {
   // you scroll, while the compact top bar stays.
   const scrollY = useSharedValue(0);
   const lastY = useSharedValue(0);
-  // 0 = bottom bar shown, 1 = hidden. Driven by scroll DIRECTION (Facebook-style).
-  const barHidden = useSharedValue(0);
-  const barH = useSharedValue(120);
+  // 0 = full pill, 1 = shrunk compact pill. Instagram-style: it SHRINKS on
+  // scroll-down and expands back on scroll-up — it never fully disappears.
+  const barShrunk = useSharedValue(0);
   const onScroll = useAnimatedScrollHandler((e) => {
     const y = e.contentOffset.y;
     scrollY.value = y;
     const dy = y - lastY.value;
-    if (y <= 0) barHidden.value = withTiming(0, { duration: 180 });
-    else if (dy > 3) barHidden.value = withTiming(1, { duration: 220 });
-    else if (dy < -3) barHidden.value = withTiming(0, { duration: 220 });
+    if (y <= 0) barShrunk.value = withTiming(0, { duration: 200 });
+    else if (dy > 3) barShrunk.value = withTiming(1, { duration: 220 });
+    else if (dy < -3) barShrunk.value = withTiming(0, { duration: 220 });
     lastY.value = y;
   });
   const barAnim = useAnimatedStyle(() => ({
-    transform: [{ translateY: barHidden.value * (barH.value + 70) }],
+    opacity: interpolate(barShrunk.value, [0, 1], [1, 0.97], Extrapolation.CLAMP),
+    transform: [
+      { scale: interpolate(barShrunk.value, [0, 1], [1, 0.82], Extrapolation.CLAMP) },
+      {
+        translateY: interpolate(barShrunk.value, [0, 1], [0, 8], Extrapolation.CLAMP),
+      },
+    ],
   }));
   const todayAnim = useAnimatedStyle(() => ({
     opacity: interpolate(scrollY.value, [0, 95], [1, 0], Extrapolation.CLAMP),
@@ -360,11 +366,8 @@ export default function DailySaleDashboard() {
 
       </Animated.ScrollView>
 
-      {/* ── Floating glass bottom bar (Instagram-style) ── */}
+      {/* ── Floating glass bottom bar (Instagram-style: shrinks on scroll) ── */}
       <Animated.View
-        onLayout={(e) => {
-          barH.value = e.nativeEvent.layout.height;
-        }}
         style={[styles.bottomWrap, { bottom: insets.bottom + 8 }, barAnim]}
       >
         <BlurView
