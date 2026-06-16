@@ -170,6 +170,7 @@ export default function DailySaleDashboard() {
         </SafeAreaView>
       </LinearGradient>
 
+      <View style={{ flex: 1 }}>
       <Animated.ScrollView
         style={{ flex: 1 }}
         showsVerticalScrollIndicator={false}
@@ -340,6 +341,18 @@ export default function DailySaleDashboard() {
         </Animated.View>
 
       </Animated.ScrollView>
+        {/* content edge-fade into the top / bottom bars (Spotify-style) */}
+        <LinearGradient
+          pointerEvents="none"
+          colors={[colors.background, "transparent"] as const}
+          style={styles.fadeTop}
+        />
+        <LinearGradient
+          pointerEvents="none"
+          colors={["transparent", colors.background] as const}
+          style={styles.fadeBottom}
+        />
+      </View>
 
       {/* ── Fixed bottom bar ── */}
       <View
@@ -475,6 +488,8 @@ function Legend({
 
 const styles = StyleSheet.create({
   center: { flex: 1, alignItems: "center", justifyContent: "center" },
+  fadeTop: { position: "absolute", top: 0, left: 0, right: 0, height: 26 },
+  fadeBottom: { position: "absolute", bottom: 0, left: 0, right: 0, height: 30 },
   topBar: {
     paddingHorizontal: 18,
     paddingBottom: 12,
