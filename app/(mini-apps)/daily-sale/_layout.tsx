@@ -15,6 +15,7 @@ export default function DailySaleLayout() {
     >
       <Stack.Screen name="index" options={{ headerShown: false }} />
       <Stack.Screen name="record" options={{ title: "บันทึกยอดขาย" }} />
+      <Stack.Screen name="dashboard" options={{ headerShown: false }} />
     </Stack>
   );
 }

@@ -248,6 +248,20 @@ export default function DailySaleIndex() {
           </Text>
         </View>
         <TouchableOpacity
+          onPress={() => router.push("/(mini-apps)/daily-sale/dashboard")}
+          style={{
+            width: 38,
+            height: 38,
+            borderRadius: 19,
+            alignItems: "center",
+            justifyContent: "center",
+            backgroundColor: "#F59E0B18",
+            marginRight: 8,
+          }}
+        >
+          <Ionicons name="stats-chart" size={18} color="#D97706" />
+        </TouchableOpacity>
+        <TouchableOpacity
           onPress={() => router.push("/(mini-apps)/daily-sale/record")}
           style={{
             backgroundColor: "#F59E0B",
