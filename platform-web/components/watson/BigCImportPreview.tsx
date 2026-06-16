@@ -47,11 +47,14 @@ export interface BigCImportPreviewProps {
   shop?: string;
   /** Called by a parent close control (renders as a modal/panel). */
   onClose?: () => void;
+  /** Called after a successful save so the parent can refresh its list. */
+  onSaved?: () => void;
 }
 
 export default function BigCImportPreview({
   shop = "BigC",
   onClose,
+  onSaved,
 }: BigCImportPreviewProps) {
   const fileRef = useRef<HTMLInputElement>(null);
   const [fileName, setFileName] = useState<string>("");
@@ -60,17 +63,14 @@ export default function BigCImportPreview({
   const [result, setResult] = useState<PromoPreview | null>(null);
   const [saving, setSaving] = useState(false);
   const [saveMsg, setSaveMsg] = useState<string>("");
+  const [confirmOpen, setConfirmOpen] = useState(false);
 
   /** Saving is wired for Watson (writes the shared promotion store). */
   const canSave = !!result && result.items.length > 0 && shop === "Watson";
 
-  const handleSave = useCallback(async () => {
+  const doSave = useCallback(async () => {
     if (!result) return;
-    const ok = window.confirm(
-      `บันทึกโปรโมชั่น ${result.items.length} รายการของร้าน ${shop} เข้าระบบ?\n` +
-        "รายการที่ barcode + ช่วงเวลาตรงกับของเดิมจะถูกอัปเดต ส่วนช่วงเวลาใหม่จะเพิ่มเข้าไป",
-    );
-    if (!ok) return;
+    setConfirmOpen(false);
     setSaving(true);
     setSaveMsg("");
     setError("");
@@ -79,6 +79,7 @@ export default function BigCImportPreview({
       setSaveMsg(
         `บันทึกสำเร็จ — เพิ่มใหม่ ${r.added} รายการ, อัปเดต ${r.updated} รายการ (รวมในระบบ ${r.total})`,
       );
+      onSaved?.(); // let the parent refresh its list — no manual reload needed
     } catch (err) {
       setError(
         err instanceof Error ? err.message : "บันทึกไม่สำเร็จ — กรุณาลองใหม่",
@@ -86,7 +87,7 @@ export default function BigCImportPreview({
     } finally {
       setSaving(false);
     }
-  }, [result, shop]);
+  }, [result, shop, onSaved]);
 
   const handleSelect = useCallback(
     async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -332,7 +333,7 @@ export default function BigCImportPreview({
             )}
           </div>
           <button
-            onClick={handleSave}
+            onClick={() => setConfirmOpen(true)}
             disabled={!canSave || saving}
             title={
               shop === "Watson"
@@ -354,6 +355,45 @@ export default function BigCImportPreview({
           </button>
         </div>
       </div>
+
+      {confirmOpen && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-4">
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-md p-5">
+            <div className="flex items-center gap-2 mb-2">
+              <AlertTriangle className="w-5 h-5 text-amber-500" />
+              <h3 className="text-base font-bold text-gray-900">
+                ยืนยันบันทึกเข้าระบบ
+              </h3>
+            </div>
+            <p className="text-sm text-gray-600">
+              บันทึกโปรโมชั่น <b>{result?.items.length ?? 0}</b> รายการของร้าน{" "}
+              <b>{shop}</b> เข้าระบบ?
+            </p>
+            <ul className="mt-2 text-sm text-gray-500 list-disc list-inside space-y-0.5">
+              <li>
+                barcode + ช่วงเวลา <b>ตรงกับของเดิม</b> → อัปเดตทับ
+              </li>
+              <li>
+                ช่วงเวลา <b>ใหม่</b> → เพิ่มรายการใหม่ (ของเดิมไม่ถูกลบ)
+              </li>
+            </ul>
+            <div className="flex items-center justify-end gap-2 mt-5">
+              <button
+                onClick={() => setConfirmOpen(false)}
+                className="px-3 py-2 text-sm rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-50"
+              >
+                ยกเลิก
+              </button>
+              <button
+                onClick={doSave}
+                className="px-3 py-2 text-sm rounded-lg bg-emerald-600 text-white hover:bg-emerald-700"
+              >
+                ยืนยันบันทึก
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
