@@ -10,7 +10,14 @@ import {
   type PromoPreview,
   type Shop,
 } from "@/lib/watson/promo-import";
-import { AlertTriangle, FileSpreadsheet, Loader2, X } from "lucide-react";
+import { saveImportedPromotions } from "@/lib/watson/promo-save";
+import {
+  AlertTriangle,
+  CheckCircle,
+  FileSpreadsheet,
+  Loader2,
+  X,
+} from "lucide-react";
 import { useCallback, useRef, useState } from "react";
 
 const fmtDate = (d: Date | null): string => {
@@ -51,6 +58,35 @@ export default function BigCImportPreview({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string>("");
   const [result, setResult] = useState<PromoPreview | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [saveMsg, setSaveMsg] = useState<string>("");
+
+  /** Saving is wired for Watson (writes the shared promotion store). */
+  const canSave = !!result && result.items.length > 0 && shop === "Watson";
+
+  const handleSave = useCallback(async () => {
+    if (!result) return;
+    const ok = window.confirm(
+      `บันทึกโปรโมชั่น ${result.items.length} รายการของร้าน ${shop} เข้าระบบ?\n` +
+        "รายการที่ barcode + ช่วงเวลาตรงกับของเดิมจะถูกอัปเดต ส่วนช่วงเวลาใหม่จะเพิ่มเข้าไป",
+    );
+    if (!ok) return;
+    setSaving(true);
+    setSaveMsg("");
+    setError("");
+    try {
+      const r = await saveImportedPromotions(shop as Shop, result.items);
+      setSaveMsg(
+        `บันทึกสำเร็จ — เพิ่มใหม่ ${r.added} รายการ, อัปเดต ${r.updated} รายการ (รวมในระบบ ${r.total})`,
+      );
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : "บันทึกไม่สำเร็จ — กรุณาลองใหม่",
+      );
+    } finally {
+      setSaving(false);
+    }
+  }, [result, shop]);
 
   const handleSelect = useCallback(
     async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -62,6 +98,7 @@ export default function BigCImportPreview({
       setFileName(file.name);
       setError("");
       setResult(null);
+      setSaveMsg("");
       setLoading(true);
       try {
         const res = await parsePromoForShop(shop as Shop, file);
@@ -107,9 +144,11 @@ export default function BigCImportPreview({
           )}
         </div>
 
-        {/* Preview-only banner */}
+        {/* Banner */}
         <div className="mx-5 mt-4 rounded-lg bg-blue-50 border border-blue-200 px-3 py-2 text-sm text-blue-800">
-          🔍 Preview เท่านั้น — ยังไม่บันทึกลงระบบ
+          {shop === "Watson"
+            ? "🔍 ตรวจสอบรายการก่อน แล้วกด “บันทึกเข้าระบบ” — barcode + ช่วงเวลาตรงกับของเดิมจะอัปเดต, ช่วงเวลาใหม่จะเพิ่มเข้าไป"
+            : "🔍 Preview เท่านั้น — ยังไม่รองรับการบันทึกของร้านนี้"}
         </div>
 
         {/* File input */}
@@ -283,13 +322,35 @@ export default function BigCImportPreview({
         </div>
 
         {/* Footer */}
-        <div className="flex items-center justify-end gap-2 px-5 py-3 border-t border-gray-100">
+        <div className="flex items-center justify-between gap-2 px-5 py-3 border-t border-gray-100">
+          <div className="text-sm">
+            {saveMsg && (
+              <span className="inline-flex items-center gap-1.5 text-emerald-700">
+                <CheckCircle className="w-4 h-4" />
+                {saveMsg}
+              </span>
+            )}
+          </div>
           <button
-            disabled
-            title="ยังไม่เปิดใช้งานในรอบนี้"
-            className="inline-flex items-center gap-1.5 px-3 py-2 text-sm rounded-lg bg-gray-100 text-gray-400 cursor-not-allowed"
+            onClick={handleSave}
+            disabled={!canSave || saving}
+            title={
+              shop === "Watson"
+                ? "บันทึก/อัปเดตเข้าระบบ"
+                : `ยังไม่รองรับการบันทึกของร้าน ${shop}`
+            }
+            className="inline-flex items-center gap-1.5 px-3 py-2 text-sm rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 disabled:bg-gray-200 disabled:text-gray-400 disabled:cursor-not-allowed"
           >
-            บันทึกเข้าระบบ (เร็ว ๆ นี้)
+            {saving ? (
+              <>
+                <Loader2 className="w-4 h-4 animate-spin" />
+                กำลังบันทึก…
+              </>
+            ) : shop === "Watson" ? (
+              "บันทึกเข้าระบบ"
+            ) : (
+              "บันทึกเข้าระบบ (เร็ว ๆ นี้)"
+            )}
           </button>
         </div>
       </div>
