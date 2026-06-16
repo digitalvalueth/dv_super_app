@@ -22,19 +22,6 @@ import {
 } from "lucide-react";
 import { useCallback, useRef, useState } from "react";
 
-/** Promotion mechanics offered in the Remark dropdown (from the Watson form). */
-const REMARK_OPTIONS = [
-  "SAVE",
-  "Buy 1",
-  "Buy1get1",
-  "Save 50%",
-  "Save 30% for Elite",
-  "Save 50%&30% for Member",
-  "Bonus point 500",
-  "Bonus point 1000",
-  "Redemption",
-];
-
 const fmtDate = (d: Date | null): string => {
   if (!d) return "—";
   const y = d.getUTCFullYear();
@@ -81,6 +68,8 @@ export default function BigCImportPreview({
   const [confirmOpen, setConfirmOpen] = useState(false);
   /** promoKey set of items already in the store — to flag new vs duplicate. */
   const [existingKeys, setExistingKeys] = useState<Set<string>>(new Set());
+  /** Distinct remarks already used in the store — seeds the remark suggestions. */
+  const [existingRemarks, setExistingRemarks] = useState<string[]>([]);
   /** Per-row remark overrides (rowIndex → remark). */
   const [editedRemarks, setEditedRemarks] = useState<Record<number, string>>({});
 
@@ -128,15 +117,20 @@ export default function BigCImportPreview({
       setSaveMsg("");
       setEditedRemarks({});
       setExistingKeys(new Set());
+      setExistingRemarks([]);
       setLoading(true);
       try {
         const res = await parsePromoForShop(shop as Shop, file);
         setResult(res);
-        // Flag new vs duplicate against what's already stored (Watson).
+        // Flag new vs duplicate against what's already stored (Watson), and
+        // collect the remarks already in use to seed the suggestions.
         if (shop === "Watson") {
           try {
             const existing = await getPromotionData();
             setExistingKeys(new Set(existing.map((it) => promoKey(it))));
+            setExistingRemarks(
+              existing.map((it) => (it.remark ?? "").trim()).filter(Boolean),
+            );
           } catch {
             // classification is best-effort; ignore load errors
           }
@@ -165,6 +159,21 @@ export default function BigCImportPreview({
   const dupCount = items.filter((_, i) => isDup(i)).length;
   const newCount = items.length - dupCount;
   const emptyRemarkCount = items.filter((_, i) => !remarkOf(i).trim()).length;
+
+  // Remark suggestions: distinct, derived from the remarks already in the store
+  // plus the remarks in the imported file (and any the user typed) — no
+  // hardcoded list, so it scales with however many mechanics exist.
+  const remarkOptions = Array.from(
+    new Set(
+      [
+        ...existingRemarks,
+        ...items.map((it) => it.remark ?? ""),
+        ...Object.values(editedRemarks),
+      ]
+        .map((r) => r.trim())
+        .filter(Boolean),
+    ),
+  ).sort((a, b) => a.localeCompare(b));
 
   const setRemark = (i: number, v: string) =>
     setEditedRemarks((prev) => ({ ...prev, [i]: v }));
@@ -432,7 +441,7 @@ export default function BigCImportPreview({
                   </tbody>
                 </table>
                 <datalist id="promo-remark-options">
-                  {REMARK_OPTIONS.map((o) => (
+                  {remarkOptions.map((o) => (
                     <option key={o} value={o} />
                   ))}
                 </datalist>
