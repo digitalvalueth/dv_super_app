@@ -6,24 +6,28 @@ import { useAuthStore } from "@/stores/auth.store";
 import { useTheme } from "@/stores/theme.store";
 import { DailySale } from "@/types";
 import { Ionicons } from "@expo/vector-icons";
+import { LinearGradient } from "expo-linear-gradient";
 import { router, useFocusEffect } from "expo-router";
 import { useCallback, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
   FlatList,
+  Pressable,
   RefreshControl,
+  StyleSheet,
   Text,
-  TouchableOpacity,
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+
+const HERO = ["#F59E0B", "#FB923C", "#FB7185"] as const;
+const baht = (n: number) => `฿${Math.round(n).toLocaleString("th-TH")}`;
 
 const formatDate = (d: string) => {
   const [y, m, day] = d.split("-");
   return `${day}/${m}/${y}`;
 };
-
 const getMonthRange = () => {
   const now = new Date();
   const y = now.getFullYear();
@@ -34,7 +38,7 @@ const getMonthRange = () => {
   return { start, end };
 };
 
-export default function DailySaleIndex() {
+export default function DailySaleHistory() {
   const { colors } = useTheme();
   const user = useAuthStore((state) => state.user);
   const [sales, setSales] = useState<DailySale[]>([]);
@@ -45,8 +49,7 @@ export default function DailySaleIndex() {
     if (!user?.uid) return;
     try {
       const { start, end } = getMonthRange();
-      const data = await getDailySalesByEmployee(user.uid, start, end);
-      setSales(data);
+      setSales(await getDailySalesByEmployee(user.uid, start, end));
     } catch (e) {
       console.error("Error loading daily sales:", e);
     } finally {
@@ -57,22 +60,9 @@ export default function DailySaleIndex() {
 
   useFocusEffect(
     useCallback(() => {
-      setLoading(true);
       load();
     }, [load]),
   );
-
-  const handleRefresh = () => {
-    setRefreshing(true);
-    load();
-  };
-
-  const handleEdit = (item: DailySale) => {
-    router.push({
-      pathname: "/(mini-apps)/daily-sale/record",
-      params: { id: item.id },
-    });
-  };
 
   const handleDelete = (item: DailySale) => {
     Alert.alert(
@@ -100,253 +90,161 @@ export default function DailySaleIndex() {
   const totalItems = sales.reduce((sum, s) => sum + s.totalItems, 0);
   const totalRevenue = sales.reduce((sum, s) => sum + s.totalRevenue, 0);
 
-  const renderItem = ({ item }: { item: DailySale }) => (
-    <View
-      style={{
-        backgroundColor: colors.card,
-        borderRadius: 12,
-        padding: 14,
-        marginBottom: 10,
-        borderWidth: 1,
-        borderColor: colors.border,
-      }}
-    >
+  const renderItem = ({ item }: { item: DailySale }) => {
+    const promo = item.saleType === "promotion";
+    return (
       <View
-        style={{
-          flexDirection: "row",
-          justifyContent: "space-between",
-          marginBottom: 6,
-        }}
+        style={[
+          styles.card,
+          { backgroundColor: colors.card, borderColor: colors.border },
+        ]}
       >
-        <Text style={{ fontWeight: "700", fontSize: 15, color: colors.text }}>
-          {formatDate(item.saleDate)}
-        </Text>
-        <View
-          style={{
-            backgroundColor:
-              item.saleType === "promotion" ? "#F59E0B22" : "#10B98122",
-            borderRadius: 6,
-            paddingHorizontal: 8,
-            paddingVertical: 2,
-          }}
-        >
-          <Text
-            style={{
-              fontSize: 11,
-              fontWeight: "600",
-              color: item.saleType === "promotion" ? "#D97706" : "#059669",
-            }}
+        <View style={styles.cardHead}>
+          <View style={styles.dateRow}>
+            <View style={styles.dateIcon}>
+              <Ionicons name="calendar" size={16} color={HERO[0]} />
+            </View>
+            <Text style={[styles.date, { color: colors.text }]}>
+              {formatDate(item.saleDate)}
+            </Text>
+          </View>
+          <View
+            style={[
+              styles.badge,
+              { backgroundColor: promo ? "#F59E0B22" : "#10B98122" },
+            ]}
           >
-            {item.saleType === "promotion" ? "โปรโมชั่น" : "ปกติ"}
-          </Text>
+            <Text
+              style={[styles.badgeText, { color: promo ? "#D97706" : "#059669" }]}
+            >
+              {promo ? "โปรโมชั่น" : "ปกติ"}
+            </Text>
+          </View>
+        </View>
+
+        <View style={styles.metrics}>
+          <View>
+            <Text style={[styles.metricLabel, { color: colors.textSecondary }]}>
+              ยอดขาย
+            </Text>
+            <Text style={[styles.metricValue, { color: HERO[0] }]}>
+              {baht(item.totalRevenue)}
+            </Text>
+          </View>
+          <View>
+            <Text style={[styles.metricLabel, { color: colors.textSecondary }]}>
+              จำนวน
+            </Text>
+            <Text style={[styles.metricValue, { color: colors.text }]}>
+              {item.totalItems} ชิ้น
+            </Text>
+          </View>
+          {item.branchName ? (
+            <View style={{ flex: 1, alignItems: "flex-end" }}>
+              <Text
+                style={[styles.metricLabel, { color: colors.textSecondary }]}
+              >
+                สาขา
+              </Text>
+              <Text
+                numberOfLines={1}
+                style={[styles.branch, { color: colors.textSecondary }]}
+              >
+                {item.branchName}
+              </Text>
+            </View>
+          ) : null}
+        </View>
+
+        <View style={[styles.actions, { borderTopColor: colors.border }]}>
+          <Pressable
+            onPress={() =>
+              router.push({
+                pathname: "/(mini-apps)/daily-sale/record",
+                params: { id: item.id },
+              })
+            }
+            style={styles.actionBtn}
+          >
+            <Ionicons name="create-outline" size={16} color={HERO[0]} />
+            <Text style={[styles.actionText, { color: HERO[0] }]}>แก้ไข</Text>
+          </Pressable>
+          <Pressable onPress={() => handleDelete(item)} style={styles.actionBtn}>
+            <Ionicons name="trash-outline" size={16} color="#EF4444" />
+            <Text style={[styles.actionText, { color: "#EF4444" }]}>ลบ</Text>
+          </Pressable>
         </View>
       </View>
-      <View style={{ flexDirection: "row", gap: 20 }}>
-        <Text style={{ fontSize: 13, color: colors.textSecondary }}>
-          สินค้า:{" "}
-          <Text style={{ color: colors.text, fontWeight: "600" }}>
-            {item.totalItems} ชิ้น
-          </Text>
-        </Text>
-        <Text style={{ fontSize: 13, color: colors.textSecondary }}>
-          ยอดขาย:{" "}
-          <Text style={{ color: "#2563EB", fontWeight: "600" }}>
-            ฿
-            {item.totalRevenue.toLocaleString("th-TH", {
-              minimumFractionDigits: 2,
-            })}
-          </Text>
-        </Text>
-      </View>
-      {item.branchName ? (
-        <Text
-          style={{ fontSize: 11, color: colors.textSecondary, marginTop: 4 }}
-        >
-          {item.branchName}
-        </Text>
-      ) : null}
-
-      {/* Actions */}
-      <View
-        style={{
-          flexDirection: "row",
-          justifyContent: "flex-end",
-          gap: 8,
-          marginTop: 10,
-        }}
-      >
-        <TouchableOpacity
-          onPress={() => handleEdit(item)}
-          style={{
-            flexDirection: "row",
-            alignItems: "center",
-            gap: 4,
-            paddingHorizontal: 12,
-            paddingVertical: 6,
-            borderRadius: 8,
-            borderWidth: 1,
-            borderColor: colors.border,
-          }}
-        >
-          <Ionicons name="create-outline" size={16} color="#2563EB" />
-          <Text style={{ fontSize: 12, color: "#2563EB", fontWeight: "600" }}>
-            แก้ไข
-          </Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          onPress={() => handleDelete(item)}
-          style={{
-            flexDirection: "row",
-            alignItems: "center",
-            gap: 4,
-            paddingHorizontal: 12,
-            paddingVertical: 6,
-            borderRadius: 8,
-            borderWidth: 1,
-            borderColor: "#FECACA",
-            backgroundColor: "#FEF2F2",
-          }}
-        >
-          <Ionicons name="trash-outline" size={16} color="#EF4444" />
-          <Text style={{ fontSize: 12, color: "#EF4444", fontWeight: "600" }}>
-            ลบ
-          </Text>
-        </TouchableOpacity>
-      </View>
-    </View>
-  );
+    );
+  };
 
   return (
-    <SafeAreaView
-      style={{ flex: 1, backgroundColor: colors.background }}
-      edges={["top", "left", "right"]}
-    >
-      {/* Header */}
-      <View
-        style={{
-          flexDirection: "row",
-          alignItems: "center",
-          paddingHorizontal: 16,
-          paddingVertical: 12,
-          backgroundColor: colors.card,
-          borderBottomWidth: 1,
-          borderBottomColor: colors.border,
-        }}
+    <View style={{ flex: 1, backgroundColor: colors.background }}>
+      {/* ── Fixed top bar ── */}
+      <LinearGradient
+        colors={HERO}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 0 }}
+        style={styles.topBar}
       >
-        <TouchableOpacity
-          onPress={() => router.back()}
-          style={{ marginRight: 12 }}
-        >
-          <Ionicons name="arrow-back" size={24} color={colors.text} />
-        </TouchableOpacity>
-        <View style={{ flex: 1 }}>
-          <Text style={{ fontSize: 18, fontWeight: "700", color: colors.text }}>
-            รายการขาย
-          </Text>
-          <Text style={{ fontSize: 12, color: colors.textSecondary }}>
-            รายการเดือนนี้
-          </Text>
-        </View>
-        <TouchableOpacity
-          onPress={() => router.push("/(mini-apps)/daily-sale/record")}
-          style={{
-            backgroundColor: "#F59E0B",
-            borderRadius: 8,
-            paddingHorizontal: 14,
-            paddingVertical: 8,
-            flexDirection: "row",
-            alignItems: "center",
-            gap: 6,
-          }}
-        >
-          <Ionicons name="add" size={18} color="#fff" />
-          <Text style={{ color: "#fff", fontWeight: "600", fontSize: 13 }}>
-            บันทึก
-          </Text>
-        </TouchableOpacity>
-      </View>
-
-      {/* Summary Card */}
-      <View
-        style={{
-          flexDirection: "row",
-          margin: 16,
-          gap: 10,
-        }}
-      >
-        <View
-          style={{
-            flex: 1,
-            backgroundColor: "#FFF7ED",
-            borderRadius: 10,
-            padding: 14,
-            alignItems: "center",
-            borderWidth: 1,
-            borderColor: "#FED7AA",
-          }}
-        >
-          <Text style={{ fontSize: 22, fontWeight: "700", color: "#EA580C" }}>
-            {totalItems}
-          </Text>
-          <Text style={{ fontSize: 11, color: "#9A3412", marginTop: 2 }}>
-            ชิ้นรวม
-          </Text>
-        </View>
-        <View
-          style={{
-            flex: 1,
-            backgroundColor: "#EFF6FF",
-            borderRadius: 10,
-            padding: 14,
-            alignItems: "center",
-            borderWidth: 1,
-            borderColor: "#BFDBFE",
-          }}
-        >
-          <Text style={{ fontSize: 18, fontWeight: "700", color: "#1D4ED8" }}>
-            {totalRevenue.toLocaleString("th-TH", { maximumFractionDigits: 0 })}
-          </Text>
-          <Text style={{ fontSize: 11, color: "#1E40AF", marginTop: 2 }}>
-            ยอดขายรวม (฿)
-          </Text>
-        </View>
-        <View
-          style={{
-            flex: 1,
-            backgroundColor: "#F0FDF4",
-            borderRadius: 10,
-            padding: 14,
-            alignItems: "center",
-            borderWidth: 1,
-            borderColor: "#BBF7D0",
-          }}
-        >
-          <Text style={{ fontSize: 22, fontWeight: "700", color: "#16A34A" }}>
-            {sales.length}
-          </Text>
-          <Text style={{ fontSize: 11, color: "#15803D", marginTop: 2 }}>
-            วันที่บันทึก
-          </Text>
-        </View>
-      </View>
+        <SafeAreaView edges={["top"]}>
+          <View style={styles.topRow}>
+            <Pressable onPress={() => router.back()} style={styles.iconBtn}>
+              <Ionicons name="chevron-back" size={22} color="#fff" />
+            </Pressable>
+            <Text style={styles.topTitle}>รายการขาย</Text>
+            <View style={{ width: 38 }} />
+          </View>
+        </SafeAreaView>
+      </LinearGradient>
 
       {loading ? (
-        <View
-          style={{ flex: 1, justifyContent: "center", alignItems: "center" }}
-        >
-          <ActivityIndicator size="large" color="#F59E0B" />
+        <View style={styles.center}>
+          <ActivityIndicator size="large" color={HERO[0]} />
         </View>
       ) : (
         <FlatList
+          style={{ flex: 1 }}
           data={sales}
           keyExtractor={(item) => item.id}
           renderItem={renderItem}
-          contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 24 }}
+          contentContainerStyle={{ paddingHorizontal: 18, paddingBottom: 24 }}
+          showsVerticalScrollIndicator={false}
           refreshControl={
-            <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} />
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={() => {
+                setRefreshing(true);
+                load();
+              }}
+              tintColor={HERO[0]}
+            />
+          }
+          ListHeaderComponent={
+            <View style={{ paddingTop: 16 }}>
+              <LinearGradient
+                colors={HERO}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+                style={styles.summary}
+              >
+                <View style={styles.summaryFrost}>
+                  <Text style={styles.summaryLabel}>ยอดขายเดือนนี้</Text>
+                  <Text style={styles.summaryValue}>{baht(totalRevenue)}</Text>
+                  <Text style={styles.summaryMeta}>
+                    {sales.length} วัน · {totalItems} ชิ้น
+                  </Text>
+                </View>
+              </LinearGradient>
+              {sales.length > 0 && (
+                <Text style={[styles.sectionTitle, { color: colors.text }]}>
+                  ทั้งหมด {sales.length} รายการ
+                </Text>
+              )}
+            </View>
           }
           ListEmptyComponent={
-            <View style={{ alignItems: "center", paddingTop: 60 }}>
+            <View style={{ alignItems: "center", paddingTop: 50 }}>
               <Ionicons
                 name="receipt-outline"
                 size={48}
@@ -361,24 +259,153 @@ export default function DailySaleIndex() {
               >
                 ยังไม่มีรายการยอดขายเดือนนี้
               </Text>
-              <TouchableOpacity
-                onPress={() => router.push("/(mini-apps)/daily-sale/record")}
-                style={{
-                  marginTop: 16,
-                  backgroundColor: "#F59E0B",
-                  borderRadius: 8,
-                  paddingHorizontal: 24,
-                  paddingVertical: 10,
-                }}
-              >
-                <Text style={{ color: "#fff", fontWeight: "600" }}>
-                  บันทึกยอดขายแรก
-                </Text>
-              </TouchableOpacity>
             </View>
           }
         />
       )}
-    </SafeAreaView>
+
+      {/* ── Fixed bottom bar ── */}
+      <View
+        style={[
+          styles.bottomBar,
+          { backgroundColor: colors.card, borderTopColor: colors.border },
+        ]}
+      >
+        <SafeAreaView edges={["bottom"]}>
+          <Pressable
+            onPress={() => router.push("/(mini-apps)/daily-sale/record")}
+            style={({ pressed }) => [{ opacity: pressed ? 0.9 : 1 }]}
+          >
+            <LinearGradient
+              colors={HERO}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 0 }}
+              style={styles.cta}
+            >
+              <Ionicons name="add-circle-outline" size={20} color="#fff" />
+              <Text style={styles.ctaText}>บันทึกยอดขายใหม่</Text>
+            </LinearGradient>
+          </Pressable>
+        </SafeAreaView>
+      </View>
+    </View>
   );
 }
+
+const styles = StyleSheet.create({
+  center: { flex: 1, alignItems: "center", justifyContent: "center" },
+  topBar: {
+    paddingHorizontal: 18,
+    paddingBottom: 12,
+    shadowColor: "#000",
+    shadowOpacity: 0.12,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 6,
+    zIndex: 10,
+  },
+  topRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingVertical: 6,
+  },
+  iconBtn: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "rgba(255,255,255,0.2)",
+  },
+  topTitle: { color: "#fff", fontSize: 17, fontWeight: "700" },
+  summary: {
+    borderRadius: 24,
+    padding: 6,
+    overflow: "hidden",
+    shadowColor: "#F59E0B",
+    shadowOpacity: 0.3,
+    shadowRadius: 14,
+    shadowOffset: { width: 0, height: 8 },
+    elevation: 6,
+  },
+  summaryFrost: {
+    backgroundColor: "rgba(255,255,255,0.16)",
+    borderRadius: 19,
+    padding: 16,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: "rgba(255,255,255,0.4)",
+  },
+  summaryLabel: { color: "rgba(255,255,255,0.9)", fontSize: 13, fontWeight: "600" },
+  summaryValue: { color: "#fff", fontSize: 30, fontWeight: "800", marginTop: 4 },
+  summaryMeta: { color: "rgba(255,255,255,0.85)", fontSize: 12, marginTop: 5 },
+  sectionTitle: { fontSize: 14, fontWeight: "700", marginTop: 18, marginBottom: 4 },
+  card: {
+    borderRadius: 18,
+    borderWidth: StyleSheet.hairlineWidth,
+    padding: 16,
+    marginTop: 12,
+    shadowColor: "#000",
+    shadowOpacity: 0.06,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 3 },
+    elevation: 2,
+  },
+  cardHead: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+  dateRow: { flexDirection: "row", alignItems: "center", gap: 8 },
+  dateIcon: {
+    width: 30,
+    height: 30,
+    borderRadius: 9,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#F59E0B18",
+  },
+  date: { fontWeight: "700", fontSize: 15 },
+  badge: { borderRadius: 8, paddingHorizontal: 9, paddingVertical: 3 },
+  badgeText: { fontSize: 11, fontWeight: "700" },
+  metrics: { flexDirection: "row", gap: 22, marginTop: 14 },
+  metricLabel: { fontSize: 11, marginBottom: 2 },
+  metricValue: { fontSize: 16, fontWeight: "800" },
+  branch: { fontSize: 13, fontWeight: "600", maxWidth: 120 },
+  actions: {
+    flexDirection: "row",
+    justifyContent: "flex-end",
+    gap: 6,
+    marginTop: 14,
+    paddingTop: 12,
+    borderTopWidth: StyleSheet.hairlineWidth,
+  },
+  actionBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
+    paddingHorizontal: 14,
+    paddingVertical: 7,
+    borderRadius: 10,
+  },
+  actionText: { fontSize: 13, fontWeight: "700" },
+  bottomBar: {
+    borderTopWidth: StyleSheet.hairlineWidth,
+    paddingHorizontal: 18,
+    paddingTop: 10,
+    shadowColor: "#000",
+    shadowOpacity: 0.08,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: -3 },
+    elevation: 10,
+  },
+  cta: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    paddingVertical: 15,
+    borderRadius: 16,
+  },
+  ctaText: { color: "#fff", fontSize: 15, fontWeight: "700" },
+});
