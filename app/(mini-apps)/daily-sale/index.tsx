@@ -116,18 +116,18 @@ export default function DailySaleDashboard() {
     scrollY.value = e.contentOffset.y;
   });
   const todayAnim = useAnimatedStyle(() => ({
-    opacity: interpolate(scrollY.value, [0, 130], [1, 0], Extrapolation.CLAMP),
+    opacity: interpolate(scrollY.value, [0, 95], [1, 0], Extrapolation.CLAMP),
     transform: [
       {
         translateY: interpolate(
           scrollY.value,
-          [0, 130],
-          [0, -28],
+          [0, 150],
+          [0, -55],
           Extrapolation.CLAMP,
         ),
       },
       {
-        scale: interpolate(scrollY.value, [0, 130], [1, 0.95], Extrapolation.CLAMP),
+        scale: interpolate(scrollY.value, [0, 150], [1, 0.9], Extrapolation.CLAMP),
       },
     ],
   }));
@@ -188,10 +188,7 @@ export default function DailySaleDashboard() {
         }
       >
         {/* ── Today card (glass on gradient, fades on scroll) ── */}
-        <Animated.View
-          entering={FadeInDown.duration(500)}
-          style={[styles.todayWrap, todayAnim]}
-        >
+        <Animated.View style={[styles.todayWrap, todayAnim]}>
           <LinearGradient
             colors={HERO}
             start={{ x: 0, y: 0 }}
