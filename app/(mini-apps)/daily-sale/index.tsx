@@ -25,6 +25,7 @@ import Animated, {
   useAnimatedScrollHandler,
   useAnimatedStyle,
   useSharedValue,
+  withTiming,
 } from "react-native-reanimated";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { AreaChart } from "@/components/ui/AreaChart";
@@ -112,9 +113,22 @@ export default function DailySaleDashboard() {
   // Spotify-style collapsing header: the hero card fades + parallaxes away as
   // you scroll, while the compact top bar stays.
   const scrollY = useSharedValue(0);
+  const lastY = useSharedValue(0);
+  // 0 = bottom bar shown, 1 = hidden. Driven by scroll DIRECTION (Facebook-style).
+  const barHidden = useSharedValue(0);
+  const barH = useSharedValue(120);
   const onScroll = useAnimatedScrollHandler((e) => {
-    scrollY.value = e.contentOffset.y;
+    const y = e.contentOffset.y;
+    scrollY.value = y;
+    const dy = y - lastY.value;
+    if (y <= 0) barHidden.value = withTiming(0, { duration: 180 });
+    else if (dy > 3) barHidden.value = withTiming(1, { duration: 220 });
+    else if (dy < -3) barHidden.value = withTiming(0, { duration: 220 });
+    lastY.value = y;
   });
+  const barAnim = useAnimatedStyle(() => ({
+    transform: [{ translateY: barHidden.value * (barH.value + 8) }],
+  }));
   const todayAnim = useAnimatedStyle(() => ({
     opacity: interpolate(scrollY.value, [0, 95], [1, 0], Extrapolation.CLAMP),
     transform: [
@@ -174,7 +188,7 @@ export default function DailySaleDashboard() {
       <Animated.ScrollView
         style={{ flex: 1 }}
         showsVerticalScrollIndicator={false}
-        contentContainerStyle={{ paddingBottom: 24 }}
+        contentContainerStyle={{ paddingBottom: 110 }}
         onScroll={onScroll}
         scrollEventThrottle={16}
         refreshControl={
@@ -354,10 +368,14 @@ export default function DailySaleDashboard() {
         />
       </View>
 
-      {/* ── Fixed bottom bar ── */}
-      <View
+      {/* ── Bottom bar — hides on scroll-down, shows on scroll-up ── */}
+      <Animated.View
+        onLayout={(e) => {
+          barH.value = e.nativeEvent.layout.height;
+        }}
         style={[
           styles.bottomBar,
+          barAnim,
           { backgroundColor: colors.card, borderTopColor: colors.border },
         ]}
       >
@@ -391,7 +409,7 @@ export default function DailySaleDashboard() {
             </Pressable>
           </View>
         </SafeAreaView>
-      </View>
+      </Animated.View>
     </View>
   );
 }
@@ -600,6 +618,10 @@ const styles = StyleSheet.create({
   legendLabel: { fontSize: 12 },
   legendValue: { fontSize: 16, fontWeight: "800" },
   bottomBar: {
+    position: "absolute",
+    left: 0,
+    right: 0,
+    bottom: 0,
     borderTopWidth: StyleSheet.hairlineWidth,
     paddingHorizontal: 18,
     shadowColor: "#000",
