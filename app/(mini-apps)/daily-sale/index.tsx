@@ -1,4 +1,3 @@
-import { GlassCard } from "@/components/ui/GlassCard";
 import {
   addDays,
   buildDashboardStats,
@@ -160,9 +159,33 @@ export default function DailySaleDashboard() {
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.background }}>
+      {/* ── Fixed top bar ── */}
+      <LinearGradient
+        colors={HERO}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 0 }}
+        style={styles.topBar}
+      >
+        <SafeAreaView edges={["top"]}>
+          <View style={styles.heroTop}>
+            <Pressable onPress={() => router.back()} style={styles.iconBtn}>
+              <Ionicons name="chevron-back" size={22} color="#fff" />
+            </Pressable>
+            <Text style={styles.heroTitle}>ยอดขายของฉัน</Text>
+            <Pressable
+              onPress={() => router.push("/(mini-apps)/daily-sale/history")}
+              style={styles.iconBtn}
+            >
+              <Ionicons name="receipt-outline" size={20} color="#fff" />
+            </Pressable>
+          </View>
+        </SafeAreaView>
+      </LinearGradient>
+
       <ScrollView
+        style={{ flex: 1 }}
         showsVerticalScrollIndicator={false}
-        contentContainerStyle={{ paddingBottom: 32 }}
+        contentContainerStyle={{ paddingBottom: 24 }}
         refreshControl={
           <RefreshControl
             refreshing={refreshing}
@@ -174,47 +197,29 @@ export default function DailySaleDashboard() {
           />
         }
       >
-        {/* ── Hero ── */}
-        <LinearGradient
-          colors={HERO}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 1 }}
-          style={styles.hero}
+        {/* ── Today card (glass on gradient) ── */}
+        <Animated.View
+          entering={FadeInDown.duration(500)}
+          style={styles.todayWrap}
         >
-          <SafeAreaView edges={["top"]}>
-            <View style={styles.heroTop}>
-              <Pressable onPress={() => router.back()} style={styles.iconBtn}>
-                <Ionicons name="chevron-back" size={22} color="#fff" />
-              </Pressable>
-              <Text style={styles.heroTitle}>ยอดขายของฉัน</Text>
-              <Pressable
-                onPress={() => router.push("/(mini-apps)/daily-sale/history")}
-                style={styles.iconBtn}
-              >
-                <Ionicons name="receipt-outline" size={20} color="#fff" />
-              </Pressable>
+          <LinearGradient
+            colors={HERO}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={styles.todayCard}
+          >
+            <View style={styles.todayFrost}>
+              <Text style={styles.heroLabel}>ยอดขายวันนี้</Text>
+              <View style={styles.heroValueRow}>
+                <Text style={styles.heroValue}>{baht(s.today.revenue)}</Text>
+                <DeltaChip pct={s.todayVsYesterdayPct} />
+              </View>
+              <Text style={styles.heroMeta}>
+                {s.today.items} ชิ้น · เทียบเมื่อวาน {baht(s.yesterday.revenue)}
+              </Text>
             </View>
-
-            <Animated.View entering={FadeInDown.duration(500)}>
-              <GlassCard
-                tint="light"
-                overlay="rgba(255,255,255,0.18)"
-                style={styles.heroCard}
-              >
-                <View style={{ padding: 18 }}>
-                  <Text style={styles.heroLabel}>ยอดขายวันนี้</Text>
-                  <View style={styles.heroValueRow}>
-                    <Text style={styles.heroValue}>{baht(s.today.revenue)}</Text>
-                    <DeltaChip pct={s.todayVsYesterdayPct} />
-                  </View>
-                  <Text style={styles.heroMeta}>
-                    {s.today.items} ชิ้น · เทียบเมื่อวาน {baht(s.yesterday.revenue)}
-                  </Text>
-                </View>
-              </GlassCard>
-            </Animated.View>
-          </SafeAreaView>
-        </LinearGradient>
+          </LinearGradient>
+        </Animated.View>
 
         {/* ── Summary cards ── */}
         <Animated.View
@@ -243,7 +248,7 @@ export default function DailySaleDashboard() {
         {/* ── Bar chart ── */}
         <Animated.View
           entering={FadeInDown.delay(200).duration(500)}
-          style={{ paddingHorizontal: 18 }}
+          style={{ paddingHorizontal: 18, marginTop: 18 }}
         >
           <View
             style={[
@@ -350,25 +355,46 @@ export default function DailySaleDashboard() {
           />
         </Animated.View>
 
-        {/* ── CTA ── */}
-        <Pressable
-          onPress={() => router.push("/(mini-apps)/daily-sale/record")}
-          style={({ pressed }) => [
-            styles.cta,
-            { opacity: pressed ? 0.9 : 1 },
-          ]}
-        >
-          <LinearGradient
-            colors={HERO}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 0 }}
-            style={styles.ctaInner}
-          >
-            <Ionicons name="add-circle-outline" size={20} color="#fff" />
-            <Text style={styles.ctaText}>บันทึกยอดขายใหม่</Text>
-          </LinearGradient>
-        </Pressable>
       </ScrollView>
+
+      {/* ── Fixed bottom bar ── */}
+      <View
+        style={[
+          styles.bottomBar,
+          { backgroundColor: colors.card, borderTopColor: colors.border },
+        ]}
+      >
+        <SafeAreaView edges={["bottom"]}>
+          <View style={styles.bottomInner}>
+            <Pressable
+              onPress={() => router.push("/(mini-apps)/daily-sale/history")}
+              style={[styles.bottomGhost, { borderColor: colors.border }]}
+            >
+              <Ionicons name="receipt-outline" size={19} color={colors.text} />
+              <Text style={[styles.bottomGhostText, { color: colors.text }]}>
+                รายการ
+              </Text>
+            </Pressable>
+            <Pressable
+              onPress={() => router.push("/(mini-apps)/daily-sale/record")}
+              style={({ pressed }) => [
+                styles.cta,
+                { flex: 1, opacity: pressed ? 0.9 : 1 },
+              ]}
+            >
+              <LinearGradient
+                colors={HERO}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 0 }}
+                style={styles.ctaInner}
+              >
+                <Ionicons name="add-circle-outline" size={20} color="#fff" />
+                <Text style={styles.ctaText}>บันทึกยอดขายใหม่</Text>
+              </LinearGradient>
+            </Pressable>
+          </View>
+        </SafeAreaView>
+      </View>
     </View>
   );
 }
@@ -476,11 +502,33 @@ function CompareRow({
 
 const styles = StyleSheet.create({
   center: { flex: 1, alignItems: "center", justifyContent: "center" },
-  hero: {
+  topBar: {
     paddingHorizontal: 18,
-    paddingBottom: 28,
-    borderBottomLeftRadius: 30,
-    borderBottomRightRadius: 30,
+    paddingBottom: 12,
+    shadowColor: "#000",
+    shadowOpacity: 0.12,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 6,
+    zIndex: 10,
+  },
+  todayWrap: { paddingHorizontal: 18, marginTop: 16 },
+  todayCard: {
+    borderRadius: 24,
+    padding: 6,
+    overflow: "hidden",
+    shadowColor: "#F59E0B",
+    shadowOpacity: 0.3,
+    shadowRadius: 14,
+    shadowOffset: { width: 0, height: 8 },
+    elevation: 6,
+  },
+  todayFrost: {
+    backgroundColor: "rgba(255,255,255,0.16)",
+    borderRadius: 19,
+    padding: 16,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: "rgba(255,255,255,0.4)",
   },
   heroTop: {
     flexDirection: "row",
@@ -497,7 +545,6 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(255,255,255,0.2)",
   },
   heroTitle: { color: "#fff", fontSize: 17, fontWeight: "700" },
-  heroCard: { marginTop: 8 },
   heroLabel: {
     color: "rgba(255,255,255,0.9)",
     fontSize: 13,
@@ -586,7 +633,32 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(120,120,120,0.15)",
     overflow: "hidden",
   },
-  cta: { marginHorizontal: 18, marginTop: 22, borderRadius: 16 },
+  bottomBar: {
+    borderTopWidth: StyleSheet.hairlineWidth,
+    paddingHorizontal: 18,
+    shadowColor: "#000",
+    shadowOpacity: 0.08,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: -3 },
+    elevation: 10,
+  },
+  bottomInner: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    paddingVertical: 10,
+  },
+  bottomGhost: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    borderRadius: 16,
+    borderWidth: 1,
+  },
+  bottomGhostText: { fontWeight: "700", fontSize: 14 },
+  cta: { borderRadius: 16 },
   ctaInner: {
     flexDirection: "row",
     alignItems: "center",
