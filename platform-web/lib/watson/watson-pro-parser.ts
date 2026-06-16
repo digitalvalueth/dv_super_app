@@ -298,27 +298,55 @@ export function parseWatsonProSheet(
 
 // ─── Map to the standard PromotionItem shape ──────────────────────────
 
+/** Invoice value = 62% of the selling (Comm) price — i.e. a 38% margin. */
+const INVOICE_RATE = 0.62;
+/** Thai VAT 7%: IncV → ExV divides by 1.07. */
+const VAT_DIVISOR = 1.07;
+
+const round2 = (n: number): number => Math.round(n * 100) / 100;
+
+/**
+ * Derive the Invoice-62% figures from the Comm (promo selling) price:
+ *   Invoice 62% IncV = Comm × 0.62           (cost at 38% margin, VAT-inclusive)
+ *   Invoice 62% ExV  = Invoice 62% IncV / 1.07 (VAT 7% removed)
+ * Returns nulls when there is no comm price.
+ */
+export function computeInvoice62(commPrice: number | null | undefined): {
+  incV: number | null;
+  exV: number | null;
+} {
+  if (commPrice === null || commPrice === undefined) {
+    return { incV: null, exV: null };
+  }
+  const incV = round2(commPrice * INVOICE_RATE);
+  return { incV, exV: round2(incV / VAT_DIVISOR) };
+}
+
 /**
  * Watson-Pro result → canonical `PromotionItem[]`:
  *   Watson Code = Product Code · Old RSP → stdPrice · New RSP → commPrice ·
- *   Invoice-62% left null (not in this form). File-level period on every item.
+ *   Invoice 62% IncV/ExV derived from Comm price (see computeInvoice62) ·
+ *   file-level period on every item.
  */
 export function watsonProToPromotionItems(
   result: WatsonProParseResult,
 ): PromotionItem[] {
-  return result.items.map((row) => ({
-    itemCode: row.productCode || row.barcode,
-    barcode: row.barcode,
-    itemName: row.itemName,
-    stdPrice: row.stdPrice ?? 0,
-    commPrice: row.commPrice,
-    invoice62IncV: null,
-    invoice62ExV: null,
-    promoPrice: row.commPrice ?? null,
-    promoStart: row.promoStart,
-    promoEnd: row.promoEnd,
-    remark: row.remark || "",
-  }));
+  return result.items.map((row) => {
+    const invoice = computeInvoice62(row.commPrice);
+    return {
+      itemCode: row.productCode || row.barcode,
+      barcode: row.barcode,
+      itemName: row.itemName,
+      stdPrice: row.stdPrice ?? 0,
+      commPrice: row.commPrice,
+      invoice62IncV: invoice.incV,
+      invoice62ExV: invoice.exV,
+      promoPrice: row.commPrice ?? null,
+      promoStart: row.promoStart,
+      promoEnd: row.promoEnd,
+      remark: row.remark || "",
+    };
+  });
 }
 
 // ─── Non-pure File wrapper (NOT unit-tested) ──────────────────────────

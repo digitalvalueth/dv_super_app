@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  computeInvoice62,
   parsePromoPeriodText,
   parseWatsonProSheet,
   watsonProToPromotionItems,
@@ -174,8 +175,26 @@ describe("parseWatsonProSheet", () => {
   });
 });
 
+describe("computeInvoice62", () => {
+  // Exact figures from a real Watson promotion sheet:
+  //   Comm → Invoice 62% IncV (× 0.62) → Invoice 62% ExV (÷ 1.07)
+  it.each([
+    [598, 370.76, 346.5],
+    [650, 403.0, 376.64],
+    [398, 246.76, 230.62],
+    [798, 494.76, 462.39],
+  ])("Comm %d → IncV %d / ExV %d", (comm, incV, exV) => {
+    expect(computeInvoice62(comm)).toEqual({ incV, exV });
+  });
+
+  it("returns nulls when there is no comm price", () => {
+    expect(computeInvoice62(null)).toEqual({ incV: null, exV: null });
+    expect(computeInvoice62(undefined)).toEqual({ incV: null, exV: null });
+  });
+});
+
 describe("watsonProToPromotionItems", () => {
-  it("maps to the canonical PromotionItem columns (Invoice-62 null)", () => {
+  it("maps to the canonical PromotionItem columns with derived Invoice-62", () => {
     const r = parseWatsonProSheet(
       buildSheet([
         item({ no: 1, code: "278079", barcode: "885 91098 5083 0", name: "X", oldRSP: 2850, newRSP: 985, remark: "SAVE" }),
@@ -188,8 +207,8 @@ describe("watsonProToPromotionItems", () => {
       itemName: "X",
       stdPrice: 2850,
       commPrice: 985,
-      invoice62IncV: null,
-      invoice62ExV: null,
+      invoice62IncV: 610.7, // 985 × 0.62
+      invoice62ExV: 570.75, // 610.70 ÷ 1.07
       promoPrice: 985,
       promoStart: r.period.start,
       promoEnd: r.period.end,
