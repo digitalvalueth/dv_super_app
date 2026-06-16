@@ -558,7 +558,8 @@ export function bigCToPromotionItems(result: BigCParseResult): PromotionItem[] {
 export async function parseBigCFile(file: File): Promise<BigCParseResult> {
   const XLSX = await import("xlsx");
   const buf = await file.arrayBuffer();
-  const wb = XLSX.read(buf, { type: "array" });
+  // Pass a byte view so every xlsx build reads .xlsb/.xlsx/.xls reliably.
+  const wb = XLSX.read(new Uint8Array(buf), { type: "array" });
   const wsName = wb.SheetNames[0];
   const ws = wb.Sheets[wsName];
   const rows = XLSX.utils.sheet_to_json<Cell[]>(ws, {

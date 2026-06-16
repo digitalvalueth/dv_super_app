@@ -118,7 +118,7 @@ export default function BigCImportPreview({
             <input
               ref={fileRef}
               type="file"
-              accept=".xlsb,.xlsx"
+              accept=".xlsb,.xlsx,.xls"
               className="hidden"
               onChange={handleSelect}
             />

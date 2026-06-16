@@ -328,7 +328,8 @@ export async function parseWatsonProFile(
 ): Promise<WatsonProParseResult> {
   const XLSX = await import("xlsx");
   const buf = await file.arrayBuffer();
-  const wb = XLSX.read(buf, { type: "array" });
+  // .xls (BIFF) + .xlsx/.xlsb: pass a byte view so every xlsx build reads it.
+  const wb = XLSX.read(new Uint8Array(buf), { type: "array" });
   const ws = wb.Sheets[wb.SheetNames[0]];
   const rows = XLSX.utils.sheet_to_json<Cell[]>(ws, {
     header: 1,
