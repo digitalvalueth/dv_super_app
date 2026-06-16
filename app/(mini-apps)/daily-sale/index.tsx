@@ -14,13 +14,15 @@ import {
   ActivityIndicator,
   Pressable,
   RefreshControl,
-  ScrollView,
   StyleSheet,
   Text,
   View,
 } from "react-native";
 import Animated, {
+  Extrapolation,
   FadeInDown,
+  interpolate,
+  useAnimatedScrollHandler,
   useAnimatedStyle,
   useSharedValue,
   withDelay,
@@ -143,6 +145,29 @@ export default function DailySaleDashboard() {
     }, [load]),
   );
 
+  // Spotify-style collapsing header: the hero card fades + parallaxes away as
+  // you scroll, while the compact top bar stays.
+  const scrollY = useSharedValue(0);
+  const onScroll = useAnimatedScrollHandler((e) => {
+    scrollY.value = e.contentOffset.y;
+  });
+  const todayAnim = useAnimatedStyle(() => ({
+    opacity: interpolate(scrollY.value, [0, 130], [1, 0], Extrapolation.CLAMP),
+    transform: [
+      {
+        translateY: interpolate(
+          scrollY.value,
+          [0, 130],
+          [0, -28],
+          Extrapolation.CLAMP,
+        ),
+      },
+      {
+        scale: interpolate(scrollY.value, [0, 130], [1, 0.95], Extrapolation.CLAMP),
+      },
+    ],
+  }));
+
   if (loading && !stats) {
     return (
       <View style={[styles.center, { backgroundColor: colors.background }]}>
@@ -182,10 +207,12 @@ export default function DailySaleDashboard() {
         </SafeAreaView>
       </LinearGradient>
 
-      <ScrollView
+      <Animated.ScrollView
         style={{ flex: 1 }}
         showsVerticalScrollIndicator={false}
         contentContainerStyle={{ paddingBottom: 24 }}
+        onScroll={onScroll}
+        scrollEventThrottle={16}
         refreshControl={
           <RefreshControl
             refreshing={refreshing}
@@ -197,10 +224,10 @@ export default function DailySaleDashboard() {
           />
         }
       >
-        {/* ── Today card (glass on gradient) ── */}
+        {/* ── Today card (glass on gradient, fades on scroll) ── */}
         <Animated.View
           entering={FadeInDown.duration(500)}
-          style={styles.todayWrap}
+          style={[styles.todayWrap, todayAnim]}
         >
           <LinearGradient
             colors={HERO}
@@ -355,7 +382,7 @@ export default function DailySaleDashboard() {
           />
         </Animated.View>
 
-      </ScrollView>
+      </Animated.ScrollView>
 
       {/* ── Fixed bottom bar ── */}
       <View
