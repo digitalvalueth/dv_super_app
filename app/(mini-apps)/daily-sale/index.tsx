@@ -7,6 +7,7 @@ import { getDailySalesByEmployee } from "@/services/daily-sale.service";
 import { useAuthStore } from "@/stores/auth.store";
 import { useTheme } from "@/stores/theme.store";
 import { Ionicons } from "@expo/vector-icons";
+import { BlurView } from "expo-blur";
 import { LinearGradient } from "expo-linear-gradient";
 import { router, useFocusEffect } from "expo-router";
 import { useCallback, useState } from "react";
@@ -27,7 +28,10 @@ import Animated, {
   useSharedValue,
   withTiming,
 } from "react-native-reanimated";
-import { SafeAreaView } from "react-native-safe-area-context";
+import {
+  SafeAreaView,
+  useSafeAreaInsets,
+} from "react-native-safe-area-context";
 import { AreaChart } from "@/components/ui/AreaChart";
 import { DonutChart } from "@/components/ui/DonutChart";
 
@@ -70,6 +74,7 @@ function DeltaChip({ pct }: { pct: number | null }) {
 
 export default function DailySaleDashboard() {
   const { colors, isDark } = useTheme();
+  const insets = useSafeAreaInsets();
   const user = useAuthStore((s) => s.user);
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [loading, setLoading] = useState(true);
@@ -127,7 +132,7 @@ export default function DailySaleDashboard() {
     lastY.value = y;
   });
   const barAnim = useAnimatedStyle(() => ({
-    transform: [{ translateY: barHidden.value * (barH.value + 8) }],
+    transform: [{ translateY: barHidden.value * (barH.value + 70) }],
   }));
   const todayAnim = useAnimatedStyle(() => ({
     opacity: interpolate(scrollY.value, [0, 95], [1, 0], Extrapolation.CLAMP),
@@ -184,11 +189,10 @@ export default function DailySaleDashboard() {
         </SafeAreaView>
       </LinearGradient>
 
-      <View style={{ flex: 1 }}>
       <Animated.ScrollView
         style={{ flex: 1 }}
         showsVerticalScrollIndicator={false}
-        contentContainerStyle={{ paddingBottom: 110 }}
+        contentContainerStyle={{ paddingBottom: insets.bottom + 96 }}
         onScroll={onScroll}
         scrollEventThrottle={16}
         refreshControl={
@@ -355,31 +359,30 @@ export default function DailySaleDashboard() {
         </Animated.View>
 
       </Animated.ScrollView>
-        {/* content edge-fade into the top / bottom bars (Spotify-style) */}
-        <LinearGradient
-          pointerEvents="none"
-          colors={[colors.background, "transparent"] as const}
-          style={styles.fadeTop}
-        />
-        <LinearGradient
-          pointerEvents="none"
-          colors={["transparent", colors.background] as const}
-          style={styles.fadeBottom}
-        />
-      </View>
 
-      {/* ── Bottom bar — hides on scroll-down, shows on scroll-up ── */}
+      {/* ── Floating glass bottom bar (Instagram-style) ── */}
       <Animated.View
         onLayout={(e) => {
           barH.value = e.nativeEvent.layout.height;
         }}
-        style={[
-          styles.bottomBar,
-          barAnim,
-          { backgroundColor: colors.card, borderTopColor: colors.border },
-        ]}
+        style={[styles.bottomWrap, { bottom: insets.bottom + 8 }, barAnim]}
       >
-        <SafeAreaView edges={["bottom"]}>
+        <BlurView
+          intensity={40}
+          tint={isDark ? "dark" : "light"}
+          experimentalBlurMethod="dimezisBlurView"
+          style={styles.bottomPill}
+        >
+          <View
+            style={[
+              StyleSheet.absoluteFill,
+              {
+                backgroundColor: isDark
+                  ? "rgba(28,28,30,0.55)"
+                  : "rgba(255,255,255,0.6)",
+              },
+            ]}
+          />
           <View style={styles.bottomInner}>
             <Pressable
               onPress={() => router.push("/(mini-apps)/daily-sale/history")}
@@ -408,7 +411,7 @@ export default function DailySaleDashboard() {
               </LinearGradient>
             </Pressable>
           </View>
-        </SafeAreaView>
+        </BlurView>
       </Animated.View>
     </View>
   );
@@ -506,8 +509,6 @@ function Legend({
 
 const styles = StyleSheet.create({
   center: { flex: 1, alignItems: "center", justifyContent: "center" },
-  fadeTop: { position: "absolute", top: 0, left: 0, right: 0, height: 26 },
-  fadeBottom: { position: "absolute", bottom: 0, left: 0, right: 0, height: 30 },
   topBar: {
     paddingHorizontal: 18,
     paddingBottom: 12,
@@ -617,24 +618,27 @@ const styles = StyleSheet.create({
   legendDot: { width: 12, height: 12, borderRadius: 6 },
   legendLabel: { fontSize: 12 },
   legendValue: { fontSize: 16, fontWeight: "800" },
-  bottomBar: {
+  bottomWrap: {
     position: "absolute",
-    left: 0,
-    right: 0,
-    bottom: 0,
-    borderTopWidth: StyleSheet.hairlineWidth,
-    paddingHorizontal: 18,
+    left: 14,
+    right: 14,
     shadowColor: "#000",
-    shadowOpacity: 0.08,
-    shadowRadius: 8,
-    shadowOffset: { width: 0, height: -3 },
-    elevation: 10,
+    shadowOpacity: 0.18,
+    shadowRadius: 16,
+    shadowOffset: { width: 0, height: 8 },
+    elevation: 14,
+  },
+  bottomPill: {
+    borderRadius: 30,
+    overflow: "hidden",
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: "rgba(255,255,255,0.25)",
   },
   bottomInner: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 12,
-    paddingVertical: 10,
+    gap: 10,
+    padding: 8,
   },
   bottomGhost: {
     flexDirection: "row",
