@@ -21,11 +21,18 @@ export function dayKey(d: DateLike): string {
   return Number.isNaN(date.getTime()) ? "" : date.toISOString().slice(0, 10);
 }
 
-/** Identity key for upsert: item (barcode→itemCode) + period (start|end). */
+/**
+ * Identity key for upsert: item (barcode→itemCode) + period (start|end) +
+ * mechanic (remark). The same item in the same period can carry more than one
+ * promotion (e.g. an empty/Buy-1 line AND a bundle line) — those must coexist,
+ * so the remark is part of the identity. Same item+period+remark with a changed
+ * price is treated as the same promotion (an update).
+ */
 export function promoKey(it: PromotionItem): string {
   const bc = String(it.barcode ?? "").replace(/\D/g, "");
   const id = bc || String(it.itemCode ?? "").trim().toLowerCase();
-  return `${id}|${dayKey(it.promoStart)}|${dayKey(it.promoEnd)}`;
+  const remark = String(it.remark ?? "").trim().toLowerCase();
+  return `${id}|${dayKey(it.promoStart)}|${dayKey(it.promoEnd)}|${remark}`;
 }
 
 export interface MergeResult {

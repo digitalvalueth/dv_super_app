@@ -103,7 +103,9 @@ export default function BigCImportPreview({
       setSaveMsg(
         `บันทึกสำเร็จ — เพิ่มใหม่ ${r.added} รายการ, อัปเดต ${r.updated} รายการ (รวมในระบบ ${r.total})`,
       );
-      onSaved?.(); // let the parent refresh its list — no manual reload needed
+      onSaved?.(); // refresh the parent list immediately
+      // Show the success, then close the modal automatically.
+      setTimeout(() => onClose?.(), 1800);
     } catch (err) {
       setError(
         err instanceof Error ? err.message : "บันทึกไม่สำเร็จ — กรุณาลองใหม่",
@@ -111,7 +113,7 @@ export default function BigCImportPreview({
     } finally {
       setSaving(false);
     }
-  }, [result, shop, onSaved, editedRemarks]);
+  }, [result, shop, onSaved, onClose, editedRemarks]);
 
   const handleSelect = useCallback(
     async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -158,7 +160,8 @@ export default function BigCImportPreview({
   // Effective remark for a row (edit override → original).
   const remarkOf = (i: number) =>
     editedRemarks[i] ?? items[i]?.remark ?? "";
-  const isDup = (i: number) => existingKeys.has(promoKey(items[i]));
+  const isDup = (i: number) =>
+    existingKeys.has(promoKey({ ...items[i], remark: remarkOf(i) }));
   const dupCount = items.filter((_, i) => isDup(i)).length;
   const newCount = items.length - dupCount;
   const emptyRemarkCount = items.filter((_, i) => !remarkOf(i).trim()).length;
@@ -240,8 +243,14 @@ export default function BigCImportPreview({
         {/* Body */}
         <div className="flex-1 overflow-auto px-5 py-4">
           {error && (
-            <div className="rounded-lg bg-red-50 border border-red-200 px-3 py-2 text-sm text-red-700">
+            <div className="rounded-lg bg-red-50 border border-red-200 px-3 py-2 text-sm text-red-700 mb-3">
               {error}
+            </div>
+          )}
+          {saveMsg && (
+            <div className="rounded-lg bg-emerald-50 border border-emerald-200 px-3 py-2.5 text-sm text-emerald-800 mb-3 flex items-center gap-1.5 font-medium">
+              <CheckCircle className="w-4 h-4" />
+              {saveMsg} · กำลังปิดหน้าต่าง…
             </div>
           )}
 

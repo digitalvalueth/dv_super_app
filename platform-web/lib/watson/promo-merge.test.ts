@@ -39,8 +39,13 @@ describe("promoKey", () => {
   });
   it("falls back to itemCode when there is no barcode", () => {
     expect(promoKey(P({ itemCode: "278079", promoStart: may, promoEnd: jun }))).toBe(
-      "278079|2026-05-21|2026-06-24",
+      "278079|2026-05-21|2026-06-24|",
     );
+  });
+  it("includes the remark so different mechanics differ", () => {
+    const buy1 = P({ barcode: "8859109851592", promoStart: may, promoEnd: jun, remark: "" });
+    const bundle = P({ barcode: "8859109851592", promoStart: may, promoEnd: jun, remark: "ซื้อ 302017 + 301989" });
+    expect(promoKey(buy1)).not.toBe(promoKey(bundle));
   });
 });
 
@@ -60,6 +65,16 @@ describe("mergePromotions", () => {
     const r = mergePromotions([base], [newPeriod]);
     expect(r).toMatchObject({ added: 1, updated: 0 });
     expect(r.merged).toHaveLength(2); // both periods coexist
+  });
+
+  it("keeps a Buy-1 line AND a bundle line for the same item+period", () => {
+    // Real case: item 302017 in one period has an empty/Buy-1 promo (385) and a
+    // bundle promo (387.75 "ซื้อ 302017 + 301989"). Both must survive.
+    const buy1 = P({ barcode: "8859109851592", promoStart: may, promoEnd: jun, commPrice: 385, remark: "" });
+    const bundle = P({ barcode: "8859109851592", promoStart: may, promoEnd: jun, commPrice: 387.75, remark: "ซื้อ 302017 + 301989 ลดเหลือ 1098 บาท" });
+    const r = mergePromotions([], [buy1, bundle]);
+    expect(r).toMatchObject({ added: 2, updated: 0 });
+    expect(r.merged).toHaveLength(2);
   });
 
   it("treats different items as separate additions", () => {
