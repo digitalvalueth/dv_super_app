@@ -28,10 +28,7 @@ import Animated, {
   useSharedValue,
   withTiming,
 } from "react-native-reanimated";
-import {
-  SafeAreaView,
-  useSafeAreaInsets,
-} from "react-native-safe-area-context";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { AreaChart } from "@/components/ui/AreaChart";
 import { DonutChart } from "@/components/ui/DonutChart";
 
@@ -140,6 +137,11 @@ export default function DailySaleDashboard() {
       },
     ],
   }));
+  // Top bar starts transparent (the amber hero shows through) and fades to a
+  // solid amber bar as you scroll, so the icons stay readable over content.
+  const navBgAnim = useAnimatedStyle(() => ({
+    opacity: interpolate(scrollY.value, [0, 70], [0, 1], Extrapolation.CLAMP),
+  }));
   const todayAnim = useAnimatedStyle(() => ({
     opacity: interpolate(scrollY.value, [0, 95], [1, 0], Extrapolation.CLAMP),
     transform: [
@@ -172,29 +174,6 @@ export default function DailySaleDashboard() {
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.background }}>
-      {/* ── Fixed top bar ── */}
-      <LinearGradient
-        colors={HERO}
-        start={{ x: 0, y: 0 }}
-        end={{ x: 1, y: 0 }}
-        style={styles.topBar}
-      >
-        <SafeAreaView edges={["top"]}>
-          <View style={styles.heroTop}>
-            <Pressable onPress={() => router.back()} style={styles.iconBtn}>
-              <Ionicons name="chevron-back" size={22} color="#fff" />
-            </Pressable>
-            <Text style={styles.heroTitle}>ยอดขายของฉัน</Text>
-            <Pressable
-              onPress={() => router.push("/(mini-apps)/daily-sale/history")}
-              style={styles.iconBtn}
-            >
-              <Ionicons name="receipt-outline" size={20} color="#fff" />
-            </Pressable>
-          </View>
-        </SafeAreaView>
-      </LinearGradient>
-
       <Animated.ScrollView
         style={{ flex: 1 }}
         showsVerticalScrollIndicator={false}
@@ -209,16 +188,17 @@ export default function DailySaleDashboard() {
               load();
             }}
             tintColor={HERO[0]}
+            progressViewOffset={insets.top + 48}
           />
         }
       >
-        {/* ── Today card (glass on gradient, fades on scroll) ── */}
+        {/* ── Today hero (full-bleed amber, extends behind the transparent nav) ── */}
         <Animated.View style={[styles.todayWrap, todayAnim]}>
           <LinearGradient
             colors={HERO}
             start={{ x: 0, y: 0 }}
             end={{ x: 1, y: 1 }}
-            style={styles.todayCard}
+            style={[styles.todayCard, { paddingTop: insets.top + 56 }]}
           >
             <View style={styles.todayFrost}>
               <Text style={styles.heroLabel}>ยอดขายวันนี้</Text>
@@ -366,6 +346,33 @@ export default function DailySaleDashboard() {
 
       </Animated.ScrollView>
 
+      {/* ── Transparent top nav (Instagram-style: clear at top, amber fades in on scroll) ── */}
+      <View
+        pointerEvents="box-none"
+        style={[styles.navAbs, { paddingTop: insets.top }]}
+      >
+        <Animated.View style={[StyleSheet.absoluteFill, navBgAnim]}>
+          <LinearGradient
+            colors={HERO}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 0 }}
+            style={StyleSheet.absoluteFill}
+          />
+        </Animated.View>
+        <View style={styles.heroTop}>
+          <Pressable onPress={() => router.back()} style={styles.iconBtn}>
+            <Ionicons name="chevron-back" size={22} color="#fff" />
+          </Pressable>
+          <Text style={styles.heroTitle}>ยอดขายของฉัน</Text>
+          <Pressable
+            onPress={() => router.push("/(mini-apps)/daily-sale/history")}
+            style={styles.iconBtn}
+          >
+            <Ionicons name="receipt-outline" size={20} color="#fff" />
+          </Pressable>
+        </View>
+      </View>
+
       {/* ── Floating glass bottom bar (Instagram-style: shrinks on scroll) ── */}
       <Animated.View
         style={[styles.bottomWrap, { bottom: insets.bottom + 8 }, barAnim]}
@@ -512,20 +519,20 @@ function Legend({
 
 const styles = StyleSheet.create({
   center: { flex: 1, alignItems: "center", justifyContent: "center" },
-  topBar: {
+  navAbs: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
     paddingHorizontal: 18,
-    paddingBottom: 12,
-    shadowColor: "#000",
-    shadowOpacity: 0.12,
-    shadowRadius: 8,
-    shadowOffset: { width: 0, height: 4 },
-    elevation: 6,
-    zIndex: 10,
+    zIndex: 20,
   },
-  todayWrap: { paddingHorizontal: 18, marginTop: 16 },
+  todayWrap: {},
   todayCard: {
-    borderRadius: 24,
-    padding: 6,
+    borderBottomLeftRadius: 28,
+    borderBottomRightRadius: 28,
+    paddingHorizontal: 16,
+    paddingBottom: 18,
     overflow: "hidden",
     shadowColor: "#F59E0B",
     shadowOpacity: 0.3,
