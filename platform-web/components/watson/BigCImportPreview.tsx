@@ -5,11 +5,13 @@
 // dropdown) and passed in as `shop`. Shows the mapped rows in the STANDARD
 // promotion columns. Does NOT write to Firestore this round (preview only).
 
+import { getPromotionData } from "@/lib/watson-firebase";
 import {
   parsePromoForShop,
   type PromoPreview,
   type Shop,
 } from "@/lib/watson/promo-import";
+import { promoKey } from "@/lib/watson/promo-merge";
 import { saveImportedPromotions } from "@/lib/watson/promo-save";
 import {
   AlertTriangle,
@@ -19,6 +21,19 @@ import {
   X,
 } from "lucide-react";
 import { useCallback, useRef, useState } from "react";
+
+/** Promotion mechanics offered in the Remark dropdown (from the Watson form). */
+const REMARK_OPTIONS = [
+  "SAVE",
+  "Buy 1",
+  "Buy1get1",
+  "Save 50%",
+  "Save 30% for Elite",
+  "Save 50%&30% for Member",
+  "Bonus point 500",
+  "Bonus point 1000",
+  "Redemption",
+];
 
 const fmtDate = (d: Date | null): string => {
   if (!d) return "—";
@@ -64,6 +79,10 @@ export default function BigCImportPreview({
   const [saving, setSaving] = useState(false);
   const [saveMsg, setSaveMsg] = useState<string>("");
   const [confirmOpen, setConfirmOpen] = useState(false);
+  /** promoKey set of items already in the store — to flag new vs duplicate. */
+  const [existingKeys, setExistingKeys] = useState<Set<string>>(new Set());
+  /** Per-row remark overrides (rowIndex → remark). */
+  const [editedRemarks, setEditedRemarks] = useState<Record<number, string>>({});
 
   /** Saving is wired for Watson (writes the shared promotion store). */
   const canSave = !!result && result.items.length > 0 && shop === "Watson";
@@ -75,7 +94,12 @@ export default function BigCImportPreview({
     setSaveMsg("");
     setError("");
     try {
-      const r = await saveImportedPromotions(shop as Shop, result.items);
+      // Apply the user's per-row remark edits before saving.
+      const itemsToSave = result.items.map((it, i) => ({
+        ...it,
+        remark: (editedRemarks[i] ?? it.remark ?? "").trim(),
+      }));
+      const r = await saveImportedPromotions(shop as Shop, itemsToSave);
       setSaveMsg(
         `บันทึกสำเร็จ — เพิ่มใหม่ ${r.added} รายการ, อัปเดต ${r.updated} รายการ (รวมในระบบ ${r.total})`,
       );
@@ -87,7 +111,7 @@ export default function BigCImportPreview({
     } finally {
       setSaving(false);
     }
-  }, [result, shop, onSaved]);
+  }, [result, shop, onSaved, editedRemarks]);
 
   const handleSelect = useCallback(
     async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -100,10 +124,21 @@ export default function BigCImportPreview({
       setError("");
       setResult(null);
       setSaveMsg("");
+      setEditedRemarks({});
+      setExistingKeys(new Set());
       setLoading(true);
       try {
         const res = await parsePromoForShop(shop as Shop, file);
         setResult(res);
+        // Flag new vs duplicate against what's already stored (Watson).
+        if (shop === "Watson") {
+          try {
+            const existing = await getPromotionData();
+            setExistingKeys(new Set(existing.map((it) => promoKey(it))));
+          } catch {
+            // classification is best-effort; ignore load errors
+          }
+        }
       } catch (err) {
         setError(
           err instanceof Error
@@ -119,6 +154,25 @@ export default function BigCImportPreview({
 
   const items = result?.items ?? [];
   const codeLabel = `${shop} Code`;
+
+  // Effective remark for a row (edit override → original).
+  const remarkOf = (i: number) =>
+    editedRemarks[i] ?? items[i]?.remark ?? "";
+  const isDup = (i: number) => existingKeys.has(promoKey(items[i]));
+  const dupCount = items.filter((_, i) => isDup(i)).length;
+  const newCount = items.length - dupCount;
+  const emptyRemarkCount = items.filter((_, i) => !remarkOf(i).trim()).length;
+
+  const setRemark = (i: number, v: string) =>
+    setEditedRemarks((prev) => ({ ...prev, [i]: v }));
+  const fillEmptyRemarks = (v: string) =>
+    setEditedRemarks((prev) => {
+      const next = { ...prev };
+      items.forEach((_, i) => {
+        if (!remarkOf(i).trim()) next[i] = v;
+      });
+      return next;
+    });
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
@@ -218,6 +272,35 @@ export default function BigCImportPreview({
                 </div>
               </div>
 
+              {/* New vs duplicate + empty-remark status */}
+              {shop === "Watson" && items.length > 0 && (
+                <div className="flex items-center gap-2 flex-wrap mb-4 text-sm">
+                  <span className="inline-flex items-center gap-1 px-2 py-1 rounded-md bg-emerald-50 text-emerald-700 border border-emerald-200">
+                    ใหม่ {newCount}
+                  </span>
+                  <span className="inline-flex items-center gap-1 px-2 py-1 rounded-md bg-blue-50 text-blue-700 border border-blue-200">
+                    ซ้ำ (จะอัปเดต) {dupCount}
+                  </span>
+                  <span
+                    className={`inline-flex items-center gap-1 px-2 py-1 rounded-md border ${
+                      emptyRemarkCount > 0
+                        ? "bg-amber-50 text-amber-700 border-amber-200"
+                        : "bg-gray-50 text-gray-500 border-gray-200"
+                    }`}
+                  >
+                    Remark ว่าง {emptyRemarkCount}
+                  </span>
+                  {emptyRemarkCount > 0 && (
+                    <button
+                      onClick={() => fillEmptyRemarks("Buy 1")}
+                      className="px-2 py-1 rounded-md border border-amber-300 text-amber-700 hover:bg-amber-50"
+                    >
+                      ตั้ง Remark ว่าง → “Buy 1”
+                    </button>
+                  )}
+                </div>
+              )}
+
               {/* Warnings */}
               {result.warnings.length > 0 && (
                 <div className="rounded-lg bg-amber-50 border border-amber-200 px-3 py-2 mb-4">
@@ -239,6 +322,11 @@ export default function BigCImportPreview({
                   <thead className="bg-gray-50 text-gray-500">
                     <tr>
                       <th className="px-3 py-2 text-left font-medium">#</th>
+                      {shop === "Watson" && (
+                        <th className="px-3 py-2 text-left font-medium">
+                          สถานะ
+                        </th>
+                      )}
                       <th className="px-3 py-2 text-left font-medium">
                         {codeLabel}
                       </th>
@@ -267,6 +355,19 @@ export default function BigCImportPreview({
                     {items.map((it, i) => (
                       <tr key={i} className="hover:bg-gray-50">
                         <td className="px-3 py-2 text-gray-500">{i + 1}</td>
+                        {shop === "Watson" && (
+                          <td className="px-3 py-2">
+                            {isDup(i) ? (
+                              <span className="px-1.5 py-0.5 rounded text-xs bg-blue-50 text-blue-700 border border-blue-200">
+                                ซ้ำ
+                              </span>
+                            ) : (
+                              <span className="px-1.5 py-0.5 rounded text-xs bg-emerald-50 text-emerald-700 border border-emerald-200">
+                                ใหม่
+                              </span>
+                            )}
+                          </td>
+                        )}
                         <td className="px-3 py-2 font-mono text-gray-700">
                           {it.itemCode || "—"}
                         </td>
@@ -294,15 +395,25 @@ export default function BigCImportPreview({
                         <td className="px-3 py-2 text-right text-gray-400">
                           {fmtPrice(it.invoice62ExV)}
                         </td>
-                        <td className="px-3 py-2 text-gray-600 whitespace-normal">
-                          {it.remark || "—"}
+                        <td className="px-3 py-2">
+                          <input
+                            list="promo-remark-options"
+                            value={remarkOf(i)}
+                            onChange={(e) => setRemark(i, e.target.value)}
+                            placeholder="— เลือก/พิมพ์ —"
+                            className={`w-44 px-2 py-1 text-sm rounded border ${
+                              remarkOf(i).trim()
+                                ? "border-gray-200"
+                                : "border-amber-300 bg-amber-50"
+                            }`}
+                          />
                         </td>
                       </tr>
                     ))}
                     {items.length === 0 && (
                       <tr>
                         <td
-                          colSpan={11}
+                          colSpan={shop === "Watson" ? 12 : 11}
                           className="px-3 py-6 text-center text-gray-400"
                         >
                           ไม่พบรายการสินค้าในไฟล์
@@ -311,6 +422,11 @@ export default function BigCImportPreview({
                     )}
                   </tbody>
                 </table>
+                <datalist id="promo-remark-options">
+                  {REMARK_OPTIONS.map((o) => (
+                    <option key={o} value={o} />
+                  ))}
+                </datalist>
               </div>
             </>
           )}
