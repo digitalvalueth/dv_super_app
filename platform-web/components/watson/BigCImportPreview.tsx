@@ -6,10 +6,10 @@
 // promotion columns. Does NOT write to Firestore this round (preview only).
 
 import {
-  bigCToPromotionItems,
-  parseBigCFile,
-  type BigCParseResult,
-} from "@/lib/watson/bigc-promo-parser";
+  parsePromoForShop,
+  type PromoPreview,
+  type Shop,
+} from "@/lib/watson/promo-import";
 import { AlertTriangle, FileSpreadsheet, Loader2, X } from "lucide-react";
 import { useCallback, useRef, useState } from "react";
 
@@ -24,7 +24,7 @@ const fmtDate = (d: Date | null): string => {
 const fmtPrice = (n: number | null | undefined): string =>
   n === null || n === undefined ? "—" : n.toLocaleString("th-TH");
 
-const periodSourceLabel = (s: BigCParseResult["periodSource"]): string => {
+const periodSourceLabel = (s: PromoPreview["periodSource"]): string => {
   switch (s) {
     case "sheet":
       return "จากไฟล์";
@@ -50,7 +50,7 @@ export default function BigCImportPreview({
   const [fileName, setFileName] = useState<string>("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string>("");
-  const [result, setResult] = useState<BigCParseResult | null>(null);
+  const [result, setResult] = useState<PromoPreview | null>(null);
 
   const handleSelect = useCallback(
     async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -64,7 +64,7 @@ export default function BigCImportPreview({
       setResult(null);
       setLoading(true);
       try {
-        const res = await parseBigCFile(file);
+        const res = await parsePromoForShop(shop as Shop, file);
         setResult(res);
       } catch (err) {
         setError(
@@ -76,10 +76,10 @@ export default function BigCImportPreview({
         setLoading(false);
       }
     },
-    [],
+    [shop],
   );
 
-  const items = result ? bigCToPromotionItems(result) : [];
+  const items = result?.items ?? [];
   const codeLabel = `${shop} Code`;
 
   return (
