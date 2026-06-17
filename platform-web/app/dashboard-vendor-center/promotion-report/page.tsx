@@ -955,6 +955,55 @@ export default function PromotionReportPage() {
     );
   });
 
+  // ── Group the view by product ────────────────────────────────────────
+  // A product (same barcode, or Watson code when it has no barcode) usually
+  // has several promo periods/mechanics. Grouping those rows together makes
+  // the master table much easier to scan. Grouping applies in VIEW mode only;
+  // edit mode keeps the raw order so adding/editing rows stays predictable.
+  const groupKeyOf = (r: Row) =>
+    (r.barcode || "").trim() || (r.itemCode || "").trim() || "—";
+  const startMs = (d: Row["promoStart"]) =>
+    d instanceof Date ? d.getTime() : d ? new Date(d).getTime() : 0;
+
+  const groupSizes = new Map<string, number>();
+  for (const r of filteredRows)
+    groupSizes.set(groupKeyOf(r), (groupSizes.get(groupKeyOf(r)) ?? 0) + 1);
+
+  const groupedSorted = [...filteredRows].sort((a, b) => {
+    const ka = groupKeyOf(a);
+    const kb = groupKeyOf(b);
+    if (ka !== kb) return ka.localeCompare(kb);
+    return startMs(a.promoStart) - startMs(b.promoStart);
+  });
+
+  const displayRows: {
+    row: Row;
+    grouped: boolean;
+    isFirst: boolean;
+    groupIndex: number;
+    groupSize: number;
+  }[] = [];
+  if (editMode) {
+    for (const row of filteredRows)
+      displayRows.push({ row, grouped: false, isFirst: true, groupIndex: 0, groupSize: 1 });
+  } else {
+    let prevKey: string | null = null;
+    let gi = -1;
+    for (const row of groupedSorted) {
+      const key = groupKeyOf(row);
+      const isFirst = key !== prevKey;
+      if (isFirst) gi++;
+      prevKey = key;
+      displayRows.push({
+        row,
+        grouped: true,
+        isFirst,
+        groupIndex: gi,
+        groupSize: groupSizes.get(key) ?? 1,
+      });
+    }
+  }
+
   const isFiltered = search || statusFilter !== "all" || dateFrom || dateTo;
 
   return (
@@ -1341,22 +1390,29 @@ export default function PromotionReportPage() {
                       </td>
                     </tr>
                   )}
-                  {filteredRows.map((row, idx) => {
+                  {displayRows.map(
+                    ({ row, grouped, isFirst, groupIndex, groupSize }, idx) => {
                     const isActive =
                       row.promoStart &&
                       row.promoEnd &&
                       row.promoStart <= today &&
                       row.promoEnd >= today;
                     const isSelected = selectedIds.has(row._id);
+                    const band =
+                      grouped && groupIndex % 2 === 1 ? "bg-slate-50/60" : "";
                     return (
                       <tr
                         key={row._id}
                         className={`border-b border-gray-100 transition-colors ${
+                          grouped && isFirst && idx > 0
+                            ? "border-t-2 border-t-gray-200"
+                            : ""
+                        } ${
                           isSelected
                             ? "bg-red-50/60"
                             : isActive
                               ? "bg-green-50/40 hover:bg-green-50/70"
-                              : "hover:bg-amber-50/20"
+                              : `${band} hover:bg-amber-50/20`
                         }`}
                       >
                         {editMode && (
@@ -1370,7 +1426,14 @@ export default function PromotionReportPage() {
                           </td>
                         )}
                         <td className="px-2 py-1 text-center text-xs text-gray-400 select-none">
-                          {isActive ? (
+                          {grouped && isFirst && groupSize > 1 ? (
+                            <span
+                              className="inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full bg-blue-100 text-blue-700 text-[10px] font-bold"
+                              title={`สินค้านี้มี ${groupSize} โปรโมชั่น`}
+                            >
+                              {groupSize}
+                            </span>
+                          ) : isActive ? (
                             <span
                               className="inline-block w-2 h-2 rounded-full bg-green-400"
                               title="Active"
@@ -1380,6 +1443,23 @@ export default function PromotionReportPage() {
                           )}
                         </td>
                         {COLS.map((col) => {
+                          // In the grouped view, show the product identity
+                          // (barcode / Watson code / name) only on the first
+                          // row of each group — continuation rows stay blank so
+                          // the group reads as one product.
+                          const isGroupCol =
+                            col.key === "barcode" ||
+                            col.key === "itemCode" ||
+                            col.key === "itemName";
+                          if (grouped && !isFirst && isGroupCol) {
+                            return (
+                              <td key={col.key} className="px-1 py-1">
+                                <div className="px-2 py-1.5 text-xs text-gray-300 select-none">
+                                  {col.key === "barcode" ? "↳" : ""}
+                                </div>
+                              </td>
+                            );
+                          }
                           const rawVal = row[col.key];
                           const val =
                             col.type === "date"
