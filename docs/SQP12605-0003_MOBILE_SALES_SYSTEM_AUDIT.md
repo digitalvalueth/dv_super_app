@@ -3,6 +3,11 @@
 > สถานะเทียบ requirement 1.1–1.6 กับ codebase จริง ณ branch `feature/watson-daily-sales-sqp12605`
 > วันที่ตรวจ: 2026-06-17 · วิธีตรวจ: สำรวจโค้ดจริง (Explore agents 4 ชุด) + ยืนยันด้วย grep
 > เครื่องหมาย: ✅ เสร็จ · ⚠️ บางส่วน/ต้องปรับ · ❌ ยังไม่มี · 🐞 มีบั๊ก/เสี่ยง
+>
+> **อัปเดต 2026-06-17 (หลัง audit):** ปิดช่องว่าง P1 + P2 บางส่วนแล้ว —
+> เพิ่ม role gate + branch scoping ให้รายงาน 1.3/1.5 (commit `da74b8e`),
+> แก้ timezone โปรฝั่งมือถือ (commit `db775a6`). คงเหลือ **1.6** (รอไฟล์ rang/ranking)
+> และงาน P2 ที่ติด WIP (inventory-report). ดูสถานะล่าสุดในแต่ละหัวข้อด้านล่าง
 
 ---
 
@@ -12,9 +17,9 @@
 |------|--------|----------|
 | **1.1** | บันทึกยอดขายผ่านมือถือ (scan/ดึงสินค้า/จำนวน-วันที่/เช็คซ้ำ/save) | ✅ เสร็จครบ |
 | **1.2** | ราคาตามช่วงโปรโมชั่น (มือถือ + หลังบ้าน) | ✅ เสร็จ (มีจุดเสี่ยง timezone + จำกัดเฉพาะ Watson) |
-| **1.3** | รายงานยอดขายพนักงาน (filter/ยอด/บิล/ชิ้น/export) | ✅ เสร็จ — ⚠️ **ไม่มี role/branch scoping** |
+| **1.3** | รายงานยอดขายพนักงาน (filter/ยอด/บิล/ชิ้น/export) | ✅ เสร็จ + **เพิ่ม role/branch scoping แล้ว** (`da74b8e`) |
 | **1.4** | รายงาน Supervisor (ภาพรวมทีม) | ✅ เสร็จครบ + scoping ถูกต้อง (เป็นตัวอย่างที่ดี) |
-| **1.5** | รายงานทุกสาขา (รวม/เทียบสาขา/export) | ⚠️ มีหน้า by-store/by-product แต่ **ไม่มี role gate** + by-product ไม่มี PDF |
+| **1.5** | รายงานทุกสาขา (รวม/เทียบสาขา/export) | ✅ by-store/by-product **เพิ่ม role gate แล้ว** + by-product PDF — ⚠️ inventory-report ยัง mock (ติด WIP) |
 | **1.6** | **Report Management — Watson daily-sales file + เทียบ Watson vs มือถือ** | ❌ **ยังไม่มีเลย (ช่องว่างใหญ่สุด)** |
 
 **บรรทัดเดียว:** ตัวบันทึก (1.1/1.2) และรายงาน (1.3/1.4/1.5) เกือบครบแล้ว — ที่ **ขาดจริง ๆ คือ 1.6 ทั้งหมด** (ยังไม่มี importer ไฟล์ยอดขายรายวันของ Watson และยังไม่มีหน้าเปรียบเทียบ Watson vs ยอดที่พนักงานบันทึกผ่านมือถือ) บวกกับ **ช่องว่างด้านสิทธิ์ (role/branch scoping)** ในรายงาน 1.3 และ 1.5
@@ -135,14 +140,14 @@
 - [ ] **1.6 ทั้งหมด** — importer ไฟล์ยอดขายรายวัน Watson แยกสาขา + หน้าเปรียบเทียบ Watson vs มือถือ (รายสาขา/รายวัน + variance + export)
   - ⛳ **ติดอยู่ที่:** ต้องการ **ตัวอย่างไฟล์ "rang watson" จริง** เพื่อรู้ชื่อคอลัมน์/รูปแบบสาขา ก่อนเขียน parser
 
-### P1 — ช่องว่างด้านสิทธิ์ (ความถูกต้อง/ความปลอดภัยของข้อมูล)
-- [ ] เพิ่ม **role gate + branch scoping** ให้รายงาน **1.3 (sales-report)** — นำ pattern จาก 1.4 (`supervisor-scope.ts`) มาใช้ (พนักงานควรเห็นเฉพาะของตัวเอง/สาขาตน)
-- [ ] เพิ่ม **role gate** ให้รายงาน **1.5 (by-store / by-product)** — จำกัดระดับ admin/manager
+### P1 — ช่องว่างด้านสิทธิ์ (ความถูกต้อง/ความปลอดภัยของข้อมูล) ✅ เสร็จแล้ว
+- [x] เพิ่ม **role gate + branch scoping** ให้รายงาน **1.3 (sales-report)** — ใช้ helper ใหม่ `lib/reports/load-scoped-branches.ts` (`da74b8e`)
+- [x] เพิ่ม **role gate + scoping** ให้รายงาน **1.5 (by-store / by-product)** (`da74b8e`)
 
 ### P2 — ความครบถ้วน/คุณภาพ
-- [ ] 🐞 แก้ **timezone โปรโมชั่น** ฝั่งมือถือ (`daily-sale.service.ts:226,250`) ให้เทียบเป็น string `YYYY-MM-DD`
-- [ ] **inventory-report** เปลี่ยนจาก mock data → ดึงข้อมูลจริง + เพิ่ม PDF
-- [ ] **by-product** เพิ่ม Export PDF ให้ครบ
+- [x] 🐞 แก้ **timezone โปรโมชั่น** ฝั่งมือถือ — `isPromoActiveOnDate` เทียบ calendar-date string + regression test (`db775a6`)
+- [x] **by-product** Export PDF (จัดให้ใช้ cached Thai-font pattern เดียวกับ 1.4) (`da74b8e`)
+- [ ] **inventory-report** เปลี่ยนจาก mock data → ดึงข้อมูลจริง + เพิ่ม PDF — ⚠️ **ติด WIP ของผู้ใช้** (ยังไม่แตะ)
 - [ ] (ถ้าต้องรองรับหลาย retailer) เปิดบันทึกโปรของ BigC/Lotus + per-shop isolation (`promo-save.ts:31-34`)
 - [ ] แก้ไขบิลเก่าให้ re-resolve โปรล่าสุด (optional)
 
