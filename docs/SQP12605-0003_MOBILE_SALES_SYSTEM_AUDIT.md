@@ -105,7 +105,7 @@
 |--------|-------|--------------------|
 | **By-Store** (`dashboard-vendor-center/by-store/page.tsx`) | ⚠️ | รวมยอดรายสาขา + เทียบ growth% + Excel `:293` + PDF `:330` — แต่ **ไม่มี role gate** (ใครก็เปิดได้) |
 | **By-Product** (`.../by-product/page.tsx`) | ⚠️ | แตกตามสินค้า + breakdown รายสาขา + Excel `:306` — **ไม่มี PDF**, ไม่มี role gate |
-| **Inventory Report** (`.../inventory-report/page.tsx`) | ⚠️🐞 | Excel/CSV เท่านั้น (ไม่มี PDF) + **ใช้ mock data ไม่ได้ดึง dailySales จริง** |
+| **Inventory Report** (`.../inventory-report/page.tsx`) | ✅ | **ใช้ข้อมูลจริงแล้ว** (`f6d1b68`): SOH=Phithan EOD, Units=dailySales, DOI คำนวณ, Cat=แบรนด์ |
 | Daily-sale by-branch (`stock-counter/dashboard/daily-sale/page.tsx`) | ✅ | สรุปยอดรายวันแยกสาขาจาก `dailySales` จริง + export CSV |
 
 ข้อสังเกต: ยังไม่มีหน้า "สรุปทุกสาขาสำหรับ admin/super_admin โดยเฉพาะ" ที่ล็อกสิทธิ์ — by-store ทำหน้าที่นี้ได้ถ้าเพิ่ม role gate
@@ -147,7 +147,7 @@
 ### P2 — ความครบถ้วน/คุณภาพ
 - [x] 🐞 แก้ **timezone โปรโมชั่น** ฝั่งมือถือ — `isPromoActiveOnDate` เทียบ calendar-date string + regression test (`db775a6`)
 - [x] **by-product** Export PDF (จัดให้ใช้ cached Thai-font pattern เดียวกับ 1.4) (`da74b8e`)
-- [ ] **inventory-report** เปลี่ยนจาก mock data → ดึงข้อมูลจริง + เพิ่ม PDF — ⚠️ **ติด WIP ของผู้ใช้** (ยังไม่แตะ)
+- [x] **inventory-report** เปลี่ยนจาก mock → ข้อมูลจริง: SOH จาก Phithan EOD, Units จาก dailySales, DOI คำนวณ, Cat = แบรนด์ + 7 unit tests (`f6d1b68`)
 - [ ] (ถ้าต้องรองรับหลาย retailer) เปิดบันทึกโปรของ BigC/Lotus + per-shop isolation (`promo-save.ts:31-34`)
 - [ ] แก้ไขบิลเก่าให้ re-resolve โปรล่าสุด (optional)
 
