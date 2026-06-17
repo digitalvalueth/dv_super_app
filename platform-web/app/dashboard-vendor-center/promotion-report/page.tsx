@@ -290,7 +290,7 @@ export default function PromotionReportPage() {
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<
     "all" | "active" | "inactive"
-  >("all");
+  >("active");
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
   const [validateIds, setValidateIds] = useState<Set<string>>(new Set());
