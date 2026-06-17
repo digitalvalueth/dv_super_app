@@ -9,6 +9,7 @@ import {
   Download,
   FileText,
   Image as ImageIcon,
+  Lock,
   Search,
 } from "lucide-react";
 import Link from "next/link";
@@ -16,12 +17,14 @@ import { Fragment, useEffect, useMemo, useState } from "react";
 import { useBrand } from "../brand-context";
 import { db } from "@/lib/firebase";
 import { collection, getDocs, query, where } from "firebase/firestore";
+import { useAuthStore } from "@/stores/auth.store";
 import * as XLSX from "xlsx";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import { toast } from "sonner";
 import { previousPeriodRange } from "@/lib/reports/period";
 import { aggregateByProduct } from "@/lib/reports/aggregate";
+import { loadScopedBranchIds, isElevated } from "@/lib/reports/load-scoped-branches";
 
 interface DailySaleItem {
   barcode: string;
@@ -91,22 +94,24 @@ const formatDateString = (dateStr: string) => {
   return `${parts[2]} ${months[d.getMonth()]} ${parts[0]}`;
 };
 
-async function registerThaiFont(doc: jsPDF): Promise<boolean> {
+// Cache for Thai font base64 (Google Sans) used in PDF export.
+let thaiFontBase64Cache: string | null = null;
+
+async function loadThaiFontBase64(): Promise<string | null> {
+  if (thaiFontBase64Cache) return thaiFontBase64Cache;
   try {
     const response = await fetch("/GoogleSans-VariableFont.ttf");
-    if (!response.ok) return false;
+    if (!response.ok) return null;
     const arrayBuffer = await response.arrayBuffer();
     const bytes = new Uint8Array(arrayBuffer);
     let binary = "";
     for (let i = 0; i < bytes.byteLength; i++) {
       binary += String.fromCharCode(bytes[i]);
     }
-    const base64 = btoa(binary);
-    doc.addFileToVFS("GoogleSans.ttf", base64);
-    doc.addFont("GoogleSans.ttf", "GoogleSans", "normal");
-    return true;
+    thaiFontBase64Cache = btoa(binary);
+    return thaiFontBase64Cache;
   } catch {
-    return false;
+    return null;
   }
 }
 
@@ -145,7 +150,10 @@ function Header({
 
 export default function Page() {
   const { activeBrand } = useBrand();
+  const { userData } = useAuthStore();
   const [rawSales, setRawSales] = useState<DailySale[]>([]);
+  // null => no branch restriction (admin/super_admin); array => restricted scope
+  const [scopedBranchIds, setScopedBranchIds] = useState<string[] | null>(null);
   const [loading, setLoading] = useState(true);
 
   const [sortKey, setSortKey] = useState<SortKey>("revenue");
@@ -157,6 +165,11 @@ export default function Page() {
   const [activePeriodBtn, setActivePeriodBtn] = useState("7 Days");
 
   useEffect(() => {
+    if (userData && !isElevated(userData.role)) {
+      setLoading(false);
+      return;
+    }
+
     async function loadData() {
       setLoading(true);
       try {
@@ -174,6 +187,9 @@ export default function Page() {
           : query(salesRef);
         const salesSnap = await getDocs(salesQuery);
         setRawSales(salesSnap.docs.map((d) => ({ id: d.id, ...d.data() })) as DailySale[]);
+
+        // Resolve the viewer's branch scope (null = all for admin/super_admin).
+        setScopedBranchIds(await loadScopedBranchIds(userData));
       } catch (err) {
         console.error("Error loading by-product data:", err);
       } finally {
@@ -181,10 +197,21 @@ export default function Page() {
       }
     }
     loadData();
-  }, []);
+  }, [userData]);
 
   const brandSales = useMemo(() => {
-    return rawSales
+    // Apply the viewer's branch scope BEFORE aggregation so every table and
+    // export respects it. null = all (admin/super_admin); [] = none.
+    let scoped = rawSales;
+    if (scopedBranchIds !== null) {
+      if (scopedBranchIds.length === 0) {
+        scoped = [];
+      } else {
+        const set = new Set(scopedBranchIds);
+        scoped = rawSales.filter((s) => set.has(s.branchId));
+      }
+    }
+    return scoped
       .map((sale) => {
         const brandItems = (sale.items || []).filter((item) =>
           matchBrand(item.productDescription || "", activeBrand),
@@ -193,7 +220,7 @@ export default function Page() {
         return { ...sale, items: brandItems };
       })
       .filter(Boolean) as DailySale[];
-  }, [rawSales, activeBrand]);
+  }, [rawSales, activeBrand, scopedBranchIds]);
 
   const sortedDates = useMemo(() => {
     const dates = brandSales.map((s) => s.saleDate).filter(Boolean);
@@ -348,9 +375,20 @@ export default function Page() {
       return;
     }
     const doc = new jsPDF();
-    const hasThai = await registerThaiFont(doc);
-    const fontName = hasThai ? "GoogleSans" : "helvetica";
     const pageWidth = doc.internal.pageSize.getWidth();
+
+    let fontName = "helvetica";
+    try {
+      const fontBase64 = await loadThaiFontBase64();
+      if (fontBase64) {
+        doc.addFileToVFS("GoogleSans.ttf", fontBase64);
+        doc.addFont("GoogleSans.ttf", "GoogleSans", "normal");
+        fontName = "GoogleSans";
+      }
+    } catch {
+      fontName = "helvetica";
+    }
+    const hasThai = fontName === "GoogleSans";
 
     doc.setFont(fontName, "normal");
     doc.setFontSize(16);
@@ -398,6 +436,22 @@ export default function Page() {
       toast.success("ดาวน์โหลดไฟล์ PDF เรียบร้อยแล้ว");
     }
   };
+
+  if (userData && !isElevated(userData.role)) {
+    return (
+      <div className="flex h-[80vh] items-center justify-center bg-gray-50">
+        <div className="text-center max-w-md px-6">
+          <div className="mx-auto w-14 h-14 rounded-full bg-gray-100 flex items-center justify-center mb-4">
+            <Lock className="w-7 h-7 text-gray-400" />
+          </div>
+          <h2 className="text-lg font-bold text-gray-900 mb-1">ไม่มีสิทธิ์เข้าถึง</h2>
+          <p className="text-sm text-gray-500">
+            รายงานนี้สำหรับหัวหน้าทีม (Supervisor), ผู้จัดการ (Manager) และผู้ดูแลระบบเท่านั้น
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   if (loading) {
     return (

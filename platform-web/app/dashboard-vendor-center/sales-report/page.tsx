@@ -7,6 +7,7 @@ import {
   Download,
   ExternalLink,
   Image as ImageIcon,
+  Lock,
   Search,
   Tag,
   X,
@@ -15,6 +16,11 @@ import { useEffect, useState, useMemo } from "react";
 import { useBrand } from "../brand-context";
 import { db } from "@/lib/firebase";
 import { collection, getDocs, query, where } from "firebase/firestore";
+import { useAuthStore } from "@/stores/auth.store";
+import {
+  loadScopedBranchIds,
+  isElevated,
+} from "@/lib/reports/load-scoped-branches";
 import { getPromotionData } from "@/lib/watson-firebase";
 import { PromotionItem } from "@/types/watson/promotion";
 import * as XLSX from "xlsx";
@@ -105,11 +111,14 @@ const fmt = (n: number) => n.toLocaleString("en-US");
 export default function SalesReport() {
   const { activeBrand } = useBrand();
   const { logAction } = useActivityLogger();
+  const { userData } = useAuthStore();
   const [rawProducts, setRawProducts] = useState<Product[]>([]);
   const [rawSales, setRawSales] = useState<DailySale[]>([]);
   const [rawSessions, setRawSessions] = useState<CountingSession[]>([]);
   const [rawBranches, setRawBranches] = useState<Branch[]>([]);
   const [rawPromotions, setRawPromotions] = useState<PromotionItem[]>([]);
+  // null => no branch restriction (admin/super_admin); array => restricted scope
+  const [scopedBranchIds, setScopedBranchIds] = useState<string[] | null>(null);
   const [loading, setLoading] = useState(true);
 
   // Filter States
@@ -126,6 +135,12 @@ export default function SalesReport() {
   const [sortAsc, setSortAsc] = useState<boolean>(false);
 
   useEffect(() => {
+    // Block non-elevated users from loading any sales data.
+    if (userData && !isElevated(userData.role)) {
+      setLoading(false);
+      return;
+    }
+
     async function loadData() {
       setLoading(true);
       try {
@@ -170,6 +185,9 @@ export default function SalesReport() {
         // Query shared promotions
         const promos = await getPromotionData();
         setRawPromotions(promos || []);
+
+        // Resolve the viewer's branch scope (null => all branches).
+        setScopedBranchIds(await loadScopedBranchIds(userData));
       } catch (err) {
         console.error("Error loading sales report data:", err);
       } finally {
@@ -178,7 +196,7 @@ export default function SalesReport() {
     }
 
     loadData();
-  }, []);
+  }, [userData]);
 
   const matchBrand = (name: string, brand: "NEST ME" | "PRIMANEST") => {
     const norm = (name || "").toLowerCase().replace(/\s+/g, "").trim();
@@ -193,8 +211,17 @@ export default function SalesReport() {
     return rawProducts.filter(p => matchBrand(p.name || "", activeBrand));
   }, [rawProducts, activeBrand]);
 
+  // Sales the viewer is allowed to see, restricted by branch scope.
+  // null => no restriction (admin/super_admin); [] => no branches; else by branchId.
+  const scopedSales = useMemo(() => {
+    if (scopedBranchIds === null) return rawSales; // admin/super_admin
+    if (scopedBranchIds.length === 0) return []; // supervisor/manager w/ no branches
+    const set = new Set(scopedBranchIds);
+    return rawSales.filter(s => set.has(s.branchId));
+  }, [rawSales, scopedBranchIds]);
+
   const brandSales = useMemo(() => {
-    return rawSales.map(sale => {
+    return scopedSales.map(sale => {
       const brandItems = (sale.items || []).filter(item => matchBrand(item.productDescription || "", activeBrand));
       if (brandItems.length === 0) return null;
       const totalRevenue = brandItems.reduce((sum, item) => sum + (item.revenue || 0), 0);
@@ -207,7 +234,7 @@ export default function SalesReport() {
         totalItems: brandItems.length
       };
     }).filter(Boolean) as any[];
-  }, [rawSales, activeBrand]);
+  }, [scopedSales, activeBrand]);
 
   const sortedDates = useMemo(() => {
     const dates = brandSales.map(s => s.saleDate).filter(Boolean);
@@ -326,14 +353,14 @@ export default function SalesReport() {
   };
 
   const storeNames = useMemo(() => {
-    const names = Array.from(new Set(rawSales.map(s => s.branchName).filter(Boolean)));
+    const names = Array.from(new Set(scopedSales.map(s => s.branchName).filter(Boolean)));
     return ["All Stores", ...names];
-  }, [rawSales]);
+  }, [scopedSales]);
 
   const employeeNames = useMemo(() => {
-    const names = Array.from(new Set(rawSales.map(s => s.employeeName).filter(Boolean)));
+    const names = Array.from(new Set(scopedSales.map(s => s.employeeName).filter(Boolean)));
     return ["All Salespersons", ...names];
-  }, [rawSales]);
+  }, [scopedSales]);
 
   // Flatten and filter daily sales items.
   // Also collect the set of distinct sale (bill) doc ids that survive the filters,
@@ -668,6 +695,22 @@ export default function SalesReport() {
       };
     });
   }, [promoOpen, rawPromotions, brandProducts, salesRows, activeBrand]);
+
+  if (userData && !isElevated(userData.role)) {
+    return (
+      <div className="flex h-[80vh] items-center justify-center bg-gray-50">
+        <div className="text-center max-w-md px-6">
+          <div className="mx-auto w-14 h-14 rounded-full bg-gray-100 flex items-center justify-center mb-4">
+            <Lock className="w-7 h-7 text-gray-400" />
+          </div>
+          <h2 className="text-lg font-bold text-gray-900 mb-1">ไม่มีสิทธิ์เข้าถึง</h2>
+          <p className="text-sm text-gray-500">
+            รายงานนี้สำหรับหัวหน้าทีม (Supervisor), ผู้จัดการ (Manager) และผู้ดูแลระบบเท่านั้น
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   if (loading) {
     return (

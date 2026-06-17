@@ -7,6 +7,7 @@ import {
   ChevronRight,
   Download,
   FileText,
+  Lock,
   Search,
 } from "lucide-react";
 import Link from "next/link";
@@ -20,6 +21,8 @@ import autoTable from "jspdf-autotable";
 import { toast } from "sonner";
 import { previousPeriodRange } from "@/lib/reports/period";
 import { aggregateByBranch } from "@/lib/reports/aggregate";
+import { useAuthStore } from "@/stores/auth.store";
+import { loadScopedBranchIds, isElevated } from "@/lib/reports/load-scoped-branches";
 
 interface DailySaleItem {
   barcode: string;
@@ -136,7 +139,9 @@ async function registerThaiFont(doc: jsPDF): Promise<boolean> {
 
 export default function Page() {
   const { activeBrand } = useBrand();
+  const { userData } = useAuthStore();
   const [rawSales, setRawSales] = useState<DailySale[]>([]);
+  const [scopedBranchIds, setScopedBranchIds] = useState<string[] | null>(null);
   const [loading, setLoading] = useState(true);
 
   const [sortKey, setSortKey] = useState<SortKey>("revenue");
@@ -148,8 +153,14 @@ export default function Page() {
 
   useEffect(() => {
     async function loadData() {
+      if (userData && !isElevated(userData.role)) {
+        setLoading(false);
+        return;
+      }
       setLoading(true);
       try {
+        setScopedBranchIds(await loadScopedBranchIds(userData));
+
         const companiesSnap = await getDocs(collection(db, "companies"));
         const phithan = companiesSnap.docs.find((d) => {
           const name = (d.data().name || "").toLowerCase();
@@ -171,11 +182,20 @@ export default function Page() {
       }
     }
     loadData();
-  }, []);
+  }, [userData]);
+
+  // Restrict sales to the viewer's branch scope before any aggregation:
+  // null = admin/super_admin (all), [] = no branches, else only matching branchIds.
+  const scopedSales = useMemo(() => {
+    if (scopedBranchIds === null) return rawSales;
+    if (scopedBranchIds.length === 0) return [];
+    const set = new Set(scopedBranchIds);
+    return rawSales.filter((s) => set.has(s.branchId));
+  }, [rawSales, scopedBranchIds]);
 
   // Filter daily sales to active brand items only
   const brandSales = useMemo(() => {
-    return rawSales
+    return scopedSales
       .map((sale) => {
         const brandItems = (sale.items || []).filter((item) =>
           matchBrand(item.productDescription || "", activeBrand),
@@ -184,7 +204,7 @@ export default function Page() {
         return { ...sale, items: brandItems };
       })
       .filter(Boolean) as DailySale[];
-  }, [rawSales, activeBrand]);
+  }, [scopedSales, activeBrand]);
 
   const sortedDates = useMemo(() => {
     const dates = brandSales.map((s) => s.saleDate).filter(Boolean);
@@ -380,6 +400,22 @@ export default function Page() {
       toast.success("ดาวน์โหลดไฟล์ PDF เรียบร้อยแล้ว");
     }
   };
+
+  if (userData && !isElevated(userData.role)) {
+    return (
+      <div className="flex h-[80vh] items-center justify-center bg-gray-50">
+        <div className="text-center max-w-md px-6">
+          <div className="mx-auto w-14 h-14 rounded-full bg-gray-100 flex items-center justify-center mb-4">
+            <Lock className="w-7 h-7 text-gray-400" />
+          </div>
+          <h2 className="text-lg font-bold text-gray-900 mb-1">ไม่มีสิทธิ์เข้าถึง</h2>
+          <p className="text-sm text-gray-500">
+            รายงานยอดขายรายสาขานี้สำหรับหัวหน้าทีม (Supervisor), ผู้จัดการ (Manager) และผู้ดูแลระบบเท่านั้น
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   if (loading) {
     return (
