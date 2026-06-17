@@ -189,6 +189,8 @@ export default function InventoryReport() {
       "Product Name",
       "Category",
       "Total Stock (SOH)",
+      "Today Units",
+      "Today DOI",
       "Yesterday Units",
       "Yesterday DOI",
       "7 Days Units",
@@ -202,6 +204,8 @@ export default function InventoryReport() {
       r.name,
       r.cat,
       r.totalStock,
+      r.tdUnits,
+      r.tdDOI,
       r.ydUnits,
       r.ydDOI,
       r.d7Units,
@@ -211,7 +215,7 @@ export default function InventoryReport() {
     ]);
 
     const ws = XLSX.utils.aoa_to_sheet([headers, ...rowsOut]);
-    ws["!cols"] = [15, 35, 12, 12, 12, 12, 12, 12, 12, 12].map((w) => ({ wch: w }));
+    ws["!cols"] = [15, 35, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12].map((w) => ({ wch: w }));
 
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "Inventory Report");
@@ -327,6 +331,9 @@ export default function InventoryReport() {
                 <th rowSpan={2} className="px-4 py-3 text-left border-b">Product</th>
                 <th rowSpan={2} className="px-4 py-3 text-left border-b">Cat</th>
                 <th rowSpan={2} className="px-4 py-3 text-right border-b">SOH</th>
+                <th colSpan={2} className="px-4 py-2 text-center border-b border-l bg-pink-100/70 text-pink-800">
+                  Today
+                </th>
                 <th colSpan={2} className="px-4 py-2 text-center border-b border-l bg-pink-50/60 text-pink-700">
                   Yesterday
                 </th>
@@ -344,12 +351,14 @@ export default function InventoryReport() {
                 <th className="px-4 py-2 text-right border-b">DOI</th>
                 <th className="px-4 py-2 text-right border-b border-l">Units</th>
                 <th className="px-4 py-2 text-right border-b">DOI</th>
+                <th className="px-4 py-2 text-right border-b border-l">Units</th>
+                <th className="px-4 py-2 text-right border-b">DOI</th>
               </tr>
             </thead>
             <tbody className="divide-y">
               {filtered.length === 0 ? (
                 <tr>
-                  <td colSpan={10} className="px-4 py-12 text-center text-gray-400">
+                  <td colSpan={12} className="px-4 py-12 text-center text-gray-400">
                     ไม่พบข้อมูลสินค้าสำหรับแบรนด์ {activeBrand}
                   </td>
                 </tr>
@@ -361,6 +370,16 @@ export default function InventoryReport() {
                     <td className="px-4 py-3 text-gray-600">{r.cat}</td>
                     <td className="px-4 py-3 text-right font-semibold text-gray-900">
                       {fmt(r.totalStock)}
+                    </td>
+                    <td className="px-4 py-3 text-right text-gray-700 border-l">
+                      {fmt(r.tdUnits)}
+                    </td>
+                    <td className="px-4 py-3 text-right">
+                      <span
+                        className={`inline-block px-2 py-0.5 rounded text-xs font-semibold border ${doiBadge(r.tdDOI, r.tdUnits)}`}
+                      >
+                        {r.tdUnits ? fmt(r.tdDOI) : "—"}
+                      </span>
                     </td>
                     <td className="px-4 py-3 text-right text-gray-700 border-l">
                       {fmt(r.ydUnits)}

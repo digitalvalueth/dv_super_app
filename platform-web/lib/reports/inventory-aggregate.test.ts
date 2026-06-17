@@ -39,6 +39,7 @@ describe("buildInventoryRows", () => {
     { Barcode: "B", EOD_Qty: 4000 },
   ];
   const sales: InvSaleLite[] = [
+    { saleDate: "2026-06-17", items: [{ barcode: "A", quantity: 5 }] }, // today
     { saleDate: "2026-06-16", items: [{ barcode: "A", quantity: 12 }, { barcode: "B", quantity: 3 }] }, // yesterday
     { saleDate: "2026-06-12", items: [{ barcode: "A", quantity: 20 }] }, // within 7d, not yesterday
     { saleDate: "2026-05-20", items: [{ barcode: "A", quantity: 100 }] }, // within 30d, not 7d
@@ -54,15 +55,17 @@ describe("buildInventoryRows", () => {
     expect(byBarcode("SKU-C").totalStock).toBe(0);
   });
 
-  it("aggregates units into nested rolling windows ending yesterday", () => {
+  it("keeps today separate from the windows that end yesterday", () => {
     const a = byBarcode("SKU-A");
-    expect(a.ydUnits).toBe(12);
-    expect(a.d7Units).toBe(32); // 12 + 20
-    expect(a.d30Units).toBe(132); // 12 + 20 + 100 (the 2026-04-01 sale is excluded)
+    expect(a.tdUnits).toBe(5); // only the 2026-06-17 sale
+    expect(a.ydUnits).toBe(12); // today's 5 does NOT leak into yesterday
+    expect(a.d7Units).toBe(32); // 12 + 20 (today excluded)
+    expect(a.d30Units).toBe(132); // 12 + 20 + 100 (today + the 2026-04-01 sale excluded)
   });
 
   it("derives DOI per window", () => {
     const a = byBarcode("SKU-A");
+    expect(a.tdDOI).toBe(Math.round((8011 * 1) / 5));
     expect(a.ydDOI).toBe(668); // 8011×1/12
     expect(a.d7DOI).toBe(Math.round((8011 * 7) / 32));
     expect(a.d30DOI).toBe(Math.round((8011 * 30) / 132));

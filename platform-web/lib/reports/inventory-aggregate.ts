@@ -27,9 +27,11 @@ export interface InvRow {
   name: string;
   cat: string; // brand label, e.g. "NEST ME" / "PRIMANEST"
   totalStock: number; // SOH
+  tdUnits: number;
   ydUnits: number;
   d7Units: number;
   d30Units: number;
+  tdDOI: number;
   ydDOI: number;
   d7DOI: number;
   d30DOI: number;
@@ -72,25 +74,29 @@ export function buildInventoryRows(params: {
     soh.set(bc, (soh.get(bc) ?? 0) + (Number(d.EOD_Qty) || 0));
   }
 
-  // Rolling windows that END YESTERDAY (exclude the partial current day):
-  //   yesterday = [d-1]; last7 = [d-7..d-1]; last30 = [d-30..d-1].
+  // "Today" is the current (partial) day on its own; the rolling windows END
+  // YESTERDAY so they aren't skewed by an incomplete today:
+  //   today = [d]; yesterday = [d-1]; last7 = [d-7..d-1]; last30 = [d-30..d-1].
   const ydSet = windowDates(todayStr, 1, 1);
   const d7Set = windowDates(todayStr, 7, 1);
   const d30Set = windowDates(todayStr, 30, 1);
 
   // Units per barcode per window.
+  const td = new Map<string, number>();
   const yd = new Map<string, number>();
   const d7 = new Map<string, number>();
   const d30 = new Map<string, number>();
   for (const sale of sales) {
+    const inTd = sale.saleDate === todayStr;
     const inYd = ydSet.has(sale.saleDate);
     const in7 = d7Set.has(sale.saleDate);
     const in30 = d30Set.has(sale.saleDate);
-    if (!in7 && !in30 && !inYd) continue;
+    if (!inTd && !in7 && !in30 && !inYd) continue;
     for (const it of sale.items || []) {
       const bc = String(it.barcode ?? "").trim();
       if (!bc) continue;
       const q = Number(it.quantity) || 0;
+      if (inTd) td.set(bc, (td.get(bc) ?? 0) + q);
       if (inYd) yd.set(bc, (yd.get(bc) ?? 0) + q);
       if (in7) d7.set(bc, (d7.get(bc) ?? 0) + q);
       if (in30) d30.set(bc, (d30.get(bc) ?? 0) + q);
@@ -100,6 +106,7 @@ export function buildInventoryRows(params: {
   return products.map((p) => {
     const bc = String(p.barcode ?? "").trim();
     const totalStock = soh.get(bc) ?? 0;
+    const tdUnits = td.get(bc) ?? 0;
     const ydUnits = yd.get(bc) ?? 0;
     const d7Units = d7.get(bc) ?? 0;
     const d30Units = d30.get(bc) ?? 0;
@@ -108,9 +115,11 @@ export function buildInventoryRows(params: {
       name: p.name || "สินค้าไม่ระบุชื่อ",
       cat: brand,
       totalStock,
+      tdUnits,
       ydUnits,
       d7Units,
       d30Units,
+      tdDOI: computeDOI(totalStock, tdUnits, 1),
       ydDOI: computeDOI(totalStock, ydUnits, 1),
       d7DOI: computeDOI(totalStock, d7Units, 7),
       d30DOI: computeDOI(totalStock, d30Units, 30),
