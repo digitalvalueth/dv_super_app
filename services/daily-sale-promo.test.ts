@@ -59,6 +59,21 @@ describe("isPromoActiveOnDate", () => {
     expect(isPromoActiveOnDate(p, "2026-06-21")).toBe(false);
   });
 
+  it("includes the start day even when the boundary Date has a time-of-day (TZ skew)", () => {
+    // Firestore Timestamps for date-only promos come back at UTC midnight,
+    // which renders as 07:00 in Thailand (UTC+7). Comparing by instant used to
+    // drop the whole first day; comparison is now by calendar day. Constructed
+    // as local times so the assertion holds in any test timezone.
+    const skewed = promo({
+      promoStart: new Date("2026-06-10T07:00:00"),
+      promoEnd: new Date("2026-06-20T07:00:00"),
+    });
+    expect(isPromoActiveOnDate(skewed, "2026-06-10")).toBe(true);
+    expect(isPromoActiveOnDate(skewed, "2026-06-20")).toBe(true);
+    expect(isPromoActiveOnDate(skewed, "2026-06-09")).toBe(false);
+    expect(isPromoActiveOnDate(skewed, "2026-06-21")).toBe(false);
+  });
+
   it("is inactive when promoStart or promoEnd is null", () => {
     expect(isPromoActiveOnDate(promo({ promoStart: null }), "2026-06-15")).toBe(
       false,

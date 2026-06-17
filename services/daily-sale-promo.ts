@@ -38,17 +38,36 @@ export const isNonPromo = (remark?: string): boolean =>
 export const isBuyOnePromo = (remark?: string): boolean => isNonPromo(remark);
 
 /**
+ * The local calendar date "YYYY-MM-DD" of a Date.
+ *
+ * We compare promos by calendar DAY (not by instant) to stay timezone-safe:
+ * promo boundaries from Firestore arrive as `Timestamp.toDate()` at UTC
+ * midnight (= 07:00 in Thailand, UTC+7), while saleDate is a plain
+ * "YYYY-MM-DD". Comparing the Date instants directly made `promoStart <= d`
+ * skip the whole first day of a promo. Reducing both sides to a local
+ * calendar-date string recovers the intended day for both the UTC-midnight
+ * Firestore case and the local-midnight `new Date("…T00:00:00")` case.
+ */
+const toLocalDateStr = (d: Date): string => {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+};
+
+/**
  * Check if a promo is active on the exact saleDate.
- * Inclusive on both boundaries. saleDate is "YYYY-MM-DD".
- * Mirrors `isPromoActiveOnDate` in record.tsx.
+ * Inclusive on both boundaries, compared by calendar day. saleDate is
+ * "YYYY-MM-DD". Mirrors `isPromoActiveOnDate` in record.tsx.
  */
 export const isPromoActiveOnDate = (
   promo: PromoItemLike,
   saleDateStr: string,
 ): boolean => {
   if (!promo.promoStart || !promo.promoEnd) return false;
-  const d = new Date(saleDateStr + "T00:00:00");
-  return promo.promoStart <= d && d <= promo.promoEnd;
+  const startStr = toLocalDateStr(promo.promoStart);
+  const endStr = toLocalDateStr(promo.promoEnd);
+  return startStr <= saleDateStr && saleDateStr <= endStr;
 };
 
 /**
