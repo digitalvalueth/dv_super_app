@@ -30,6 +30,7 @@ import Animated, {
 } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { AreaChart } from "@/components/ui/AreaChart";
+import { BarChart } from "@/components/ui/BarChart";
 import { DonutChart } from "@/components/ui/DonutChart";
 
 const HERO = ["#F59E0B", "#FB923C", "#FB7185"] as const;
@@ -169,8 +170,15 @@ export default function DailySaleDashboard() {
 
   const s = stats!;
   const chart = s.series.slice(-7);
+  const thisWeek = s.series.slice(-7);
+  const lastWeek = s.series.slice(-14, -7);
+  const cmpBars = thisWeek.map((d, i) => ({
+    label: dow(d.date),
+    values: [d.revenue, lastWeek[i]?.revenue ?? 0],
+  }));
   const txt = colors.text;
   const sub = colors.textSecondary;
+  const muted = isDark ? "#52525b" : "#cbd5e1";
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.background }}>
@@ -269,6 +277,11 @@ export default function DailySaleDashboard() {
               color={HERO[0]}
               dotFill={colors.card}
               labelColor={sub}
+              cardColor={colors.card}
+              textColor={txt}
+              subColor={sub}
+              borderColor={colors.border}
+              format={baht}
             />
           </View>
         </Animated.View>
@@ -322,6 +335,51 @@ export default function DailySaleDashboard() {
                 />
               </View>
             </View>
+          </View>
+        </Animated.View>
+
+        {/* ── Daily comparison bar chart (this week vs last week, tap for tooltip) ── */}
+        <Animated.View
+          entering={FadeInDown.delay(320).duration(500)}
+          style={{ paddingHorizontal: 18, marginTop: 16 }}
+        >
+          <View
+            style={[
+              styles.panel,
+              { backgroundColor: colors.card, borderColor: colors.border },
+            ]}
+          >
+            <View style={styles.panelHead}>
+              <Text style={[styles.panelTitle, { color: txt }]}>
+                เทียบรายวัน สัปดาห์นี้ vs ก่อนหน้า
+              </Text>
+              <Text style={[styles.panelHint, { color: sub }]}>แตะเพื่อดู</Text>
+            </View>
+            <View style={styles.cmpLegend}>
+              <View style={styles.legendInline}>
+                <View style={[styles.legendDot, { backgroundColor: HERO[0] }]} />
+                <Text style={[styles.legendLabel, { color: sub }]}>
+                  สัปดาห์นี้
+                </Text>
+              </View>
+              <View style={styles.legendInline}>
+                <View style={[styles.legendDot, { backgroundColor: muted }]} />
+                <Text style={[styles.legendLabel, { color: sub }]}>
+                  สัปดาห์ก่อน
+                </Text>
+              </View>
+            </View>
+            <BarChart
+              data={cmpBars}
+              colors={[HERO[0], muted]}
+              seriesNames={["สัปดาห์นี้", "สัปดาห์ก่อน"]}
+              labelColor={sub}
+              cardColor={colors.card}
+              textColor={txt}
+              subColor={sub}
+              borderColor={colors.border}
+              format={baht}
+            />
           </View>
         </Animated.View>
 
@@ -625,6 +683,8 @@ const styles = StyleSheet.create({
   donutPct: { fontSize: 20, fontWeight: "800" },
   donutCap: { fontSize: 11, marginTop: 2 },
   legendRow: { flexDirection: "row", alignItems: "center", gap: 10 },
+  cmpLegend: { flexDirection: "row", gap: 16, marginBottom: 10, marginTop: -2 },
+  legendInline: { flexDirection: "row", alignItems: "center", gap: 6 },
   legendDot: { width: 12, height: 12, borderRadius: 6 },
   legendLabel: { fontSize: 12 },
   legendValue: { fontSize: 16, fontWeight: "800" },
