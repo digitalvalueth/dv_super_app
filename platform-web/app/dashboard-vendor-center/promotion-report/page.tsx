@@ -5,6 +5,7 @@ import { usePromotionUploadHistory } from "@/hooks/watson/usePromotionUploadHist
 import { parseWatsonDate } from "@/lib/parse-watson-date";
 import { getPromotionData, savePromotionData } from "@/lib/watson-firebase";
 import { PromotionItem } from "@/types/watson/promotion";
+import { useBrand } from "../brand-context";
 import {
   AlertTriangle,
   Check,
@@ -235,7 +236,18 @@ const isRowIncomplete = (r: Row) =>
     return v === null || v === undefined || v === "" || v === 0;
   });
 
+// Vendor-only: scope the master table to the brand chosen in the topbar
+// switcher. (The stock-counter copy of this page has no brand switcher and
+// shows every brand.)
+const matchBrand = (name: string, brand: "NEST ME" | "PRIMANEST") => {
+  const norm = (name || "").toLowerCase().replace(/\s+/g, "");
+  return brand === "NEST ME"
+    ? norm.includes("nestme")
+    : norm.includes("primanest") || norm.includes("prima");
+};
+
 export default function PromotionReportPage() {
+  const { activeBrand } = useBrand();
   const [rows, setRows] = useState<Row[]>([emptyRow()]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -832,7 +844,12 @@ export default function PromotionReportPage() {
 
   // ── Stats & filter ─────────────────────────────────────────────────
   const today = new Date();
-  const validRows = rows.filter((r) => r.itemCode || r.barcode || r.itemName);
+  // Vendor view is scoped to the brand picked in the topbar (rows with no name
+  // are kept so nothing is silently hidden).
+  const inBrand = (r: Row) => !r.itemName || matchBrand(r.itemName, activeBrand);
+  const validRows = rows.filter(
+    (r) => (r.itemCode || r.barcode || r.itemName) && inBrand(r),
+  );
   const activeCount = validRows.filter(
     (r) =>
       r.promoStart &&
@@ -845,6 +862,8 @@ export default function PromotionReportPage() {
   const dateToObj = dateTo ? new Date(dateTo + "T23:59:59") : null;
 
   const filteredRows = rows.filter((r) => {
+    // Scope to the brand selected in the topbar switcher.
+    if (!inBrand(r)) return false;
     const isActive =
       r.promoStart &&
       r.promoEnd &&
