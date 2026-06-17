@@ -10,6 +10,7 @@ import {
   Globe,
   History,
   LayoutDashboard,
+  LayoutGrid,
   LineChart,
   LogOut,
   MapPin,
@@ -204,9 +205,12 @@ function VendorCenterLayoutContent({
           />
         </button>
 
-        {/* Brand Logo */}
-        <div
-          className={`px-6 py-6 flex flex-col items-center border-b ${collapsed ? "h-18.25 justify-center" : ""}`}
+        {/* Brand Logo — click to return to the module selector */}
+        <Link
+          href="/"
+          onClick={handleNavClick}
+          title="กลับไปหน้าเลือก Module"
+          className={`px-6 py-6 flex flex-col items-center border-b hover:bg-gray-50 transition-colors ${collapsed ? "h-18.25 justify-center" : ""}`}
         >
           {!collapsed ? (
             <>
@@ -222,10 +226,21 @@ function VendorCenterLayoutContent({
               PL
             </div>
           )}
-        </div>
+        </Link>
 
         {/* Navigation Menus */}
         <div className="flex-1 overflow-y-auto p-4 custom-scrollbar flex flex-col">
+          {/* Back to module selector */}
+          <Link
+            href="/"
+            onClick={handleNavClick}
+            title={collapsed ? "หน้าหลัก (เลือก Module)" : undefined}
+            className={`flex items-center ${collapsed ? "justify-center px-0" : "gap-3 px-4"} py-2.5 mb-4 rounded-lg text-sm font-medium text-[#4A7830] bg-[#f0f7ec] hover:bg-[#e3f0da] border border-[#cfe3c1] transition-colors`}
+          >
+            <LayoutGrid className="w-5 h-5 shrink-0" />
+            {!collapsed && <span>หน้าหลัก (เลือก Module)</span>}
+          </Link>
+
           <div className="mb-6">
             {!collapsed && (
               <div className="text-[10px] font-bold text-gray-400 mb-2 tracking-wider px-2">
