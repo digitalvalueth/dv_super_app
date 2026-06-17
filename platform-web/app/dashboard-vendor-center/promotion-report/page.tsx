@@ -964,15 +964,30 @@ export default function PromotionReportPage() {
     (r.barcode || "").trim() || (r.itemCode || "").trim() || "—";
   const startMs = (d: Row["promoStart"]) =>
     d instanceof Date ? d.getTime() : d ? new Date(d).getTime() : 0;
+  const isRowActive = (r: Row) =>
+    !!(r.promoStart && r.promoEnd && r.promoStart <= today && r.promoEnd >= today);
 
   const groupSizes = new Map<string, number>();
-  for (const r of filteredRows)
-    groupSizes.set(groupKeyOf(r), (groupSizes.get(groupKeyOf(r)) ?? 0) + 1);
+  const groupHasActive = new Map<string, boolean>();
+  for (const r of filteredRows) {
+    const k = groupKeyOf(r);
+    groupSizes.set(k, (groupSizes.get(k) ?? 0) + 1);
+    if (isRowActive(r)) groupHasActive.set(k, true);
+    else if (!groupHasActive.has(k)) groupHasActive.set(k, false);
+  }
 
   const groupedSorted = [...filteredRows].sort((a, b) => {
     const ka = groupKeyOf(a);
     const kb = groupKeyOf(b);
+    // Active products first (a group is active if any of its promos is active).
+    const ga = groupHasActive.get(ka) ? 0 : 1;
+    const gb = groupHasActive.get(kb) ? 0 : 1;
+    if (ga !== gb) return ga - gb;
     if (ka !== kb) return ka.localeCompare(kb);
+    // Within a product, the active promo sits at the top of the group.
+    const ra = isRowActive(a) ? 0 : 1;
+    const rb = isRowActive(b) ? 0 : 1;
+    if (ra !== rb) return ra - rb;
     return startMs(a.promoStart) - startMs(b.promoStart);
   });
 
