@@ -6,6 +6,7 @@ import {
   ChevronDown,
   ChevronLeft,
   ClipboardList,
+  Construction,
   Globe,
   History,
   LayoutDashboard,
@@ -22,8 +23,20 @@ import {
   Users,
 } from "lucide-react";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
-import { ReactNode, useState } from "react";
+import { usePathname, useRouter } from "next/navigation";
+import { ReactNode, useEffect, useState } from "react";
+
+// Only this feature is enabled for the customer right now; everything else is
+// marked "under development" in the nav and blocked at the route level. To
+// re-enable a section, add its base href / route prefix here.
+const ENABLED_NAV_HREFS = new Set<string>([
+  "/dashboard-vendor-center/promotion-report",
+]);
+// Routes the user may actually open (the enabled feature + their own account).
+const ENABLED_ROUTE_PREFIXES = [
+  "/dashboard-vendor-center/promotion-report",
+  "/dashboard-vendor-center/profile",
+];
 import { BrandProvider, useBrand } from "./brand-context";
 import { useNotifications } from "@/hooks/useNotifications";
 import { useAuthStore } from "@/stores/auth.store";
@@ -43,6 +56,28 @@ function NavItem({
   onNavigate: () => void;
   active: boolean;
 }) {
+  const disabled = !ENABLED_NAV_HREFS.has(href);
+
+  if (disabled) {
+    return (
+      <div
+        aria-disabled
+        title={collapsed ? `${label} — อยู่ระหว่างการพัฒนา` : "อยู่ระหว่างการพัฒนา"}
+        className={`flex items-center ${collapsed ? "justify-center px-0" : "gap-3 px-4"} py-2.5 rounded-lg text-sm text-gray-300 cursor-not-allowed select-none`}
+      >
+        <Icon className="w-5 h-5 shrink-0" />
+        {!collapsed && (
+          <span className="flex items-center gap-2 min-w-0">
+            <span className="truncate">{label}</span>
+            <span className="shrink-0 text-[9px] font-semibold text-amber-500 bg-amber-50 border border-amber-200 rounded px-1 py-0.5 leading-none">
+              กำลังพัฒนา
+            </span>
+          </span>
+        )}
+      </div>
+    );
+  }
+
   return (
     <Link
       href={href}
@@ -58,6 +93,32 @@ function NavItem({
       <Icon className="w-5 h-5 shrink-0" />
       {!collapsed && <span>{label}</span>}
     </Link>
+  );
+}
+
+function UnderDevelopment() {
+  return (
+    <div className="flex h-[80vh] items-center justify-center px-6">
+      <div className="text-center max-w-md">
+        <div className="mx-auto w-16 h-16 rounded-2xl bg-amber-50 border border-amber-200 flex items-center justify-center mb-5">
+          <Construction className="w-8 h-8 text-amber-500" />
+        </div>
+        <h2 className="text-xl font-bold text-gray-900 mb-2">
+          อยู่ระหว่างการพัฒนา
+        </h2>
+        <p className="text-sm text-gray-500 leading-relaxed">
+          ฟีเจอร์นี้ยังไม่เปิดให้บริการในแพ็กเกจปัจจุบัน
+          ขณะนี้เปิดใช้งานเฉพาะ <span className="font-semibold text-[#4A7830]">Promotion Report</span>
+          {" "}— หากต้องการเปิดใช้งานส่วนนี้ กรุณาติดต่อทีมงาน
+        </p>
+        <Link
+          href="/dashboard-vendor-center/promotion-report"
+          className="inline-flex items-center gap-2 mt-6 bg-[#5B8C3E] hover:bg-[#4A7830] text-white px-4 py-2 rounded-lg text-sm font-semibold transition-colors"
+        >
+          <Tag className="w-4 h-4" /> ไปที่ Promotion Report
+        </Link>
+      </div>
+    </div>
   );
 }
 
@@ -79,6 +140,16 @@ function VendorCenterLayoutContent({
   children: ReactNode;
 }) {
   const pathname = usePathname();
+  const router = useRouter();
+  const routeEnabled = ENABLED_ROUTE_PREFIXES.some((p) =>
+    pathname?.startsWith(p),
+  );
+  useEffect(() => {
+    // Landing on the (disabled) dashboard root → send to the one enabled feature.
+    if (pathname === "/dashboard-vendor-center") {
+      router.replace("/dashboard-vendor-center/promotion-report");
+    }
+  }, [pathname, router]);
   const { unreadCount } = useNotifications();
   const { userData } = useAuthStore();
   const canSeeTeamReport = userData
@@ -442,7 +513,7 @@ function VendorCenterLayoutContent({
 
         {/* Page Content */}
         <main className="flex-1 overflow-x-hidden overflow-y-auto bg-gray-50 pb-12">
-          {children}
+          {routeEnabled ? children : <UnderDevelopment />}
         </main>
       </div>
     </div>
