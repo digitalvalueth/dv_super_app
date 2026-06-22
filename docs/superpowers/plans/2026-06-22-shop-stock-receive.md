@@ -317,9 +317,9 @@ import {
 import {
   Product,
   ShopStockReceive,
-  WatermarkData,
   WatermarkDataStored,
 } from "@/types";
+import { WatermarkData } from "@/utils/watermark";
 import { addDoc, collection, Timestamp } from "firebase/firestore";
 import { getDownloadURL, ref, uploadBytes } from "firebase/storage";
 
@@ -445,8 +445,8 @@ import {
   ShopStockReceive,
   ShopStockReceiveItem,
   User,
-  WatermarkData,
 } from "@/types";
+import { WatermarkData } from "@/utils/watermark";
 import {
   branchMatches,
   cacheCompanyProducts,
