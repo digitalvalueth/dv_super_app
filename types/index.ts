@@ -717,3 +717,38 @@ export interface MissingCheckInAlert {
   createdAt: Timestamp;
   updatedAt?: Timestamp;
 }
+
+// ==================== SHOP STOCK RECEIVE ====================
+
+export interface ShopStockReceiveItem {
+  productId: string;
+  barcode: string;        // ค่าที่สแกนได้ (อาจตรงกับ sku)
+  sku?: string;
+  productName: string;
+  salesQty: number;
+  testQty: number;
+  mktQty: number;
+}
+
+export type ShopStockReceiveSyncStatus = "pending" | "synced";
+
+export interface ShopStockReceive {
+  id: string;
+  transferNumber: string;   // "SR-20260617-7"
+  branchCode: string;       // "BL 41060" (ตามที่อยู่ใน QR)
+  companyId: string;
+  branchId: string;
+  branchName?: string;
+  items: ShopStockReceiveItem[];
+  totalItems: number;
+  receivedBy: string;       // userId (uid)
+  receivedByName: string;
+  receivedByEmail?: string;
+  receivedAt: Timestamp;
+  imageUrl: string;         // รูปยืนยันการรับ (Storage download URL)
+  watermarkData?: WatermarkDataStored;
+  notes?: string;
+  syncStatus: ShopStockReceiveSyncStatus;
+  createdAt: Timestamp;
+  updatedAt?: Timestamp;
+}
