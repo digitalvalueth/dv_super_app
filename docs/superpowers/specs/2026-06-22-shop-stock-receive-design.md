@@ -15,6 +15,7 @@
 - กรอกจำนวนรับ 3 ช่อง: Sales Qty / Test Qty / Mkt Qty (อย่างน้อย 1 ช่อง > 0)
 - เพิ่มหลายสินค้าเข้า batch, กันซ้ำ, ลบได้, ใส่ notes
 - review แล้ว submit
+- ถ่ายรูปยืนยันการรับ + watermark (เวลา/GPS/ผู้รับ/อุปกรณ์) เก็บคู่กับ record
 - **รองรับ offline**: ถ้าเน็ตไม่ดี เก็บคิวไว้ส่งทีหลังตอนเน็ตกลับมา
 - ฝั่ง ITP มาดึงข้อมูล receives ผ่าน Open API ได้
 - มีหน้า dashboard ฝั่งเว็บไว้ดู receives
@@ -37,6 +38,7 @@
 3. **มีหน้า dashboard ฝั่งเว็บ** ไว้ดู receives
 4. **ส่งเข้า ITP ผ่าน GET Open API** (ITP มา pull) ไม่ใช่ push เข้า Azure Queue — เก็บ `mktQty` เป็น JSON field ได้
 5. **Product lookup**: Firestore `products` (match barcode OR sku); pre-cache ลง local เพื่อใช้ตอน offline
+6. **ถ่ายรูป + watermark** เป็นหลักฐานยืนยันการรับ (mirror `delivery-receive`); upload Storage; offline เก็บ local URI แล้วค่อย upload ตอน flush
 
 ## 4. สถาปัตยกรรม
 
@@ -44,10 +46,11 @@
 
 | ไฟล์ | หน้าที่ |
 |------|---------|
-| `_layout.tsx` | Stack: index → form → review → result; history |
+| `_layout.tsx` | Stack: index → form → camera → review → result; history |
 | `index.tsx` | สแกน QR (camera) หรือพิมพ์ TN# เอง → parse → ตรวจสาขา → แสดง Shop Location → ไป form |
 | `form.tsx` | หน้ารวม batch + ปุ่ม "สแกนสินค้า" (เปิด scanner) → resolve product → กรอก Sales/Test/Mkt → ➕ เพิ่ม (กันซ้ำ) / ✕ ลบ |
-| `review.tsx` | ตรวจทั้งหมด + Notes → Submit |
+| `camera.tsx` | ถ่ายรูปยืนยันการรับ + เก็บ watermark (mirror `delivery-receive/camera.tsx`) |
+| `review.tsx` | ตรวจทั้งหมด + รูป/watermark + Notes → Submit |
 | `result.tsx` | สำเร็จ (online เขียน Firestore) หรือ "เข้าคิวรอส่ง" (offline) |
 | `history.tsx` | receives ย้อนหลังของ user + แสดงรายการที่ `syncStatus = pending` |
 
@@ -83,12 +86,16 @@ interface ShopStockReceive {
   receivedByName: string;
   receivedByEmail?: string;
   receivedAt: Timestamp;
+  imageUrl: string;                  // รูปยืนยันการรับ (Storage URL)
+  watermarkData?: WatermarkDataStored; // reuse type จาก delivery-receive
   notes?: string;
   syncStatus: ShopStockReceiveSyncStatus;
   createdAt: Timestamp;
   updatedAt?: Timestamp;
 }
 ```
+
+`WatermarkDataStored` ใช้ type เดิม (`types/index.ts`): timestamp, location, coordinates?, employeeName, employeeId, deviceModel?, deviceName?
 
 Firestore collection ใหม่: **`shopStockReceives`** (scope `companyId` + `branchId`)
 
@@ -109,6 +116,10 @@ submitShopStockReceive(
 
 cacheCompanyProducts(companyId: string): Promise<void>
   // โหลด products ทั้งบริษัทเก็บ local (AsyncStorage) เพื่อ lookup ตอน offline
+
+uploadReceiveImage(userId: string, receiveId: string, imageUri: string): Promise<string>
+  // compress + upload Storage path shop-stock-receives/{userId}/{date}/{receiveId}.jpg
+  // คืน download URL (mirror delivery.service.uploadDeliveryImage)
 ```
 
 ต้องเพิ่ม Firestore index สำหรับ `barcode` / `sku` (composite กับ `companyId`) — อัปเดต `firestore.indexes.json`
@@ -116,9 +127,9 @@ cacheCompanyProducts(companyId: string): Promise<void>
 ### 4.4 Offline (สร้าง pattern ใหม่)
 
 - ใช้ `@react-native-community/netinfo` (ตรวจว่าติดตั้งหรือยัง; ถ้ายัง = เพิ่ม dependency) เช็คสถานะเน็ต
-- **Submit ตอน online** → `submitShopStockReceive` เขียน Firestore ตรง (`syncStatus = "synced"`)
-- **Submit ตอน offline** → เก็บ record ลง AsyncStorage queue (`syncStatus = "pending"`) + แจ้ง "บันทึกแล้ว รอส่งเมื่อเน็ตกลับมา"
-- **Flush**: เมื่อเน็ตกลับมา (NetInfo listener) หรือเปิดแอป/เข้า mini-app → ส่ง pending ทั้งหมดเข้า Firestore แล้วเคลียร์ queue; ถ้าส่งไม่ผ่านคงไว้ใน queue
+- **Submit ตอน online** → upload รูป (Storage) → `submitShopStockReceive` เขียน Firestore (`syncStatus = "synced"`)
+- **Submit ตอน offline** → เก็บ record + **local image URI** ลง AsyncStorage queue (`syncStatus = "pending"`) + แจ้ง "บันทึกแล้ว รอส่งเมื่อเน็ตกลับมา"
+- **Flush**: เมื่อเน็ตกลับมา (NetInfo listener) หรือเปิดแอป/เข้า mini-app → สำหรับ pending แต่ละตัว upload รูปจาก local URI ก่อน แล้วเขียน Firestore แล้วเคลียร์ออกจาก queue; ถ้าส่งไม่ผ่านคงไว้ใน queue (รูป local URI ต้องคงอยู่จน flush สำเร็จ)
 - **Product lookup offline**: เรียก `cacheCompanyProducts` ตอนเข้า mini-app ขณะ online; lookup อ่านจาก cache ก่อน เพื่อให้สแกนตอน offline ทำงานได้
 
 ### 4.5 Store `stores/shop-stock-receive.store.ts`
@@ -148,7 +159,7 @@ actions:
 
 - `GET` ห่อด้วย `withApiKeyAuth` (header `X-API-Key`, คีย์ `wv_...` เดิม), `OPTIONS` → `handleCorsOptions()`
 - query params (snake_case): `branch_code`, `transfer_number`, `start_date`, `end_date`, `limit` (default 50, 1–200), `offset`
-- query collection `shopStockReceives` (`where`/`orderBy`) → resolve users/branches → map เป็น DTO ซ้อน (`receiver{}`, `branch{}`, `items[]` รวม `mktQty`)
+- query collection `shopStockReceives` (`where`/`orderBy`) → resolve users/branches → map เป็น DTO ซ้อน (`receiver{}`, `branch{}`, `items[]` รวม `mktQty`, `imageUrl`, `watermark{}`)
 - envelope `{ success, data, meta:{ total, limit, offset, returned } }`, timestamps เป็น ISO
 - เพิ่ม spec `platform-web/docs/shop-stock-receive/openapi.yaml` + public `platform-web/public/docs/openapi.yaml`
 
@@ -162,8 +173,9 @@ actions:
 ใบส่งของ (PhithanLife) ──QR "SR-... && BL ..."──> [index] parse + ตรวจสาขา
 กล่องสินค้า ──scan product barcode──> getProductByCode(products) ──> auto-fill ชื่อ
 พนักงานกรอก Sales/Test/Mkt ──> addItem ──> batch
-[review] + notes ──submit──> online: Firestore `shopStockReceives` (synced)
-                              offline: AsyncStorage queue (pending) ──เน็ตกลับ──> flush ──> Firestore
+[camera] ถ่ายรูป + watermark ──> [review] + notes
+──submit──> online: upload รูป(Storage) → Firestore `shopStockReceives` (synced)
+            offline: เก็บ record+local URI ลง queue (pending) ──เน็ตกลับ──> flush: upload รูป → Firestore
 Firestore `shopStockReceives` ──> GET Open API (X-API-Key) ──> ITP pull
                                └─> Dashboard ฝั่งเว็บ (ID token)
 ```
@@ -178,17 +190,19 @@ Firestore `shopStockReceives` ──> GET Open API (X-API-Key) ──> ITP pull
 - Submit offline → ไม่ fail; เข้า queue + แจ้งผู้ใช้
 - Flush แล้ว Firestore error → คง record ใน queue, retry รอบหน้า
 - Cache สินค้าว่าง (เข้า offline ตั้งแต่แรก) → เตือนว่าต้องเปิดเน็ตครั้งแรกเพื่อโหลดรายการสินค้า
+- ยังไม่ถ่ายรูป → submit ไม่ได้ (รูปเป็น required หลักฐานการรับ)
+- ต้องเพิ่ม path `shop-stock-receives/{userId}/...` ใน `storage.rules` (size + MIME limit ตาม pattern เดิม)
 
 ## 7. ขอบเขต (scope)
 
-**ในขอบเขต:** mini-app ใหม่ (index/form/review/result/history), types, service, store, offline queue, Firestore index, GET Open API + openapi.yaml, dashboard page
+**ในขอบเขต:** mini-app ใหม่ (index/form/camera/review/result/history), types, service, store, offline queue, ถ่ายรูป+watermark+upload Storage, Firestore index + storage.rules, GET Open API + openapi.yaml, dashboard page
 
-**นอกขอบเขต:** generate ใบส่งของ/QR (เป็นของ PhithanLife), ต่อ Azure Queue/pipe-format, ต่อ Phithan SQL reorder, watermark รูปถ่าย (ไม่ต้องถ่ายรูปในรอบนี้)
+**นอกขอบเขต:** generate ใบส่งของ/QR (เป็นของ PhithanLife), ต่อ Azure Queue/pipe-format, ต่อ Phithan SQL reorder
 
 ## 8. Verify (ไม่มี test suite)
 
 - `npm run lint` ที่ repo root (mobile) และ `cd platform-web && npm run lint && npm run build`
-- รันแอปจริง: สแกน QR ตัวอย่าง → ตรวจสาขา → สแกนสินค้า → กรอก qty → submit (online) → เช็ค Firestore; ทดสอบ offline (ปิดเน็ต) → เข้า queue → เปิดเน็ต → flush
+- รันแอปจริง: สแกน QR ตัวอย่าง → ตรวจสาขา → สแกนสินค้า → กรอก qty → ถ่ายรูป → submit (online) → เช็ค Firestore + รูปใน Storage; ทดสอบ offline (ปิดเน็ต) → เข้า queue → เปิดเน็ต → flush (upload รูป + เขียน Firestore)
 - ยิง GET Open API ด้วย `X-API-Key` เช็ค envelope + `mktQty`
 
 ## 9. Open questions (เหลือยืนยันตอนทำ)
