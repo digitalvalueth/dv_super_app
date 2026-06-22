@@ -19,9 +19,17 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
         { status: 401, headers: getCorsHeaders() },
       );
     }
-    const decoded = await adminAuth.verifyIdToken(
-      authHeader.slice("Bearer ".length),
-    );
+    let decoded: Awaited<ReturnType<typeof adminAuth.verifyIdToken>>;
+    try {
+      decoded = await adminAuth.verifyIdToken(
+        authHeader.slice("Bearer ".length),
+      );
+    } catch {
+      return NextResponse.json(
+        { success: false, error: "Invalid or expired token" },
+        { status: 401, headers: getCorsHeaders() },
+      );
+    }
     const userDoc = await adminDb.collection("users").doc(decoded.uid).get();
     if (!userDoc.exists) {
       return NextResponse.json(
