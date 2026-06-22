@@ -1,5 +1,4 @@
 import {
-  ShopStockReceive,
   ShopStockReceiveItem,
   User,
 } from "@/types";
@@ -8,7 +7,6 @@ import {
   branchMatches,
   cacheCompanyProducts,
   parseTransferQR,
-  resolveProduct,
   submitShopStockReceive,
   toStoredWatermark,
   uploadReceiveImage,

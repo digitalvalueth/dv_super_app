@@ -67,12 +67,27 @@ export const uploadReceiveImage = async (
   return getDownloadURL(storageRef);
 };
 
+// remove undefined values recursively so Firestore addDoc won't throw
+function stripUndefined<T>(value: T): T {
+  if (Array.isArray(value)) {
+    return value.map((v) => stripUndefined(v)) as unknown as T;
+  }
+  if (value && typeof value === "object" && !(value instanceof Timestamp)) {
+    const out: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
+      if (v !== undefined) out[k] = stripUndefined(v);
+    }
+    return out as T;
+  }
+  return value;
+}
+
 export const submitShopStockReceive = async (
   data: Omit<ShopStockReceive, "id" | "createdAt" | "updatedAt">,
 ): Promise<string> => {
   const ref_ = collection(db, COLLECTION);
   const docRef = await addDoc(ref_, {
-    ...data,
+    ...stripUndefined(data),
     createdAt: Timestamp.now(),
     updatedAt: Timestamp.now(),
   });
