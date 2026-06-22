@@ -37,6 +37,17 @@ export const ALL_MINI_APPS: MiniApp[] = [
     category: "inventory",
   },
   {
+    id: "shop-stock-receive",
+    name: "รับสินค้า (Transfer)",
+    description: "สแกน QR ใบส่งของ รับสินค้าเข้าสาขา",
+    icon: "download-outline",
+    color: "#0EA5E9",
+    bgColor: "#E0F2FE",
+    gradientColors: ["#0EA5E9", "#0369A1"],
+    route: "/(mini-apps)/shop-stock-receive",
+    category: "inventory",
+  },
+  {
     id: "check-in",
     name: "เช็คชื่อ",
     description: "ลงเวลาเข้า-ออกงาน",

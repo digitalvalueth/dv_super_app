@@ -7,7 +7,7 @@ import {
 } from "@/services/shop-stock-receive.queue";
 import { Product, ShopStockReceive, WatermarkDataStored } from "@/types";
 import { WatermarkData } from "@/utils/watermark";
-import { addDoc, collection, Timestamp } from "firebase/firestore";
+import { addDoc, collection, getDocs, limit, orderBy, query, Timestamp, where } from "firebase/firestore";
 import { getDownloadURL, ref, uploadBytes } from "firebase/storage";
 
 const COLLECTION = "shopStockReceives";
@@ -100,4 +100,18 @@ export const cacheCompanyProducts = async (
 ): Promise<void> => {
   const products = await getProducts(companyId);
   await cacheProducts(companyId, products);
+};
+
+export const getUserReceiveHistory = async (
+  userId: string,
+  max = 50,
+): Promise<ShopStockReceive[]> => {
+  const q = query(
+    collection(db, COLLECTION),
+    where("receivedBy", "==", userId),
+    orderBy("createdAt", "desc"),
+    limit(max),
+  );
+  const snap = await getDocs(q);
+  return snap.docs.map((d) => ({ id: d.id, ...d.data() }) as ShopStockReceive);
 };

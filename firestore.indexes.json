@@ -81,6 +81,23 @@
         { "fieldPath": "invoiceUploadId", "order": "ASCENDING" },
         { "fieldPath": "confirmedAt", "order": "DESCENDING" }
       ]
+    },
+    {
+      "collectionGroup": "shopStockReceives",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "receivedBy", "order": "ASCENDING" },
+        { "fieldPath": "createdAt", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "shopStockReceives",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "companyId", "order": "ASCENDING" },
+        { "fieldPath": "branchId", "order": "ASCENDING" },
+        { "fieldPath": "receivedAt", "order": "DESCENDING" }
+      ]
     }
   ],
   "fieldOverrides": []
