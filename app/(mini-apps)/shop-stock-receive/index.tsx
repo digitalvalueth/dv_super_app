@@ -13,8 +13,10 @@ import {
   TextInput,
   View,
 } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 export default function ShopStockReceiveIndex() {
+  const insets = useSafeAreaInsets();
   const user = useAuthStore((s) => s.user);
   const { startTransfer, setOnline, flushQueue, preloadProductCache } =
     useShopStockReceiveStore();
@@ -77,9 +79,18 @@ export default function ShopStockReceiveIndex() {
         onBarcodeScanned={scanning ? onBarcodeScanned : undefined}
         barcodeScannerSettings={{ barcodeTypes: ["qr", "code128", "code39"] }}
       />
-      <Pressable style={styles.backFloat} onPress={() => router.back()} hitSlop={12}>
-        <Ionicons name="arrow-back" size={24} color="#fff" />
-      </Pressable>
+      {/* header bar overlaying top of camera */}
+      <View style={[styles.headerBar, { paddingTop: insets.top + 8 }]}>
+        <Pressable onPress={() => router.back()} hitSlop={12} style={styles.headerBack}>
+          <Ionicons name="arrow-back" size={24} color="#fff" />
+        </Pressable>
+        <Text style={styles.headerTitle}>รับสินค้า (Transfer)</Text>
+      </View>
+      {/* QR scan guide frame */}
+      <View style={styles.guideWrapper} pointerEvents="none">
+        <View style={styles.guideFrame} />
+        <Text style={styles.guideHint}>เล็งกล้องไปที่ QR Code บนใบส่งสินค้า</Text>
+      </View>
       <View style={styles.overlay}>
         <Text style={styles.title}>สแกน QR ใบส่งสินค้า</Text>
         <Text style={styles.subtitle}>หรือพิมพ์เลข Transfer เอง</Text>
@@ -114,5 +125,45 @@ const styles = StyleSheet.create({
   btnText: { color: "#fff", fontWeight: "700" },
   link: { alignItems: "center", padding: 8 },
   linkText: { color: "#10B981", fontWeight: "600" },
-  backFloat: { position: "absolute", top: 52, left: 16, zIndex: 10, backgroundColor: "rgba(0,0,0,0.45)", borderRadius: 20, padding: 8 },
+  // header bar
+  headerBar: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    zIndex: 10,
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "rgba(0,0,0,0.55)",
+    paddingBottom: 12,
+    paddingHorizontal: 8,
+    gap: 8,
+  },
+  headerBack: { padding: 8 },
+  headerTitle: { color: "#fff", fontSize: 17, fontWeight: "600", flex: 1 },
+  // scan guide
+  guideWrapper: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    alignItems: "center",
+    justifyContent: "center",
+    zIndex: 5,
+  },
+  guideFrame: {
+    width: 240,
+    height: 240,
+    borderWidth: 2,
+    borderColor: "#fff",
+    borderRadius: 16,
+    backgroundColor: "transparent",
+  },
+  guideHint: {
+    color: "#fff",
+    marginTop: 16,
+    textAlign: "center",
+    fontSize: 14,
+  },
 });

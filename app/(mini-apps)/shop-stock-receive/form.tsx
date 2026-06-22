@@ -80,9 +80,12 @@ export default function ShopStockReceiveForm() {
   return (
     <View style={styles.container}>
       <View style={styles.header}>
-        <Pressable style={styles.backBtn} onPress={() => router.back()} hitSlop={12}>
-          <Ionicons name="arrow-back" size={24} color="#111" />
-        </Pressable>
+        <View style={styles.headerRow}>
+          <Pressable style={styles.backBtn} onPress={() => router.back()} hitSlop={12}>
+            <Ionicons name="arrow-back" size={24} color="#111" />
+          </Pressable>
+          <Text style={styles.headerTitle}>รับสินค้า (Transfer)</Text>
+        </View>
         <Text style={styles.h1}>{transferNumber}</Text>
         <Text style={styles.h2}>สาขา {branchCode}</Text>
         {!isOnline && <Text style={styles.offline}>ออฟไลน์ — จะส่งเมื่อเน็ตกลับมา</Text>}
@@ -185,7 +188,9 @@ function QtyField({
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: "#fff", padding: 16 },
   header: { marginBottom: 12 },
-  backBtn: { padding: 8, marginLeft: -8, marginBottom: 4 },
+  headerRow: { flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 4 },
+  headerTitle: { fontSize: 17, fontWeight: "600", color: "#111", flex: 1 },
+  backBtn: { padding: 8, marginLeft: -8 },
   h1: { fontSize: 18, fontWeight: "700" },
   h2: { color: "#666" },
   offline: { color: "#D97706", marginTop: 4 },

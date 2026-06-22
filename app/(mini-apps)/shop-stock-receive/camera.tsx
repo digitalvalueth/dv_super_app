@@ -6,8 +6,10 @@ import { router } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { useCallback, useRef, useState } from "react";
 import { Alert, Pressable, StyleSheet, Text, View } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 export default function ShopStockReceiveCamera() {
+  const insets = useSafeAreaInsets();
   const user = useAuthStore((s) => s.user);
   const setCapturedImage = useShopStockReceiveStore((s) => s.setCapturedImage);
   const [permission, requestPermission] = useCameraPermissions();
@@ -52,9 +54,13 @@ export default function ShopStockReceiveCamera() {
   return (
     <View style={styles.container}>
       <CameraView ref={cameraRef} style={styles.camera} facing="back" />
-      <Pressable style={styles.backFloat} onPress={() => router.back()} hitSlop={12}>
-        <Ionicons name="arrow-back" size={24} color="#fff" />
-      </Pressable>
+      {/* header bar overlaying top of camera */}
+      <View style={[styles.headerBar, { paddingTop: insets.top + 8 }]}>
+        <Pressable onPress={() => router.back()} hitSlop={12} style={styles.headerBack}>
+          <Ionicons name="arrow-back" size={24} color="#fff" />
+        </Pressable>
+        <Text style={styles.headerTitle}>ถ่ายรูปยืนยันการรับ</Text>
+      </View>
       <View style={styles.controls}>
         <Text style={styles.hint}>ถ่ายรูปยืนยันการรับสินค้า</Text>
         <Pressable
@@ -79,5 +85,20 @@ const styles = StyleSheet.create({
   center: { flex: 1, alignItems: "center", justifyContent: "center", gap: 12 },
   btn: { backgroundColor: "#10B981", padding: 14, borderRadius: 8 },
   btnText: { color: "#fff", fontWeight: "700" },
-  backFloat: { position: "absolute", top: 52, left: 16, zIndex: 10, backgroundColor: "rgba(0,0,0,0.45)", borderRadius: 20, padding: 8 },
+  // header bar
+  headerBar: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    zIndex: 10,
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "rgba(0,0,0,0.55)",
+    paddingBottom: 12,
+    paddingHorizontal: 8,
+    gap: 8,
+  },
+  headerBack: { padding: 8 },
+  headerTitle: { color: "#fff", fontSize: 17, fontWeight: "600", flex: 1 },
 });
