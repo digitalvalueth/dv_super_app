@@ -3,6 +3,7 @@ import { useAuthStore } from "@/stores/auth.store";
 import NetInfo from "@react-native-community/netinfo";
 import { CameraView, useCameraPermissions } from "expo-camera";
 import { router } from "expo-router";
+import { Ionicons } from "@expo/vector-icons";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   Alert,
@@ -76,6 +77,9 @@ export default function ShopStockReceiveIndex() {
         onBarcodeScanned={scanning ? onBarcodeScanned : undefined}
         barcodeScannerSettings={{ barcodeTypes: ["qr", "code128", "code39"] }}
       />
+      <Pressable style={styles.backFloat} onPress={() => router.back()} hitSlop={12}>
+        <Ionicons name="arrow-back" size={24} color="#fff" />
+      </Pressable>
       <View style={styles.overlay}>
         <Text style={styles.title}>สแกน QR ใบส่งสินค้า</Text>
         <Text style={styles.subtitle}>หรือพิมพ์เลข Transfer เอง</Text>
@@ -110,4 +114,5 @@ const styles = StyleSheet.create({
   btnText: { color: "#fff", fontWeight: "700" },
   link: { alignItems: "center", padding: 8 },
   linkText: { color: "#10B981", fontWeight: "600" },
+  backFloat: { position: "absolute", top: 52, left: 16, zIndex: 10, backgroundColor: "rgba(0,0,0,0.45)", borderRadius: 20, padding: 8 },
 });

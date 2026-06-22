@@ -3,6 +3,7 @@ import { useAuthStore } from "@/stores/auth.store";
 import { useShopStockReceiveStore } from "@/stores/shop-stock-receive.store";
 import { CameraView } from "expo-camera";
 import { router } from "expo-router";
+import { Ionicons } from "@expo/vector-icons";
 import { useCallback, useRef, useState } from "react";
 import {
   Alert,
@@ -79,6 +80,9 @@ export default function ShopStockReceiveForm() {
   return (
     <View style={styles.container}>
       <View style={styles.header}>
+        <Pressable style={styles.backBtn} onPress={() => router.back()} hitSlop={12}>
+          <Ionicons name="arrow-back" size={24} color="#111" />
+        </Pressable>
         <Text style={styles.h1}>{transferNumber}</Text>
         <Text style={styles.h2}>สาขา {branchCode}</Text>
         {!isOnline && <Text style={styles.offline}>ออฟไลน์ — จะส่งเมื่อเน็ตกลับมา</Text>}
@@ -181,6 +185,7 @@ function QtyField({
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: "#fff", padding: 16 },
   header: { marginBottom: 12 },
+  backBtn: { padding: 8, marginLeft: -8, marginBottom: 4 },
   h1: { fontSize: 18, fontWeight: "700" },
   h2: { color: "#666" },
   offline: { color: "#D97706", marginTop: 4 },

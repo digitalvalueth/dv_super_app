@@ -3,6 +3,7 @@ import { useAuthStore } from "@/stores/auth.store";
 import { createWatermarkMetadata } from "@/utils/watermark";
 import { CameraView, useCameraPermissions } from "expo-camera";
 import { router } from "expo-router";
+import { Ionicons } from "@expo/vector-icons";
 import { useCallback, useRef, useState } from "react";
 import { Alert, Pressable, StyleSheet, Text, View } from "react-native";
 
@@ -51,6 +52,9 @@ export default function ShopStockReceiveCamera() {
   return (
     <View style={styles.container}>
       <CameraView ref={cameraRef} style={styles.camera} facing="back" />
+      <Pressable style={styles.backFloat} onPress={() => router.back()} hitSlop={12}>
+        <Ionicons name="arrow-back" size={24} color="#fff" />
+      </Pressable>
       <View style={styles.controls}>
         <Text style={styles.hint}>ถ่ายรูปยืนยันการรับสินค้า</Text>
         <Pressable
@@ -75,4 +79,5 @@ const styles = StyleSheet.create({
   center: { flex: 1, alignItems: "center", justifyContent: "center", gap: 12 },
   btn: { backgroundColor: "#10B981", padding: 14, borderRadius: 8 },
   btnText: { color: "#fff", fontWeight: "700" },
+  backFloat: { position: "absolute", top: 52, left: 16, zIndex: 10, backgroundColor: "rgba(0,0,0,0.45)", borderRadius: 20, padding: 8 },
 });

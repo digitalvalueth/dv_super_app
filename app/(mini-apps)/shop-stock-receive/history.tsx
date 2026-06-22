@@ -3,7 +3,9 @@ import { getQueuedReceives, QueuedReceive } from "@/services/shop-stock-receive.
 import { useAuthStore } from "@/stores/auth.store";
 import { ShopStockReceive } from "@/types";
 import { useEffect, useState } from "react";
-import { FlatList, StyleSheet, Text, View } from "react-native";
+import { FlatList, Pressable, StyleSheet, Text, View } from "react-native";
+import { Ionicons } from "@expo/vector-icons";
+import { router } from "expo-router";
 
 export default function ShopStockReceiveHistory() {
   const user = useAuthStore((s) => s.user);
@@ -19,7 +21,12 @@ export default function ShopStockReceiveHistory() {
 
   return (
     <View style={styles.container}>
-      <Text style={styles.h1}>ประวัติการรับสินค้า</Text>
+      <View style={styles.titleRow}>
+        <Pressable style={styles.backBtn} onPress={() => router.back()} hitSlop={12}>
+          <Ionicons name="arrow-back" size={24} color="#111" />
+        </Pressable>
+        <Text style={styles.h1}>ประวัติการรับสินค้า</Text>
+      </View>
       {pending.length > 0 && (
         <Text style={styles.pending}>รอส่ง {pending.length} รายการ</Text>
       )}
@@ -42,7 +49,9 @@ export default function ShopStockReceiveHistory() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: "#fff", padding: 16 },
-  h1: { fontSize: 20, fontWeight: "700", marginBottom: 8 },
+  titleRow: { flexDirection: "row", alignItems: "center", marginBottom: 8, gap: 8 },
+  backBtn: { padding: 8, marginLeft: -8 },
+  h1: { fontSize: 20, fontWeight: "700" },
   pending: { color: "#D97706", marginBottom: 8 },
   empty: { textAlign: "center", color: "#999", marginTop: 40 },
   row: { paddingVertical: 12, borderBottomWidth: 1, borderColor: "#eee" },
