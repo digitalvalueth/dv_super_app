@@ -4,279 +4,727 @@ import {
   Calendar,
   ChevronDown,
   ChevronRight,
+  Download,
   ExternalLink,
   Image as ImageIcon,
+  Lock,
   Search,
   Tag,
   X,
 } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState, useMemo } from "react";
+import { useBrand } from "../brand-context";
+import { db } from "@/lib/firebase";
+import { collection, getDocs, query, where } from "firebase/firestore";
+import { useAuthStore } from "@/stores/auth.store";
+import {
+  loadScopedBranchIds,
+  isElevated,
+} from "@/lib/reports/load-scoped-branches";
+import { getPromotionData } from "@/lib/watson-firebase";
+import { PromotionItem } from "@/types/watson/promotion";
+import * as XLSX from "xlsx";
+import jsPDF from "jspdf";
+import autoTable from "jspdf-autotable";
+import { toast } from "sonner";
+import { useActivityLogger } from "@/hooks/watson/useActivityLogger";
+import {
+  flattenToItemRows,
+  distinctBillCount,
+  computeTotals,
+} from "@/lib/reports/sales-filter";
+import type { DailySale as ReportDailySale } from "@/lib/reports/types";
 
-type SalesRow = {
-  date: string;
-  brand: string;
-  store: string;
-  code: string;
-  name: string;
-  status: "ACTIVE" | "TBD";
-  rsp: number;
-  units: number;
+// Cache for Thai font base64 (Google Sans) used in PDF export
+let thaiFontBase64Cache: string | null = null;
+
+async function loadThaiFontBase64(): Promise<string | null> {
+  if (thaiFontBase64Cache) return thaiFontBase64Cache;
+  try {
+    const response = await fetch("/GoogleSans-VariableFont.ttf");
+    if (!response.ok) return null;
+    const arrayBuffer = await response.arrayBuffer();
+    const bytes = new Uint8Array(arrayBuffer);
+    let binary = "";
+    for (let i = 0; i < bytes.byteLength; i++) {
+      binary += String.fromCharCode(bytes[i]);
+    }
+    thaiFontBase64Cache = btoa(binary);
+    return thaiFontBase64Cache;
+  } catch {
+    return null;
+  }
+}
+
+interface DailySaleItem {
+  barcode: string;
+  productDescription: string;
+  price: number;
+  quantity: number;
   revenue: number;
-  unitSellingPrice: number;
-};
+  saleType: "normal" | "promotion";
+}
 
-const salesData: SalesRow[] = [
-  {
-    date: "28 Apr 2026",
-    brand: "NEST ME",
-    store: "05_ZPL",
-    code: "8859109895121",
-    name: "NEST ME-Birdnest Hydro Boost Mask//25G",
-    status: "ACTIVE",
-    rsp: 139,
-    units: 32,
-    revenue: 1768,
-    unitSellingPrice: 55,
-  },
-  {
-    date: "28 Apr 2026",
-    brand: "NEST ME",
-    store: "05_ZPL",
-    code: "8859109895190",
-    name: "NEST ME-Age Delay Lifting Mask//25ML",
-    status: "ACTIVE",
-    rsp: 139,
-    units: 4,
-    revenue: 240,
-    unitSellingPrice: 60,
-  },
-  {
-    date: "28 Apr 2026",
-    brand: "NEST ME",
-    store: "05_ZPL",
-    code: "8859109895206",
-    name: "NEST ME-Lactopeach glass & glow mask//25ML",
-    status: "ACTIVE",
-    rsp: 139,
-    units: 6,
-    revenue: 360,
-    unitSellingPrice: 60,
-  },
-  {
-    date: "28 Apr 2026",
-    brand: "NEST ME",
-    store: "06_MGB",
-    code: "8859109851783",
-    name: "NEST ME-Birdnest Pro-Balance Facial Cleansing Foam//100G",
-    status: "ACTIVE",
-    rsp: 269,
-    units: 2,
-    revenue: 360,
-    unitSellingPrice: 180,
-  },
-  {
-    date: "28 Apr 2026",
-    brand: "NEST ME",
-    store: "06_MGB",
-    code: "8859109851820",
-    name: "NEST ME-Birdnest Pro-Balance Facial Cleansing Foam//50G",
-    status: "ACTIVE",
-    rsp: 185,
-    units: 1,
-    revenue: 185,
-    unitSellingPrice: 185,
-  },
-  {
-    date: "28 Apr 2026",
-    brand: "NEST ME",
-    store: "06_MGB",
-    code: "8859109851950",
-    name: "NEST ME-Aqua Sun Essence Pro SPF 50+ PA++++//50G",
-    status: "ACTIVE",
-    rsp: 1390,
-    units: 2,
-    revenue: 1299,
-    unitSellingPrice: 650,
-  },
-  {
-    date: "28 Apr 2026",
-    brand: "NEST ME",
-    store: "06_MGB",
-    code: "8859109860372",
-    name: "NEST ME-Birdnest Aqua Sun Protect SPF 50 PA++++//30ML",
-    status: "ACTIVE",
-    rsp: 685,
-    units: 2,
-    revenue: 685,
-    unitSellingPrice: 343,
-  },
-  {
-    date: "28 Apr 2026",
-    brand: "NEST ME",
-    store: "06_MGB",
-    code: "8859109895121",
-    name: "NEST ME-Birdnest Hydro Boost Mask//25G",
-    status: "ACTIVE",
-    rsp: 139,
-    units: 5,
-    revenue: 275,
-    unitSellingPrice: 55,
-  },
-  {
-    date: "28 Apr 2026",
-    brand: "NEST ME",
-    store: "06_MGB",
-    code: "8859109895190",
-    name: "NEST ME-Age Delay Lifting Mask//25ML",
-    status: "ACTIVE",
-    rsp: 139,
-    units: 2,
-    revenue: 120,
-    unitSellingPrice: 60,
-  },
-  {
-    date: "28 Apr 2026",
-    brand: "NEST ME",
-    store: "06_MGB",
-    code: "8859109895206",
-    name: "NEST ME-Lactopeach glass & glow mask//25ML",
-    status: "ACTIVE",
-    rsp: 139,
-    units: 4,
-    revenue: 240,
-    unitSellingPrice: 60,
-  },
-  {
-    date: "28 Apr 2026",
-    brand: "NEST ME",
-    store: "08_SQ1",
-    code: "8859109851851",
-    name: "NEST ME-Anti-Melasma White Serum//15ML",
-    status: "ACTIVE",
-    rsp: 850,
-    units: 2,
-    revenue: 699,
-    unitSellingPrice: 350,
-  },
-  {
-    date: "28 Apr 2026",
-    brand: "NEST ME",
-    store: "08_SQ1",
-    code: "8859109860341",
-    name: "NEST ME-Birdnest Perfect Matte BB Cream SPF35 PA+++(Excl...",
-    status: "ACTIVE",
-    rsp: 790,
-    units: 1,
-    revenue: 379,
-    unitSellingPrice: 379,
-  },
-  {
-    date: "28 Apr 2026",
-    brand: "NEST ME",
-    store: "08_SQ1",
-    code: "8859109860358",
-    name: "NEST ME-Birdnest Collagen White Facial Foam//100G",
-    status: "ACTIVE",
-    rsp: 239,
-    units: 1,
-    revenue: 139,
-    unitSellingPrice: 139,
-  },
-];
+interface DailySale {
+  id: string;
+  companyId: string;
+  branchId: string;
+  branchName: string;
+  employeeId: string;
+  employeeName: string;
+  saleDate: string;
+  items: DailySaleItem[];
+  totalItems: number;
+  totalRevenue: number;
+}
 
-const promoMockData = [
-  {
-    name: "NEST ME-Birdnest Anti -Melasma Aqua Cream//25ML",
-    barcode: "8859109851462",
-    promoPrice: 280,
-    rsp: 580,
-    discount: "-51.7%",
-    revenue: 7280,
-    soh: 1521,
-  },
-  {
-    name: "NEST ME-Birdnest SpotLess HD spot Corrector//15G",
-    barcode: "8859109851493",
-    promoPrice: 199,
-    rsp: 390,
-    discount: "-49.0%",
-    revenue: 2189,
-    soh: 661,
-  },
-  {
-    name: "NEST ME-Birdnest All In Daily Cream SPF 50 PA+++//30ML",
-    barcode: "8859109851509",
-    promoPrice: 550,
-    rsp: 950,
-    discount: "-42.1%",
-    revenue: 0,
-    soh: 30,
-  },
-  {
-    name: "NEST ME-Aqua Sun Essence Pro SPF 50+ PA++++//50G",
-    barcode: "8859109851950",
-    promoPrice: 690,
-    rsp: 1390,
-    discount: "-50.4%",
-    revenue: 6900,
-    soh: 1062,
-  },
-  {
-    name: "NEST ME-Birdnest Perfect Matte BB Cream SPF35 PA+++(Exclusive)//25G",
-    barcode: "8859109860341",
-    promoPrice: 379,
-    rsp: 790,
-    discount: "-52.0%",
-    revenue: 11370,
-    soh: 696,
-  },
-  {
-    name: "NEST ME-Birdnest Collagen White Facial Foam//100G",
-    barcode: "8859109860358",
-    promoPrice: 139,
-    rsp: 239,
-    discount: "-41.8%",
-    revenue: 5977,
-    soh: 1026,
-  },
-  {
-    name: "NEST ME-Birdnest Aqua Sun Protect SPF 50 PA+++//50G",
-    barcode: "8859109860501",
-    promoPrice: 529,
-    rsp: 1100,
-    discount: "-51.9%",
-    revenue: 4761,
-    soh: 1097,
-  },
-  {
-    name: "NEST ME-LactoPeach Brightening Essence Exclusive EVEANDBOY//100ML",
-    barcode: "8859109894087",
-    promoPrice: 490,
-    rsp: 980,
-    discount: "-50.0%",
-    revenue: 7350,
-    soh: 1205,
-  },
-];
+interface Product {
+  id: string;
+  productId: string;
+  companyId: string;
+  name: string;
+  barcode: string;
+  status?: string;
+  category?: string;
+  beforeCount?: number;
+}
+
+interface CountingSession {
+  id: string;
+  productId: string;
+  branchId: string;
+  branchName: string;
+  currentCountQty?: number;
+  beforeCountQty?: number;
+  status: string;
+  createdAt?: any;
+}
+
+interface Branch {
+  id: string;
+  name: string;
+  companyId: string;
+}
 
 const fmt = (n: number) => n.toLocaleString("en-US");
 
-function HeaderLabel({ label }: { label: string }) {
-  return (
-    <th className="px-4 py-4 text-center cursor-pointer select-none hover:text-pink-600 font-bold whitespace-nowrap">
-      <div className="flex items-center justify-center gap-1">
-        {label} <span className="text-[10px] text-gray-300">↑↓</span>
-      </div>
-    </th>
-  );
-}
-
 export default function SalesReport() {
-  const [store, setStore] = useState("All Stores");
-  const [promoOpen, setPromoOpen] = useState<SalesRow | null>(null);
+  const { activeBrand } = useBrand();
+  const { logAction } = useActivityLogger();
+  const { userData } = useAuthStore();
+  const [rawProducts, setRawProducts] = useState<Product[]>([]);
+  const [rawSales, setRawSales] = useState<DailySale[]>([]);
+  const [rawSessions, setRawSessions] = useState<CountingSession[]>([]);
+  const [rawBranches, setRawBranches] = useState<Branch[]>([]);
+  const [rawPromotions, setRawPromotions] = useState<PromotionItem[]>([]);
+  // null => no branch restriction (admin/super_admin); array => restricted scope
+  const [scopedBranchIds, setScopedBranchIds] = useState<string[] | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  // Filter States
+  const [storeFilter, setStoreFilter] = useState("All Stores");
+  const [employeeFilter, setEmployeeFilter] = useState("All Salespersons");
+  const [startDate, setStartDate] = useState("");
+  const [endDate, setEndDate] = useState("");
+  const [q, setQ] = useState("");
+  const [activePeriodBtn, setActivePeriodBtn] = useState("Yesterday");
+  const [promoOpen, setPromoOpen] = useState<any | null>(null);
+
+  // Sorting
+  const [sortField, setSortField] = useState<string>("date");
+  const [sortAsc, setSortAsc] = useState<boolean>(false);
+
+  useEffect(() => {
+    // Block non-elevated users from loading any sales data.
+    if (userData && !isElevated(userData.role)) {
+      setLoading(false);
+      return;
+    }
+
+    async function loadData() {
+      setLoading(true);
+      try {
+        // Find companyId of Phithan
+        const companiesSnap = await getDocs(collection(db, "companies"));
+        const phithan = companiesSnap.docs.find(d => {
+          const name = (d.data().name || "").toLowerCase();
+          const code = (d.data().code || "").toLowerCase();
+          return name.includes("phithan") || name.includes("พิธาน") || code.includes("phithan");
+        });
+        const targetCompanyId = phithan?.id || "";
+
+        // Query collections
+        const productsRef = collection(db, "products");
+        const productsQuery = targetCompanyId
+          ? query(productsRef, where("companyId", "==", targetCompanyId))
+          : query(productsRef);
+        const productsSnap = await getDocs(productsQuery);
+        setRawProducts(productsSnap.docs.map(d => ({ id: d.id, ...d.data() })) as Product[]);
+
+        const salesRef = collection(db, "dailySales");
+        const salesQuery = targetCompanyId 
+          ? query(salesRef, where("companyId", "==", targetCompanyId))
+          : query(salesRef);
+        const salesSnap = await getDocs(salesQuery);
+        setRawSales(salesSnap.docs.map(d => ({ id: d.id, ...d.data() })) as DailySale[]);
+
+        const sessionsRef = collection(db, "countingSessions");
+        const sessionsQuery = targetCompanyId
+          ? query(sessionsRef, where("companyId", "==", targetCompanyId))
+          : query(sessionsRef);
+        const sessionsSnap = await getDocs(sessionsQuery);
+        setRawSessions(sessionsSnap.docs.map(d => ({ id: d.id, ...d.data() })) as CountingSession[]);
+
+        const branchesRef = collection(db, "branches");
+        const branchesQuery = targetCompanyId
+          ? query(branchesRef, where("companyId", "==", targetCompanyId))
+          : query(branchesRef);
+        const branchesSnap = await getDocs(branchesQuery);
+        setRawBranches(branchesSnap.docs.map(d => ({ id: d.id, ...d.data() })) as Branch[]);
+
+        // Query shared promotions
+        const promos = await getPromotionData();
+        setRawPromotions(promos || []);
+
+        // Resolve the viewer's branch scope (null => all branches).
+        setScopedBranchIds(await loadScopedBranchIds(userData));
+      } catch (err) {
+        console.error("Error loading sales report data:", err);
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    loadData();
+  }, [userData]);
+
+  const matchBrand = (name: string, brand: "NEST ME" | "PRIMANEST") => {
+    const norm = (name || "").toLowerCase().replace(/\s+/g, "").trim();
+    if (brand === "NEST ME") {
+      return norm.includes("nestme") || norm.includes("nest me");
+    } else {
+      return norm.includes("primanest") || norm.includes("prima");
+    }
+  };
+
+  const brandProducts = useMemo(() => {
+    return rawProducts.filter(p => matchBrand(p.name || "", activeBrand));
+  }, [rawProducts, activeBrand]);
+
+  // Sales the viewer is allowed to see, restricted by branch scope.
+  // null => no restriction (admin/super_admin); [] => no branches; else by branchId.
+  const scopedSales = useMemo(() => {
+    if (scopedBranchIds === null) return rawSales; // admin/super_admin
+    if (scopedBranchIds.length === 0) return []; // supervisor/manager w/ no branches
+    const set = new Set(scopedBranchIds);
+    return rawSales.filter(s => set.has(s.branchId));
+  }, [rawSales, scopedBranchIds]);
+
+  const brandSales = useMemo(() => {
+    return scopedSales.map(sale => {
+      const brandItems = (sale.items || []).filter(item => matchBrand(item.productDescription || "", activeBrand));
+      if (brandItems.length === 0) return null;
+      const totalRevenue = brandItems.reduce((sum, item) => sum + (item.revenue || 0), 0);
+      const totalUnits = brandItems.reduce((sum, item) => sum + (item.quantity || 0), 0);
+      return {
+        ...sale,
+        items: brandItems,
+        totalRevenue,
+        totalUnits,
+        totalItems: brandItems.length
+      };
+    }).filter(Boolean) as any[];
+  }, [scopedSales, activeBrand]);
+
+  const sortedDates = useMemo(() => {
+    const dates = brandSales.map(s => s.saleDate).filter(Boolean);
+    return Array.from(new Set(dates)).sort((a, b) => b.localeCompare(a));
+  }, [brandSales]);
+
+  const latestDate = sortedDates[0] || "";
+
+  // Available months list for select filter
+  const availableMonths = useMemo(() => {
+    const prefixes = Array.from(new Set(sortedDates.map(d => d.substring(0, 7))));
+    const months = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+    return prefixes.map(p => {
+      const parts = p.split("-");
+      const y = parts[0];
+      const m = Number(parts[1]);
+      return {
+        value: p,
+        label: `${months[m - 1]} ${y}`
+      };
+    });
+  }, [sortedDates]);
+
+  useEffect(() => {
+    if (latestDate) {
+      setStartDate(latestDate);
+      setEndDate(latestDate);
+      setActivePeriodBtn("Yesterday");
+    }
+  }, [latestDate]);
+
+  const formatDateToYmd = (d: Date) => {
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, "0");
+    const day = String(d.getDate()).padStart(2, "0");
+    return `${y}-${m}-${day}`;
+  };
+
+  const setPeriodFilter = (p: string) => {
+    if (!latestDate) return;
+    setActivePeriodBtn(p);
+    
+    const parts = latestDate.split("-");
+    const year = Number(parts[0]);
+    const month = Number(parts[1]);
+    const day = Number(parts[2]);
+    
+    if (p === "Yesterday") {
+      setStartDate(latestDate);
+      setEndDate(latestDate);
+    } else if (p === "7 Days") {
+      const d = new Date(year, month - 1, day - 6);
+      setStartDate(formatDateToYmd(d));
+      setEndDate(latestDate);
+    } else if (p === "MTD") {
+      setStartDate(`${year}-${String(month).padStart(2, "0")}-01`);
+      setEndDate(latestDate);
+    } else if (p === "Last Month") {
+      let lm = month - 1;
+      let ly = year;
+      if (lm === 0) {
+        lm = 12;
+        ly -= 1;
+      }
+      const firstDay = `${ly}-${String(lm).padStart(2, "0")}-01`;
+      const lastDayDate = new Date(ly, lm, 0);
+      setStartDate(firstDay);
+      setEndDate(formatDateToYmd(lastDayDate));
+    } else if (p === "YTD") {
+      setStartDate(`${year}-01-01`);
+      setEndDate(latestDate);
+    } else if (p === "Last Year") {
+      setStartDate(`${year - 1}-01-01`);
+      setEndDate(`${year - 1}-12-31`);
+    }
+  };
+
+  const formatDateString = (dateStr: string) => {
+    if (!dateStr) return "";
+    const parts = dateStr.split("-");
+    if (parts.length !== 3) return dateStr;
+    const d = new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]));
+    const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+    return `${parts[2]} ${months[d.getMonth()]} ${parts[0]}`;
+  };
+
+  const getProductBranchSoh = (productId: string, branchId: string) => {
+    const sessions = rawSessions
+      .filter(s => s.productId === productId && s.branchId === branchId && s.status === "completed")
+      .sort((a, b) => {
+        const tA = a.createdAt instanceof Date ? a.createdAt.getTime() : (a.createdAt as any)?.toDate?.()?.getTime() || 0;
+        const tB = b.createdAt instanceof Date ? b.createdAt.getTime() : (b.createdAt as any)?.toDate?.()?.getTime() || 0;
+        return tB - tA;
+      });
+    const latestSession = sessions[0];
+    if (latestSession) {
+      return latestSession.currentCountQty ?? latestSession.beforeCountQty ?? 0;
+    }
+    return null;
+  };
+
+  const getProductTotalStock = (productId: string, beforeCountVal?: number) => {
+    let total = 0;
+    let hasSession = false;
+    for (const branch of rawBranches) {
+      const soh = getProductBranchSoh(productId, branch.id);
+      if (soh !== null) {
+        total += soh;
+        hasSession = true;
+      }
+    }
+    if (!hasSession && beforeCountVal) {
+      return beforeCountVal;
+    }
+    return total;
+  };
+
+  const storeNames = useMemo(() => {
+    const names = Array.from(new Set(scopedSales.map(s => s.branchName).filter(Boolean)));
+    return ["All Stores", ...names];
+  }, [scopedSales]);
+
+  const employeeNames = useMemo(() => {
+    const names = Array.from(new Set(scopedSales.map(s => s.employeeName).filter(Boolean)));
+    return ["All Salespersons", ...names];
+  }, [scopedSales]);
+
+  // Flatten and filter daily sales items.
+  // Also collect the set of distinct sale (bill) doc ids that survive the filters,
+  // so the transaction/bill count metric stays in sync with the filtered dataset.
+  const { rows: salesRows, billCount } = useMemo(() => {
+    // The pure filter pipeline (store / employee / date / search) and the
+    // distinct-bill count live in lib/reports/sales-filter; the per-row
+    // enrichment (RSP lookup, date formatting, brand) stays here because it
+    // depends on Firestore-loaded products/sales and the active brand.
+    const filters = {
+      startDate,
+      endDate,
+      branch: storeFilter,
+      employee: employeeFilter,
+      query: q,
+    };
+
+    const rows = flattenToItemRows(
+      brandSales as ReportDailySale[],
+      filters,
+    ).map(({ sale, item }) => {
+      const prod = brandProducts.find(p => p.barcode === item.barcode);
+      const productRsp = prod?.beforeCount ? Math.max(...rawSales.flatMap(s => s.items).filter(i => i.barcode === item.barcode).map(i => i.price || 0)) : item.price;
+
+      return {
+        date: formatDateString(sale.saleDate),
+        rawDate: sale.saleDate,
+        brand: activeBrand,
+        store: sale.branchName,
+        employee: sale.employeeName || "—",
+        code: item.barcode || "—",
+        name: item.productDescription || "สินค้าไม่ระบุชื่อ",
+        status: (prod?.status || "ACTIVE").toUpperCase(),
+        rsp: productRsp || item.price,
+        units: item.quantity || 0,
+        revenue: item.revenue || 0,
+        unitSellingPrice: item.quantity > 0 ? (item.revenue / item.quantity) : item.price,
+        productId: prod?.productId || ""
+      };
+    });
+
+    return {
+      rows,
+      billCount: distinctBillCount(brandSales as ReportDailySale[], filters),
+    };
+  }, [brandSales, storeFilter, employeeFilter, startDate, endDate, q, brandProducts, activeBrand]);
+
+  const handleExport = () => {
+    if (salesRows.length === 0) {
+      toast.error("ไม่มีข้อมูลที่จะส่งออก");
+      return;
+    }
+
+    const headers = [
+      "Date",
+      "Brand",
+      "Store",
+      "Product Code",
+      "Product Name",
+      "Status",
+      "RSP (THB)",
+      "Units Sold",
+      "Revenue (THB)",
+      "Unit Selling Price (THB)"
+    ];
+
+    const rows = sortedRows.map((r) => [
+      r.date,
+      r.brand,
+      r.store,
+      r.code,
+      r.name,
+      r.status,
+      r.rsp,
+      r.units,
+      r.revenue,
+      Math.round(r.unitSellingPrice)
+    ]);
+
+    const ws = XLSX.utils.aoa_to_sheet([headers, ...rows]);
+    ws["!cols"] = [15, 12, 25, 15, 35, 10, 12, 12, 14, 18].map((w) => ({ wch: w }));
+    
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Sales Report");
+    
+    const fileName = `${activeBrand.toLowerCase().replace(/\s+/g, "_")}_sales_report_${new Date().toISOString().slice(0, 10)}.xlsx`;
+    XLSX.writeFile(wb, fileName);
+
+    logAction("export_sales", `ส่งออกรายงานยอดขายย้อนหลังสัปดาห์/เดือน (${sortedRows.length} รายการ)`, {
+      rowCount: sortedRows.length,
+      brand: activeBrand,
+      startDate: startDate || "All Time",
+      endDate: endDate || "All Time",
+      store: storeFilter,
+      fileName
+    });
+    
+    toast.success("ดาวน์โหลดไฟล์รายงานยอดขายเรียบร้อยแล้ว");
+  };
+
+  const handleExportPdf = async () => {
+    if (salesRows.length === 0) {
+      toast.error("ไม่มีข้อมูลที่จะส่งออก");
+      return;
+    }
+
+    const doc = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" });
+    const pageWidth = doc.internal.pageSize.getWidth();
+
+    // Register Thai font (Google Sans). If it fails, fall back to helvetica;
+    // Thai glyphs may not render with the fallback but numeric/code columns stay intact.
+    let fontName = "helvetica";
+    try {
+      const fontBase64 = await loadThaiFontBase64();
+      if (fontBase64) {
+        doc.addFileToVFS("GoogleSans.ttf", fontBase64);
+        doc.addFont("GoogleSans.ttf", "GoogleSans", "normal");
+        fontName = "GoogleSans";
+      }
+    } catch {
+      fontName = "helvetica";
+    }
+
+    // Title
+    doc.setFont(fontName, "normal");
+    doc.setFontSize(16);
+    doc.text("Sales Report", pageWidth / 2, 15, { align: "center" });
+
+    // Active filter summary (date range, branch, salesperson)
+    const dateRange =
+      startDate && endDate
+        ? `${formatDateString(startDate)} - ${formatDateString(endDate)}`
+        : "All Time";
+    doc.setFontSize(9);
+    doc.setTextColor(90, 90, 90);
+    const summaryLine1 = `Brand: ${activeBrand}    Date: ${dateRange}`;
+    const summaryLine2 = `Store: ${storeFilter}    Salesperson: ${employeeFilter}`;
+    doc.text(summaryLine1, 14, 23);
+    doc.text(summaryLine2, 14, 28);
+    doc.text(
+      `Bills: ${fmt(billCount)}    Units Sold: ${fmt(totalUnits)}    Revenue: ${fmt(totalRevenue)} THB`,
+      14,
+      33,
+    );
+    doc.setTextColor(0, 0, 0);
+
+    const head = [[
+      "Date",
+      "Brand",
+      "Store",
+      "Product Code",
+      "Product Name",
+      "Status",
+      "RSP (THB)",
+      "Units Sold",
+      "Revenue (THB)",
+      "Unit Selling Price (THB)",
+    ]];
+
+    const body = sortedRows.map((r) => [
+      r.date,
+      r.brand,
+      r.store,
+      r.code,
+      r.name,
+      r.status,
+      fmt(r.rsp),
+      fmt(r.units),
+      fmt(r.revenue),
+      fmt(Math.round(r.unitSellingPrice)),
+    ]);
+
+    autoTable(doc, {
+      startY: 38,
+      head,
+      body,
+      theme: "striped",
+      headStyles: { fillColor: [229, 0, 126], fontSize: 7, font: fontName },
+      styles: { fontSize: 7, cellPadding: 1.5, font: fontName, overflow: "linebreak" },
+      columnStyles: {
+        4: { cellWidth: 50 },
+        6: { halign: "right" },
+        7: { halign: "right" },
+        8: { halign: "right" },
+        9: { halign: "right" },
+      },
+    });
+
+    const fileName = `${activeBrand.toLowerCase().replace(/\s+/g, "_")}_sales_report_${new Date().toISOString().slice(0, 10)}.pdf`;
+    doc.save(fileName);
+
+    logAction("export_sales", `ส่งออกรายงานยอดขาย (PDF, ${sortedRows.length} รายการ)`, {
+      rowCount: sortedRows.length,
+      brand: activeBrand,
+      startDate: startDate || "All Time",
+      endDate: endDate || "All Time",
+      store: storeFilter,
+      employee: employeeFilter,
+      fileName,
+      format: "pdf",
+    });
+
+    toast.success("ดาวน์โหลดไฟล์ PDF รายงานยอดขายเรียบร้อยแล้ว");
+  };
+
+  const handleSort = (field: string) => {
+    if (sortField === field) {
+      setSortAsc(!sortAsc);
+    } else {
+      setSortField(field);
+      setSortAsc(true);
+    }
+  };
+
+  const sortedRows = useMemo(() => {
+    const r = [...salesRows];
+    r.sort((a, b) => {
+      let valA: any = a[sortField as keyof typeof a];
+      let valB: any = b[sortField as keyof typeof b];
+
+      if (sortField === "date") {
+        valA = a.rawDate;
+        valB = b.rawDate;
+      }
+
+      if (valA === undefined || valA === null) return 1;
+      if (valB === undefined || valB === null) return -1;
+
+      if (typeof valA === "string") {
+        return sortAsc ? valA.localeCompare(valB) : valB.localeCompare(valA);
+      } else {
+        return sortAsc ? valA - valB : valB - valA;
+      }
+    });
+    return r;
+  }, [salesRows, sortField, sortAsc]);
+
+  // Summary totals for the currently-filtered dataset
+  const { revenue: totalRevenue, units: totalUnits } = useMemo(
+    () => computeTotals(salesRows),
+    [salesRows]
+  );
+
+  function HeaderLabel({ label, field }: { label: string; field: string }) {
+    const isSorted = sortField === field;
+    return (
+      <th 
+        onClick={() => handleSort(field)}
+        className="px-4 py-4 text-center cursor-pointer select-none hover:text-pink-600 font-bold whitespace-nowrap"
+      >
+        <div className="flex items-center justify-center gap-1">
+          {label}{" "}
+          <span className="text-[10px] text-gray-400">
+            {isSorted ? (sortAsc ? "▲" : "▼") : "↑↓"}
+          </span>
+        </div>
+      </th>
+    );
+  }
+
+  // Active Promo Details for the Modal
+  const modalPromoDetails = useMemo(() => {
+    if (!promoOpen) return null;
+    const barcode = promoOpen.code;
+    
+    // Find active promotion
+    const activePromo = rawPromotions.find(p => p.barcode === barcode);
+    const prod = brandProducts.find(p => p.barcode === barcode);
+    
+    const soh = prod ? getProductTotalStock(prod.productId, prod.beforeCount) : 0;
+
+    // Calculate product total revenue in selected period
+    const revenue = salesRows.filter(r => r.code === barcode).reduce((sum, r) => sum + r.revenue, 0);
+
+    if (activePromo) {
+      const discountPct = activePromo.stdPrice > 0 && activePromo.commPrice 
+        ? ((activePromo.stdPrice - activePromo.commPrice) / activePromo.stdPrice) * 100 
+        : 0;
+
+      return {
+        id: activePromo.remark || `${activeBrand.toUpperCase()}-PROMO-${activePromo.itemCode || "01"}`,
+        name: activePromo.itemName || promoOpen.name,
+        barcode: activePromo.barcode || barcode,
+        promoStart: activePromo.promoStart ? formatDateString(formatDateToYmd(activePromo.promoStart)) : "—",
+        promoEnd: activePromo.promoEnd ? formatDateString(formatDateToYmd(activePromo.promoEnd)) : "—",
+        promoPrice: activePromo.commPrice || promoOpen.unitSellingPrice,
+        stdPrice: activePromo.stdPrice || promoOpen.rsp,
+        discount: discountPct > 0 ? `-${discountPct.toFixed(1)}%` : "0%",
+        soh,
+        revenue,
+        remark: activePromo.remark || "Saving"
+      };
+    }
+
+    return {
+      id: "STANDARD PRICE",
+      name: promoOpen.name,
+      barcode: barcode,
+      promoStart: "—",
+      promoEnd: "—",
+      promoPrice: promoOpen.unitSellingPrice,
+      stdPrice: promoOpen.rsp,
+      discount: "0%",
+      soh,
+      revenue,
+      remark: "Standard"
+    };
+  }, [promoOpen, rawPromotions, brandProducts, salesRows, activeBrand]);
+
+  // Promotions List for active brand inside Modal
+  const dialogPromotionsList = useMemo(() => {
+    if (!promoOpen) return [];
+    
+    return rawPromotions.filter(p => matchBrand(p.itemName || "", activeBrand)).map(item => {
+      const discountPct = item.stdPrice > 0 && item.commPrice 
+        ? ((item.stdPrice - item.commPrice) / item.stdPrice) * 100 
+        : 0;
+
+      const prod = brandProducts.find(p => p.barcode === item.barcode);
+      const soh = prod ? getProductTotalStock(prod.productId, prod.beforeCount) : 0;
+      
+      const revenue = salesRows.filter(r => r.code === item.barcode).reduce((sum, r) => sum + r.revenue, 0);
+
+      return {
+        name: item.itemName,
+        barcode: item.barcode || "—",
+        promoPrice: item.commPrice || 0,
+        rsp: item.stdPrice || 0,
+        discount: discountPct > 0 ? `-${discountPct.toFixed(1)}%` : "0%",
+        revenue,
+        soh
+      };
+    });
+  }, [promoOpen, rawPromotions, brandProducts, salesRows, activeBrand]);
+
+  if (userData && !isElevated(userData.role)) {
+    return (
+      <div className="flex h-[80vh] items-center justify-center bg-gray-50">
+        <div className="text-center max-w-md px-6">
+          <div className="mx-auto w-14 h-14 rounded-full bg-gray-100 flex items-center justify-center mb-4">
+            <Lock className="w-7 h-7 text-gray-400" />
+          </div>
+          <h2 className="text-lg font-bold text-gray-900 mb-1">ไม่มีสิทธิ์เข้าถึง</h2>
+          <p className="text-sm text-gray-500">
+            รายงานนี้สำหรับหัวหน้าทีม (Supervisor), ผู้จัดการ (Manager) และผู้ดูแลระบบเท่านั้น
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  if (loading) {
+    return (
+      <div className="flex h-[80vh] items-center justify-center bg-gray-50">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-pink-500 mx-auto"></div>
+          <p className="mt-4 text-gray-500 font-medium">กำลังโหลดรายงานยอดขาย...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
-    <div className="p-8 max-w-400 mx-auto space-y-6">
+    <div className="p-6 md:p-8 w-full space-y-6">
       <div>
         <h1 className="text-2xl font-bold text-gray-900 mb-2">Sales Report</h1>
         <div className="text-xs text-gray-500 flex items-center gap-1">
@@ -298,12 +746,30 @@ export default function SalesReport() {
             Revenue Period:
           </label>
           <div className="relative">
-            <select className="appearance-none pl-3 pr-8 py-1.5 border rounded-md text-sm text-gray-700 focus:outline-none focus:border-pink-500 focus:ring-1 focus:ring-pink-500 cursor-pointer">
-              <option>Select Month</option>
+            <select 
+              onChange={(e) => {
+                if (e.target.value) {
+                  setStartDate(`${e.target.value}-01`);
+                  const parts = e.target.value.split("-");
+                  const lastDay = new Date(Number(parts[0]), Number(parts[1]), 0);
+                  setEndDate(formatDateToYmd(lastDay));
+                  setActivePeriodBtn("");
+                }
+              }}
+              className="appearance-none pl-3 pr-8 py-1.5 border rounded-md text-sm text-gray-700 focus:outline-none focus:border-pink-500 focus:ring-1 focus:ring-pink-500 cursor-pointer"
+            >
+              <option value="">Select Month</option>
+              {availableMonths.map(m => (
+                <option key={m.value} value={m.value}>{m.label}</option>
+              ))}
             </select>
             <ChevronDown className="w-3 h-3 text-gray-400 absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
           </div>
-          <span className="text-sm text-gray-500">28/04/2026 - 28/04/2026</span>
+          {startDate && endDate && (
+            <span className="text-sm text-gray-500">
+              {formatDateString(startDate)} - {formatDateString(endDate)}
+            </span>
+          )}
         </div>
 
         {/* Row 2: Period Buttons */}
@@ -312,8 +778,9 @@ export default function SalesReport() {
             (p) => (
               <button
                 key={p}
+                onClick={() => setPeriodFilter(p)}
                 className={`px-4 py-1.5 text-[13px] rounded-full font-semibold transition-colors ${
-                  p === "Yesterday"
+                  activePeriodBtn === p
                     ? "bg-[#E5007E] text-white"
                     : "bg-gray-100 text-gray-600 hover:bg-gray-200"
                 }`}
@@ -331,12 +798,14 @@ export default function SalesReport() {
               Start Date:
             </label>
             <div className="relative">
-              <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
               <input
-                type="text"
-                placeholder="Select Date"
-                className="w-35 pl-9 pr-3 py-1.5 border rounded-md text-sm focus:outline-none focus:border-pink-500 cursor-pointer"
-                readOnly
+                type="date"
+                value={startDate}
+                onChange={(e) => {
+                  setStartDate(e.target.value);
+                  setActivePeriodBtn("");
+                }}
+                className="pl-3 pr-3 py-1.5 border rounded-md text-sm focus:outline-none focus:border-pink-500 cursor-pointer"
               />
             </div>
           </div>
@@ -345,12 +814,14 @@ export default function SalesReport() {
               End Date:
             </label>
             <div className="relative">
-              <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
               <input
-                type="text"
-                placeholder="Select Date"
-                className="w-35 pl-9 pr-3 py-1.5 border rounded-md text-sm focus:outline-none focus:border-pink-500 cursor-pointer"
-                readOnly
+                type="date"
+                value={endDate}
+                onChange={(e) => {
+                  setEndDate(e.target.value);
+                  setActivePeriodBtn("");
+                }}
+                className="pl-3 pr-3 py-1.5 border rounded-md text-sm focus:outline-none focus:border-pink-500 cursor-pointer"
               />
             </div>
           </div>
@@ -360,52 +831,131 @@ export default function SalesReport() {
             </label>
             <div className="flex items-center gap-2">
               <select
-                value={store}
-                onChange={(e) => setStore(e.target.value)}
+                value={storeFilter}
+                onChange={(e) => setStoreFilter(e.target.value)}
                 className="w-40 px-3 py-1.5 border border-pink-500 rounded-md text-sm focus:outline-none cursor-pointer"
               >
-                <option>All Stores</option>
+                {storeNames.map(name => (
+                  <option key={name} value={name}>{name}</option>
+                ))}
               </select>
-              <button className="p-1.5 border rounded-md text-gray-400 hover:text-gray-600 hover:bg-gray-50">
+              <button
+                onClick={() => {
+                  setStoreFilter("All Stores");
+                  setEmployeeFilter("All Salespersons");
+                  setQ("");
+                  if (latestDate) {
+                    setStartDate(latestDate);
+                    setEndDate(latestDate);
+                    setActivePeriodBtn("Yesterday");
+                  }
+                }}
+                className="p-1.5 border rounded-md text-gray-400 hover:text-gray-600 hover:bg-gray-50"
+              >
                 <X className="w-4 h-4" />
               </button>
-              <button className="bg-[#E5007E] hover:bg-pink-700 text-white px-4 py-1.5 rounded-md text-[13px] font-bold flex items-center gap-1.5">
-                <Search className="w-3.5 h-3.5" /> Apply
-              </button>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-3">
+            <label className="text-[13px] font-semibold text-gray-700">
+              พนักงานขาย:
+            </label>
+            <select
+              value={employeeFilter}
+              onChange={(e) => setEmployeeFilter(e.target.value)}
+              className="w-44 px-3 py-1.5 border border-pink-500 rounded-md text-sm focus:outline-none cursor-pointer"
+            >
+              {employeeNames.map(name => (
+                <option key={name} value={name}>{name}</option>
+              ))}
+            </select>
+          </div>
+
+          <div className="flex items-center gap-3">
+            <label className="text-[13px] font-semibold text-gray-700">
+              Search:
+            </label>
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+              <input
+                type="text"
+                placeholder="Product name/code..."
+                value={q}
+                onChange={(e) => setQ(e.target.value)}
+                className="pl-9 pr-3 py-1.5 border rounded-md text-sm w-[200px] focus:outline-none focus:border-pink-500 cursor-pointer"
+              />
             </div>
           </div>
         </div>
       </div>
 
+      {/* Summary Metrics */}
+      <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+        <div className="bg-white rounded-xl shadow-sm border p-5">
+          <p className="text-xs font-semibold text-gray-500">จำนวนบิล/รายการขาย</p>
+          <p className="mt-1 text-2xl font-bold text-[#E5007E]">{fmt(billCount)}</p>
+        </div>
+        <div className="bg-white rounded-xl shadow-sm border p-5">
+          <p className="text-xs font-semibold text-gray-500">Units Sold</p>
+          <p className="mt-1 text-2xl font-bold text-gray-900">{fmt(totalUnits)}</p>
+        </div>
+        <div className="bg-white rounded-xl shadow-sm border p-5">
+          <p className="text-xs font-semibold text-gray-500">Total Revenue (THB)</p>
+          <p className="mt-1 text-2xl font-bold text-gray-900">฿{fmt(totalRevenue)}</p>
+        </div>
+      </div>
+
       {/* Main Table */}
       <div className="bg-white rounded-xl shadow-sm border overflow-hidden">
-        <div className="px-6 py-4 bg-gray-50/50 border-b">
-          <h3 className="text-sm font-bold text-gray-900">Daily sales data</h3>
-          <p className="text-xs text-gray-500">102 Records</p>
+        <div className="px-6 py-4 bg-gray-50/50 border-b flex justify-between items-center">
+          <div>
+            <h3 className="text-sm font-bold text-gray-900">Daily sales data</h3>
+            <p className="text-xs text-gray-500">{salesRows.length} Records</p>
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={handleExport}
+              className="inline-flex items-center gap-1.5 bg-pink-600 hover:bg-pink-700 text-white px-3 py-1.5 rounded-lg text-xs font-semibold cursor-pointer transition-colors shadow-sm"
+            >
+              <Download className="w-3.5 h-3.5" /> Export Excel
+            </button>
+            <button
+              onClick={handleExportPdf}
+              className="inline-flex items-center gap-1.5 bg-gray-700 hover:bg-gray-800 text-white px-3 py-1.5 rounded-lg text-xs font-semibold cursor-pointer transition-colors shadow-sm"
+            >
+              <Download className="w-3.5 h-3.5" /> Export PDF
+            </button>
+          </div>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full text-sm text-center">
             <thead className="bg-pink-50 text-gray-700 text-[11px] uppercase tracking-wider">
               <tr>
-                <HeaderLabel label="Date" />
-                <HeaderLabel label="Brand" />
-                <HeaderLabel label="Store" />
-                <HeaderLabel label="Product Code" />
-                <th className="px-4 py-4 text-left cursor-pointer select-none hover:text-pink-600 font-bold">
+                <HeaderLabel label="Date" field="date" />
+                <HeaderLabel label="Brand" field="brand" />
+                <HeaderLabel label="Store" field="store" />
+                <HeaderLabel label="Product Code" field="code" />
+                <th 
+                  onClick={() => handleSort("name")}
+                  className="px-4 py-4 text-left cursor-pointer select-none hover:text-pink-600 font-bold"
+                >
                   <div className="flex items-center gap-1">
                     Product Name{" "}
-                    <span className="text-[10px] text-gray-300">↑↓</span>
+                    <span className="text-[10px] text-gray-400">
+                      {sortField === "name" ? (sortAsc ? "▲" : "▼") : "↑↓"}
+                    </span>
                   </div>
                 </th>
-                <HeaderLabel label="Status" />
-                <HeaderLabel label="RSP" />
-                <HeaderLabel label="Units Sold" />
-                <HeaderLabel label="Revenue (THB)" />
-                <HeaderLabel label="Unit Selling Price" />
+                <HeaderLabel label="Status" field="status" />
+                <HeaderLabel label="RSP" field="rsp" />
+                <HeaderLabel label="Units Sold" field="units" />
+                <HeaderLabel label="Revenue (THB)" field="revenue" />
+                <HeaderLabel label="Unit Selling Price" field="unitSellingPrice" />
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
-              {salesData.map((t, i) => (
+              {sortedRows.map((t, i) => (
                 <tr key={i} className="hover:bg-gray-50 transition-colors">
                   <td className="px-4 py-4 text-gray-800 whitespace-nowrap">
                     {t.date}
@@ -432,17 +982,24 @@ export default function SalesReport() {
                     {fmt(t.revenue)}
                   </td>
                   <td className="px-4 py-4 text-gray-800 font-medium">
-                    ฿{fmt(t.unitSellingPrice)}
+                    ฿{fmt(Math.round(t.unitSellingPrice))}
                   </td>
                 </tr>
               ))}
+              {sortedRows.length === 0 && (
+                <tr>
+                  <td colSpan={10} className="px-4 py-12 text-center text-gray-400 font-medium">
+                    ไม่พบข้อมูลยอดขายในช่วงที่กำหนด
+                  </td>
+                </tr>
+              )}
             </tbody>
           </table>
         </div>
       </div>
 
       {/* Product Promotions Dialog */}
-      {promoOpen && (
+      {promoOpen && modalPromoDetails && (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-xl shadow-xl max-w-3xl w-full max-h-[85vh] overflow-hidden flex flex-col relative">
             <button
@@ -471,7 +1028,7 @@ export default function SalesReport() {
                 <div className="w-28 h-36 bg-[#eaf4ff] rounded-xl flex items-center justify-center shrink-0 relative overflow-hidden border border-gray-100 shadow-sm">
                   <ImageIcon className="w-10 h-10 text-blue-200" />
                   <div className="absolute top-3 left-3 text-[10px] font-bold text-blue-400">
-                    nestme
+                    {activeBrand.toLowerCase().replace(/\s+/g, "")}
                   </div>
                 </div>
 
@@ -481,46 +1038,46 @@ export default function SalesReport() {
                     Product Promotions
                   </h3>
                   <div className="text-[#E5007E] font-bold text-sm mb-1.5 tracking-wide">
-                    PRIMANEST-M05Y26-04{" "}
-                    <span className="text-gray-500">({promoOpen.code})</span>
+                    {modalPromoDetails.id}{" "}
+                    <span className="text-gray-500">({modalPromoDetails.barcode})</span>
                   </div>
                   <div className="text-gray-800 text-[15px] mb-3 font-medium">
-                    {promoOpen.name}
+                    {modalPromoDetails.name}
                   </div>
 
                   <div className="flex items-center justify-between text-sm text-gray-500 mb-3">
-                    <div>25/04/2026 - 20/05/2026</div>
+                    <div>{modalPromoDetails.promoStart} - {modalPromoDetails.promoEnd}</div>
                     <div className="uppercase tracking-wider font-semibold text-gray-600">
-                      ALL EB
+                      {modalPromoDetails.remark}
                     </div>
                   </div>
 
                   <div className="flex items-end justify-between border-t border-gray-100 pt-3">
                     <div className="flex items-baseline gap-2.5">
                       <span className="text-[#E5007E] font-extrabold text-2xl">
-                        ฿59
+                        ฿{fmt(Math.round(modalPromoDetails.promoPrice))}
                       </span>
-                      <span className="text-gray-400 line-through text-[15px]">
-                        ฿{fmt(promoOpen.rsp)}
-                      </span>
-                      <span className="bg-pink-100 text-[#E5007E] text-xs font-bold px-2 py-0.5 rounded-md">
-                        -57.5%
-                      </span>
+                      {modalPromoDetails.stdPrice > 0 && (
+                        <>
+                          <span className="text-gray-400 line-through text-[15px]">
+                            ฿{fmt(Math.round(modalPromoDetails.stdPrice))}
+                          </span>
+                          <span className="bg-pink-100 text-[#E5007E] text-xs font-bold px-2 py-0.5 rounded-md">
+                            {modalPromoDetails.discount}
+                          </span>
+                        </>
+                      )}
                     </div>
                     <div className="text-sm text-gray-500 flex items-center gap-1.5">
                       SOH:{" "}
-                      <span className="font-bold text-[#E5007E]">7,922</span>{" "}
-                      <ExternalLink className="w-3.5 h-3.5 text-[#E5007E]" />
+                      <span className="font-bold text-[#E5007E]">{fmt(modalPromoDetails.soh)}</span>{" "}
                     </div>
                   </div>
 
                   <div className="flex items-center justify-between mt-2">
                     <div className="text-sm">
                       Revenue:{" "}
-                      <span className="font-bold text-gray-900">฿7,375</span>
-                    </div>
-                    <div className="text-sm font-bold text-gray-900">
-                      1.Saving
+                      <span className="font-bold text-gray-900">฿{fmt(modalPromoDetails.revenue)}</span>
                     </div>
                   </div>
                 </div>
@@ -540,7 +1097,7 @@ export default function SalesReport() {
             {/* List */}
             <div className="overflow-y-auto custom-scrollbar flex-1 bg-white p-2">
               <div className="divide-y divide-gray-100">
-                {promoMockData.map((item, idx) => (
+                {dialogPromotionsList.map((item, idx) => (
                   <div
                     key={idx}
                     className="flex items-center p-4 hover:bg-gray-50 transition-colors rounded-xl"
@@ -549,7 +1106,7 @@ export default function SalesReport() {
                     <div className="w-12 h-16 bg-[#eaf4ff] rounded border border-gray-100 flex items-center justify-center shrink-0 mr-5 relative">
                       <ImageIcon className="w-5 h-5 text-blue-200" />
                       <div className="absolute top-1 left-0 right-0 text-center text-[6px] font-bold text-blue-400">
-                        nestme
+                        {activeBrand.toLowerCase().replace(/\s+/g, "")}
                       </div>
                     </div>
 
@@ -568,13 +1125,13 @@ export default function SalesReport() {
                       <div className="text-xs text-gray-500 mb-1">
                         Promo Price:{" "}
                         <span className="text-[#E5007E] font-bold text-[15px]">
-                          ฿{fmt(item.promoPrice)}
+                          ฿{fmt(Math.round(item.promoPrice))}
                         </span>
                       </div>
                       <div className="text-[11px] text-gray-400 mb-1">
                         RSP:{" "}
                         <span className="line-through text-gray-800 font-semibold mr-1.5">
-                          ฿{fmt(item.rsp)}
+                          ฿{fmt(Math.round(item.rsp))}
                         </span>
                         <span className="font-bold text-gray-800">
                           {item.discount}
@@ -591,11 +1148,15 @@ export default function SalesReport() {
                         <span className="font-bold text-[#E5007E]">
                           {fmt(item.soh)}
                         </span>{" "}
-                        <ExternalLink className="w-3 h-3 text-[#E5007E]" />
                       </div>
                     </div>
                   </div>
                 ))}
+                {dialogPromotionsList.length === 0 && (
+                  <div className="text-center py-8 text-gray-400">
+                    ไม่มีโปรโมชั่นอื่นในแบรนด์นี้
+                  </div>
+                )}
               </div>
             </div>
           </div>

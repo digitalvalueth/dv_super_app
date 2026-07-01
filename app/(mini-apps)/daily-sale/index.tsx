@@ -1,50 +1,106 @@
+import {
+  addDays,
+  buildDashboardStats,
+  type DashboardStats,
+} from "@/services/daily-sale-dashboard";
 import { getDailySalesByEmployee } from "@/services/daily-sale.service";
 import { useAuthStore } from "@/stores/auth.store";
 import { useTheme } from "@/stores/theme.store";
-import { DailySale } from "@/types";
 import { Ionicons } from "@expo/vector-icons";
+import { BlurView } from "expo-blur";
+import { LinearGradient } from "expo-linear-gradient";
 import { router, useFocusEffect } from "expo-router";
 import { useCallback, useState } from "react";
 import {
   ActivityIndicator,
-  FlatList,
+  Pressable,
   RefreshControl,
+  StyleSheet,
   Text,
-  TouchableOpacity,
   View,
 } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
+import Animated, {
+  Extrapolation,
+  FadeInDown,
+  interpolate,
+  useAnimatedScrollHandler,
+  useAnimatedStyle,
+  useSharedValue,
+  withTiming,
+} from "react-native-reanimated";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { AreaChart } from "@/components/ui/AreaChart";
+import { BarChart } from "@/components/ui/BarChart";
+import { DonutChart } from "@/components/ui/DonutChart";
 
-const formatDate = (d: string) => {
-  const [y, m, day] = d.split("-");
-  return `${day}/${m}/${y}`;
+const HERO = ["#F59E0B", "#FB923C", "#FB7185"] as const;
+const THAI_DOW = ["อา", "จ", "อ", "พ", "พฤ", "ศ", "ส"];
+
+const baht = (n: number) => `฿${Math.round(n).toLocaleString("th-TH")}`;
+
+const todayStr = () => {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 };
+const dow = (s: string) => THAI_DOW[new Date(`${s}T00:00:00`).getDay()];
 
-const getMonthRange = () => {
-  const now = new Date();
-  const y = now.getFullYear();
-  const m = String(now.getMonth() + 1).padStart(2, "0");
-  const start = `${y}-${m}-01`;
-  const lastDay = new Date(y, now.getMonth() + 1, 0).getDate();
-  const end = `${y}-${m}-${String(lastDay).padStart(2, "0")}`;
-  return { start, end };
-};
+// ── Comparison chip (▲/▼ %) ───────────────────────────────────────────
+function DeltaChip({ pct }: { pct: number | null }) {
+  if (pct === null)
+    return (
+      <View style={[styles.chip, { backgroundColor: "rgba(255,255,255,0.22)" }]}>
+        <Text style={styles.chipText}>ใหม่</Text>
+      </View>
+    );
+  const up = pct >= 0;
+  return (
+    <View
+      style={[
+        styles.chip,
+        { backgroundColor: up ? "rgba(16,185,129,0.25)" : "rgba(244,63,94,0.28)" },
+      ]}
+    >
+      <Ionicons
+        name={up ? "arrow-up" : "arrow-down"}
+        size={12}
+        color="#fff"
+      />
+      <Text style={styles.chipText}>{Math.abs(pct).toFixed(0)}%</Text>
+    </View>
+  );
+}
 
-export default function DailySaleIndex() {
-  const { colors } = useTheme();
-  const user = useAuthStore((state) => state.user);
-  const [sales, setSales] = useState<DailySale[]>([]);
+export default function DailySaleDashboard() {
+  const { colors, isDark } = useTheme();
+  const insets = useSafeAreaInsets();
+  const user = useAuthStore((s) => s.user);
+  const [stats, setStats] = useState<DashboardStats | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
   const load = useCallback(async () => {
-    if (!user?.uid) return;
+    if (!user?.uid) {
+      setLoading(false);
+      return;
+    }
     try {
-      const { start, end } = getMonthRange();
-      const data = await getDailySalesByEmployee(user.uid, start, end);
-      setSales(data);
-    } catch (e) {
-      console.error("Error loading daily sales:", e);
+      const today = todayStr();
+      const sales = await getDailySalesByEmployee(
+        user.uid,
+        addDays(today, -34),
+        today,
+      );
+      setStats(
+        buildDashboardStats(
+          sales.map((s) => ({
+            saleDate: s.saleDate,
+            totalRevenue: s.totalRevenue || 0,
+            totalItems: s.totalItems || 0,
+          })),
+          today,
+          14,
+        ),
+      );
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -53,250 +109,625 @@ export default function DailySaleIndex() {
 
   useFocusEffect(
     useCallback(() => {
-      setLoading(true);
       load();
     }, [load]),
   );
 
-  const handleRefresh = () => {
-    setRefreshing(true);
-    load();
-  };
+  // Spotify-style collapsing header: the hero card fades + parallaxes away as
+  // you scroll, while the compact top bar stays.
+  const scrollY = useSharedValue(0);
+  const lastY = useSharedValue(0);
+  // 0 = full pill, 1 = shrunk compact pill. Instagram-style: it SHRINKS on
+  // scroll-down and expands back on scroll-up — it never fully disappears.
+  const barShrunk = useSharedValue(0);
+  const onScroll = useAnimatedScrollHandler((e) => {
+    const y = e.contentOffset.y;
+    scrollY.value = y;
+    const dy = y - lastY.value;
+    if (y <= 0) barShrunk.value = withTiming(0, { duration: 200 });
+    else if (dy > 3) barShrunk.value = withTiming(1, { duration: 220 });
+    else if (dy < -3) barShrunk.value = withTiming(0, { duration: 220 });
+    lastY.value = y;
+  });
+  const barAnim = useAnimatedStyle(() => ({
+    opacity: interpolate(barShrunk.value, [0, 1], [1, 0.97], Extrapolation.CLAMP),
+    transform: [
+      { scale: interpolate(barShrunk.value, [0, 1], [1, 0.82], Extrapolation.CLAMP) },
+      {
+        translateY: interpolate(barShrunk.value, [0, 1], [0, 8], Extrapolation.CLAMP),
+      },
+    ],
+  }));
+  // Top bar starts transparent (the amber hero shows through) and fades to a
+  // solid amber bar as you scroll, so the icons stay readable over content.
+  const navBgAnim = useAnimatedStyle(() => ({
+    opacity: interpolate(scrollY.value, [0, 70], [0, 1], Extrapolation.CLAMP),
+  }));
+  const todayAnim = useAnimatedStyle(() => ({
+    opacity: interpolate(scrollY.value, [0, 95], [1, 0], Extrapolation.CLAMP),
+    transform: [
+      {
+        translateY: interpolate(
+          scrollY.value,
+          [0, 150],
+          [0, -55],
+          Extrapolation.CLAMP,
+        ),
+      },
+      {
+        scale: interpolate(scrollY.value, [0, 150], [1, 0.9], Extrapolation.CLAMP),
+      },
+    ],
+  }));
 
-  const totalItems = sales.reduce((sum, s) => sum + s.totalItems, 0);
-  const totalRevenue = sales.reduce((sum, s) => sum + s.totalRevenue, 0);
+  if (loading && !stats) {
+    return (
+      <View style={[styles.center, { backgroundColor: colors.background }]}>
+        <ActivityIndicator size="large" color={HERO[0]} />
+      </View>
+    );
+  }
 
-  const renderItem = ({ item }: { item: DailySale }) => (
-    <View
-      style={{
-        backgroundColor: colors.card,
-        borderRadius: 12,
-        padding: 14,
-        marginBottom: 10,
-        borderWidth: 1,
-        borderColor: colors.border,
-      }}
-    >
-      <View
-        style={{
-          flexDirection: "row",
-          justifyContent: "space-between",
-          marginBottom: 6,
-        }}
-      >
-        <Text style={{ fontWeight: "700", fontSize: 15, color: colors.text }}>
-          {formatDate(item.saleDate)}
-        </Text>
-        <View
-          style={{
-            backgroundColor:
-              item.saleType === "promotion" ? "#F59E0B22" : "#10B98122",
-            borderRadius: 6,
-            paddingHorizontal: 8,
-            paddingVertical: 2,
-          }}
-        >
-          <Text
-            style={{
-              fontSize: 11,
-              fontWeight: "600",
-              color: item.saleType === "promotion" ? "#D97706" : "#059669",
-            }}
-          >
-            {item.saleType === "promotion" ? "โปรโมชั่น" : "ปกติ"}
-          </Text>
-        </View>
-      </View>
-      <View style={{ flexDirection: "row", gap: 20 }}>
-        <Text style={{ fontSize: 13, color: colors.textSecondary }}>
-          สินค้า:{" "}
-          <Text style={{ color: colors.text, fontWeight: "600" }}>
-            {item.totalItems} ชิ้น
-          </Text>
-        </Text>
-        <Text style={{ fontSize: 13, color: colors.textSecondary }}>
-          ยอดขาย:{" "}
-          <Text style={{ color: "#2563EB", fontWeight: "600" }}>
-            ฿
-            {item.totalRevenue.toLocaleString("th-TH", {
-              minimumFractionDigits: 2,
-            })}
-          </Text>
-        </Text>
-      </View>
-      {item.branchName ? (
-        <Text
-          style={{ fontSize: 11, color: colors.textSecondary, marginTop: 4 }}
-        >
-          {item.branchName}
-        </Text>
-      ) : null}
-    </View>
-  );
+  const s = stats!;
+  const chart = s.series.slice(-7);
+  const thisWeek = s.series.slice(-7);
+  const lastWeek = s.series.slice(-14, -7);
+  const cmpBars = thisWeek.map((d, i) => ({
+    label: dow(d.date),
+    values: [d.revenue, lastWeek[i]?.revenue ?? 0],
+  }));
+  const txt = colors.text;
+  const sub = colors.textSecondary;
+  const muted = isDark ? "#52525b" : "#cbd5e1";
 
   return (
-    <SafeAreaView
-      style={{ flex: 1, backgroundColor: colors.background }}
-      edges={["top", "left", "right"]}
-    >
-      {/* Header */}
-      <View
-        style={{
-          flexDirection: "row",
-          alignItems: "center",
-          paddingHorizontal: 16,
-          paddingVertical: 12,
-          backgroundColor: colors.card,
-          borderBottomWidth: 1,
-          borderBottomColor: colors.border,
-        }}
+    <View style={{ flex: 1, backgroundColor: colors.background }}>
+      <Animated.ScrollView
+        style={{ flex: 1 }}
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={{ paddingBottom: insets.bottom + 96 }}
+        onScroll={onScroll}
+        scrollEventThrottle={16}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={() => {
+              setRefreshing(true);
+              load();
+            }}
+            tintColor={HERO[0]}
+            progressViewOffset={insets.top + 48}
+          />
+        }
       >
-        <TouchableOpacity
-          onPress={() => router.back()}
-          style={{ marginRight: 12 }}
-        >
-          <Ionicons name="arrow-back" size={24} color={colors.text} />
-        </TouchableOpacity>
-        <View style={{ flex: 1 }}>
-          <Text style={{ fontSize: 18, fontWeight: "700", color: colors.text }}>
-            บันทึกยอดขาย
-          </Text>
-          <Text style={{ fontSize: 12, color: colors.textSecondary }}>
-            รายการเดือนนี้
-          </Text>
-        </View>
-        <TouchableOpacity
-          onPress={() => router.push("/(mini-apps)/daily-sale/record")}
-          style={{
-            backgroundColor: "#F59E0B",
-            borderRadius: 8,
-            paddingHorizontal: 14,
-            paddingVertical: 8,
-            flexDirection: "row",
-            alignItems: "center",
-            gap: 6,
-          }}
-        >
-          <Ionicons name="add" size={18} color="#fff" />
-          <Text style={{ color: "#fff", fontWeight: "600", fontSize: 13 }}>
-            บันทึก
-          </Text>
-        </TouchableOpacity>
-      </View>
-
-      {/* Summary Card */}
-      <View
-        style={{
-          flexDirection: "row",
-          margin: 16,
-          gap: 10,
-        }}
-      >
-        <View
-          style={{
-            flex: 1,
-            backgroundColor: "#FFF7ED",
-            borderRadius: 10,
-            padding: 14,
-            alignItems: "center",
-            borderWidth: 1,
-            borderColor: "#FED7AA",
-          }}
-        >
-          <Text style={{ fontSize: 22, fontWeight: "700", color: "#EA580C" }}>
-            {totalItems}
-          </Text>
-          <Text style={{ fontSize: 11, color: "#9A3412", marginTop: 2 }}>
-            ชิ้นรวม
-          </Text>
-        </View>
-        <View
-          style={{
-            flex: 1,
-            backgroundColor: "#EFF6FF",
-            borderRadius: 10,
-            padding: 14,
-            alignItems: "center",
-            borderWidth: 1,
-            borderColor: "#BFDBFE",
-          }}
-        >
-          <Text style={{ fontSize: 18, fontWeight: "700", color: "#1D4ED8" }}>
-            {totalRevenue.toLocaleString("th-TH", { maximumFractionDigits: 0 })}
-          </Text>
-          <Text style={{ fontSize: 11, color: "#1E40AF", marginTop: 2 }}>
-            ยอดขายรวม (฿)
-          </Text>
-        </View>
-        <View
-          style={{
-            flex: 1,
-            backgroundColor: "#F0FDF4",
-            borderRadius: 10,
-            padding: 14,
-            alignItems: "center",
-            borderWidth: 1,
-            borderColor: "#BBF7D0",
-          }}
-        >
-          <Text style={{ fontSize: 22, fontWeight: "700", color: "#16A34A" }}>
-            {sales.length}
-          </Text>
-          <Text style={{ fontSize: 11, color: "#15803D", marginTop: 2 }}>
-            วันที่บันทึก
-          </Text>
-        </View>
-      </View>
-
-      {loading ? (
-        <View
-          style={{ flex: 1, justifyContent: "center", alignItems: "center" }}
-        >
-          <ActivityIndicator size="large" color="#F59E0B" />
-        </View>
-      ) : (
-        <FlatList
-          data={sales}
-          keyExtractor={(item) => item.id}
-          renderItem={renderItem}
-          contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 24 }}
-          refreshControl={
-            <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} />
-          }
-          ListEmptyComponent={
-            <View style={{ alignItems: "center", paddingTop: 60 }}>
-              <Ionicons
-                name="receipt-outline"
-                size={48}
-                color={colors.textSecondary}
-              />
-              <Text
-                style={{
-                  color: colors.textSecondary,
-                  marginTop: 12,
-                  fontSize: 14,
-                }}
-              >
-                ยังไม่มีรายการยอดขายเดือนนี้
+        {/* ── Today hero (full-bleed amber, extends behind the transparent nav) ── */}
+        <Animated.View style={[styles.todayWrap, todayAnim]}>
+          <LinearGradient
+            colors={HERO}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={[styles.todayCard, { paddingTop: insets.top + 56 }]}
+          >
+            <View style={styles.todayFrost}>
+              <Text style={styles.heroLabel}>ยอดขายวันนี้</Text>
+              <View style={styles.heroValueRow}>
+                <Text style={styles.heroValue}>{baht(s.today.revenue)}</Text>
+                <DeltaChip pct={s.todayVsYesterdayPct} />
+              </View>
+              <Text style={styles.heroMeta}>
+                {s.today.items} ชิ้น · เทียบเมื่อวาน {baht(s.yesterday.revenue)}
               </Text>
-              <TouchableOpacity
-                onPress={() => router.push("/(mini-apps)/daily-sale/record")}
-                style={{
-                  marginTop: 16,
-                  backgroundColor: "#F59E0B",
-                  borderRadius: 8,
-                  paddingHorizontal: 24,
-                  paddingVertical: 10,
-                }}
-              >
-                <Text style={{ color: "#fff", fontWeight: "600" }}>
-                  บันทึกยอดขายแรก
-                </Text>
-              </TouchableOpacity>
             </View>
-          }
-        />
-      )}
-    </SafeAreaView>
+          </LinearGradient>
+        </Animated.View>
+
+        {/* ── Summary cards ── */}
+        <Animated.View
+          entering={FadeInDown.delay(120).duration(500)}
+          style={styles.row}
+        >
+          <StatCard
+            label="7 วันล่าสุด"
+            value={baht(s.week.revenue)}
+            sub={`${s.week.items} ชิ้น`}
+            icon="calendar-outline"
+            tint={colors}
+            isDark={isDark}
+            chip={<DeltaChip pct={s.weekVsPrevPct} />}
+          />
+          <StatCard
+            label="เดือนนี้"
+            value={baht(s.month.revenue)}
+            sub={`${s.month.items} ชิ้น`}
+            icon="trending-up-outline"
+            tint={colors}
+            isDark={isDark}
+          />
+        </Animated.View>
+
+        {/* ── Bar chart ── */}
+        <Animated.View
+          entering={FadeInDown.delay(200).duration(500)}
+          style={{ paddingHorizontal: 18, marginTop: 18 }}
+        >
+          <View
+            style={[
+              styles.panel,
+              { backgroundColor: colors.card, borderColor: colors.border },
+            ]}
+          >
+            <View style={styles.panelHead}>
+              <Text style={[styles.panelTitle, { color: txt }]}>
+                ยอดขาย 7 วันล่าสุด
+              </Text>
+              {s.bestDay && (
+                <Text style={[styles.panelHint, { color: sub }]}>
+                  สูงสุด {baht(s.bestDay.revenue)}
+                </Text>
+              )}
+            </View>
+
+            <AreaChart
+              data={chart.map((d) => ({
+                label: dow(d.date),
+                value: d.revenue,
+                highlight:
+                  s.bestDay?.date === d.date || d.date === todayStr(),
+              }))}
+              color={HERO[0]}
+              dotFill={colors.card}
+              labelColor={sub}
+              cardColor={colors.card}
+              textColor={txt}
+              subColor={sub}
+              borderColor={colors.border}
+              format={baht}
+            />
+          </View>
+        </Animated.View>
+
+        {/* ── Week vs last week comparison ── */}
+        <Animated.View
+          entering={FadeInDown.delay(280).duration(500)}
+          style={{ paddingHorizontal: 18, marginTop: 16 }}
+        >
+          <View
+            style={[
+              styles.panel,
+              { backgroundColor: colors.card, borderColor: colors.border },
+            ]}
+          >
+            <Text style={[styles.panelTitle, { color: txt, marginBottom: 14 }]}>
+              เทียบสัปดาห์นี้ vs ก่อนหน้า
+            </Text>
+            <View style={styles.cmpWrap}>
+              <DonutChart
+                progress={
+                  s.week.revenue + s.prevWeek.revenue > 0
+                    ? s.week.revenue / (s.week.revenue + s.prevWeek.revenue)
+                    : 0
+                }
+                color={HERO[0]}
+                size={118}
+                strokeWidth={14}
+              >
+                <Text style={[styles.donutPct, { color: txt }]}>
+                  {s.weekVsPrevPct === null
+                    ? "—"
+                    : `${s.weekVsPrevPct >= 0 ? "+" : ""}${s.weekVsPrevPct.toFixed(0)}%`}
+                </Text>
+                <Text style={[styles.donutCap, { color: sub }]}>vs ก่อนหน้า</Text>
+              </DonutChart>
+              <View style={{ flex: 1, gap: 14 }}>
+                <Legend
+                  dot={HERO[0]}
+                  label="สัปดาห์นี้"
+                  value={baht(s.week.revenue)}
+                  txt={txt}
+                  sub={sub}
+                />
+                <Legend
+                  dot={isDark ? "#52525b" : "#cbd5e1"}
+                  label="สัปดาห์ก่อน"
+                  value={baht(s.prevWeek.revenue)}
+                  txt={txt}
+                  sub={sub}
+                />
+              </View>
+            </View>
+          </View>
+        </Animated.View>
+
+        {/* ── Daily comparison bar chart (this week vs last week, tap for tooltip) ── */}
+        <Animated.View
+          entering={FadeInDown.delay(320).duration(500)}
+          style={{ paddingHorizontal: 18, marginTop: 16 }}
+        >
+          <View
+            style={[
+              styles.panel,
+              { backgroundColor: colors.card, borderColor: colors.border },
+            ]}
+          >
+            <View style={styles.panelHead}>
+              <Text style={[styles.panelTitle, { color: txt }]}>
+                เทียบรายวัน สัปดาห์นี้ vs ก่อนหน้า
+              </Text>
+              <Text style={[styles.panelHint, { color: sub }]}>แตะเพื่อดู</Text>
+            </View>
+            <View style={styles.cmpLegend}>
+              <View style={styles.legendInline}>
+                <View style={[styles.legendDot, { backgroundColor: HERO[0] }]} />
+                <Text style={[styles.legendLabel, { color: sub }]}>
+                  สัปดาห์นี้
+                </Text>
+              </View>
+              <View style={styles.legendInline}>
+                <View style={[styles.legendDot, { backgroundColor: muted }]} />
+                <Text style={[styles.legendLabel, { color: sub }]}>
+                  สัปดาห์ก่อน
+                </Text>
+              </View>
+            </View>
+            <BarChart
+              data={cmpBars}
+              colors={[HERO[0], muted]}
+              seriesNames={["สัปดาห์นี้", "สัปดาห์ก่อน"]}
+              labelColor={sub}
+              cardColor={colors.card}
+              textColor={txt}
+              subColor={sub}
+              borderColor={colors.border}
+              format={baht}
+            />
+          </View>
+        </Animated.View>
+
+        {/* ── Quick stats ── */}
+        <Animated.View
+          entering={FadeInDown.delay(340).duration(500)}
+          style={[styles.row, { marginTop: 14 }]}
+        >
+          <MiniStat
+            icon="receipt-outline"
+            label="จำนวนบิล (35 วัน)"
+            value={`${s.totalTx}`}
+            tint={colors}
+          />
+          <MiniStat
+            icon="stats-chart-outline"
+            label="เฉลี่ย/วันที่ขาย"
+            value={baht(s.avgPerActiveDay)}
+            tint={colors}
+          />
+        </Animated.View>
+
+      </Animated.ScrollView>
+
+      {/* ── Transparent top nav (Instagram-style: clear at top, amber fades in on scroll) ── */}
+      <View
+        pointerEvents="box-none"
+        style={[styles.navAbs, { paddingTop: insets.top }]}
+      >
+        <Animated.View style={[StyleSheet.absoluteFill, navBgAnim]}>
+          <LinearGradient
+            colors={HERO}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 0 }}
+            style={StyleSheet.absoluteFill}
+          />
+        </Animated.View>
+        <View style={styles.heroTop}>
+          <Pressable onPress={() => router.back()} style={styles.iconBtn}>
+            <Ionicons name="chevron-back" size={22} color="#fff" />
+          </Pressable>
+          <Text style={styles.heroTitle}>ยอดขายของฉัน</Text>
+          <Pressable
+            onPress={() => router.push("/(mini-apps)/daily-sale/history")}
+            style={styles.iconBtn}
+          >
+            <Ionicons name="receipt-outline" size={20} color="#fff" />
+          </Pressable>
+        </View>
+      </View>
+
+      {/* ── Floating glass bottom bar (Instagram-style: shrinks on scroll) ── */}
+      <Animated.View
+        style={[styles.bottomWrap, { bottom: insets.bottom + 8 }, barAnim]}
+      >
+        <BlurView
+          intensity={40}
+          tint={isDark ? "dark" : "light"}
+          experimentalBlurMethod="dimezisBlurView"
+          style={styles.bottomPill}
+        >
+          <View
+            style={[
+              StyleSheet.absoluteFill,
+              {
+                backgroundColor: isDark
+                  ? "rgba(28,28,30,0.55)"
+                  : "rgba(255,255,255,0.6)",
+              },
+            ]}
+          />
+          <View style={styles.bottomInner}>
+            <Pressable
+              onPress={() => router.push("/(mini-apps)/daily-sale/history")}
+              style={[styles.bottomGhost, { borderColor: colors.border }]}
+            >
+              <Ionicons name="receipt-outline" size={19} color={colors.text} />
+              <Text style={[styles.bottomGhostText, { color: colors.text }]}>
+                รายการ
+              </Text>
+            </Pressable>
+            <Pressable
+              onPress={() => router.push("/(mini-apps)/daily-sale/record")}
+              style={({ pressed }) => [
+                styles.cta,
+                { flex: 1, opacity: pressed ? 0.9 : 1 },
+              ]}
+            >
+              <LinearGradient
+                colors={HERO}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 0 }}
+                style={styles.ctaInner}
+              >
+                <Ionicons name="add-circle-outline" size={20} color="#fff" />
+                <Text style={styles.ctaText}>บันทึกยอดขายใหม่</Text>
+              </LinearGradient>
+            </Pressable>
+          </View>
+        </BlurView>
+      </Animated.View>
+    </View>
   );
 }
+
+// ── Small components ──────────────────────────────────────────────────
+function StatCard({
+  label,
+  value,
+  sub,
+  icon,
+  tint,
+  isDark,
+  chip,
+}: {
+  label: string;
+  value: string;
+  sub: string;
+  icon: keyof typeof Ionicons.glyphMap;
+  tint: { card: string; text: string; textSecondary: string; border: string };
+  isDark: boolean;
+  chip?: React.ReactNode;
+}) {
+  return (
+    <View
+      style={[
+        styles.statCard,
+        { backgroundColor: tint.card, borderColor: tint.border },
+      ]}
+    >
+      <View style={styles.statTop}>
+        <Ionicons name={icon} size={18} color={HERO[0]} />
+        {chip}
+      </View>
+      <Text style={[styles.statValue, { color: tint.text }]}>{value}</Text>
+      <Text style={[styles.statLabel, { color: tint.textSecondary }]}>
+        {label} · {sub}
+      </Text>
+    </View>
+  );
+}
+
+function MiniStat({
+  icon,
+  label,
+  value,
+  tint,
+}: {
+  icon: keyof typeof Ionicons.glyphMap;
+  label: string;
+  value: string;
+  tint: { card: string; text: string; textSecondary: string; border: string };
+}) {
+  return (
+    <View
+      style={[
+        styles.statCard,
+        { backgroundColor: tint.card, borderColor: tint.border },
+      ]}
+    >
+      <Ionicons name={icon} size={18} color={HERO[2]} />
+      <Text style={[styles.statValue, { color: tint.text, marginTop: 6 }]}>
+        {value}
+      </Text>
+      <Text style={[styles.statLabel, { color: tint.textSecondary }]}>
+        {label}
+      </Text>
+    </View>
+  );
+}
+
+function Legend({
+  dot,
+  label,
+  value,
+  txt,
+  sub,
+}: {
+  dot: string;
+  label: string;
+  value: string;
+  txt: string;
+  sub: string;
+}) {
+  return (
+    <View style={styles.legendRow}>
+      <View style={[styles.legendDot, { backgroundColor: dot }]} />
+      <View style={{ flex: 1 }}>
+        <Text style={[styles.legendLabel, { color: sub }]}>{label}</Text>
+        <Text style={[styles.legendValue, { color: txt }]}>{value}</Text>
+      </View>
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  center: { flex: 1, alignItems: "center", justifyContent: "center" },
+  navAbs: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    paddingHorizontal: 18,
+    zIndex: 20,
+  },
+  todayWrap: {},
+  todayCard: {
+    borderBottomLeftRadius: 28,
+    borderBottomRightRadius: 28,
+    paddingHorizontal: 16,
+    paddingBottom: 18,
+    overflow: "hidden",
+    shadowColor: "#F59E0B",
+    shadowOpacity: 0.3,
+    shadowRadius: 14,
+    shadowOffset: { width: 0, height: 8 },
+    elevation: 6,
+  },
+  todayFrost: {
+    backgroundColor: "rgba(255,255,255,0.16)",
+    borderRadius: 19,
+    padding: 16,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: "rgba(255,255,255,0.4)",
+  },
+  heroTop: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingVertical: 6,
+  },
+  iconBtn: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "rgba(255,255,255,0.2)",
+  },
+  heroTitle: { color: "#fff", fontSize: 17, fontWeight: "700" },
+  heroLabel: {
+    color: "rgba(255,255,255,0.9)",
+    fontSize: 13,
+    fontWeight: "600",
+  },
+  heroValueRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    marginTop: 4,
+  },
+  heroValue: { color: "#fff", fontSize: 34, fontWeight: "800" },
+  heroMeta: { color: "rgba(255,255,255,0.85)", fontSize: 12, marginTop: 6 },
+  chip: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 2,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 11,
+  },
+  chipText: { color: "#fff", fontSize: 12, fontWeight: "700" },
+  row: { flexDirection: "row", gap: 12, paddingHorizontal: 18, marginTop: 16 },
+  statCard: {
+    flex: 1,
+    borderRadius: 18,
+    borderWidth: StyleSheet.hairlineWidth,
+    padding: 16,
+    shadowColor: "#000",
+    shadowOpacity: 0.06,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 3 },
+    elevation: 2,
+  },
+  statTop: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+  statValue: { fontSize: 20, fontWeight: "800", marginTop: 8 },
+  statLabel: { fontSize: 12, marginTop: 2 },
+  panel: {
+    borderRadius: 22,
+    borderWidth: StyleSheet.hairlineWidth,
+    padding: 18,
+    shadowColor: "#000",
+    shadowOpacity: 0.07,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 3,
+  },
+  panelHead: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: 8,
+  },
+  panelTitle: { fontSize: 15, fontWeight: "700" },
+  panelHint: { fontSize: 12, fontWeight: "600" },
+  cmpWrap: { flexDirection: "row", alignItems: "center", gap: 18 },
+  donutPct: { fontSize: 20, fontWeight: "800" },
+  donutCap: { fontSize: 11, marginTop: 2 },
+  legendRow: { flexDirection: "row", alignItems: "center", gap: 10 },
+  cmpLegend: { flexDirection: "row", gap: 16, marginBottom: 10, marginTop: -2 },
+  legendInline: { flexDirection: "row", alignItems: "center", gap: 6 },
+  legendDot: { width: 12, height: 12, borderRadius: 6 },
+  legendLabel: { fontSize: 12 },
+  legendValue: { fontSize: 16, fontWeight: "800" },
+  bottomWrap: {
+    position: "absolute",
+    left: 14,
+    right: 14,
+    shadowColor: "#000",
+    shadowOpacity: 0.18,
+    shadowRadius: 16,
+    shadowOffset: { width: 0, height: 8 },
+    elevation: 14,
+  },
+  bottomPill: {
+    borderRadius: 30,
+    overflow: "hidden",
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: "rgba(255,255,255,0.25)",
+  },
+  bottomInner: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    padding: 8,
+  },
+  bottomGhost: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    borderRadius: 16,
+    borderWidth: 1,
+  },
+  bottomGhostText: { fontWeight: "700", fontSize: 14 },
+  cta: { borderRadius: 16 },
+  ctaInner: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    paddingVertical: 15,
+    borderRadius: 16,
+  },
+  ctaText: { color: "#fff", fontSize: 15, fontWeight: "700" },
+});

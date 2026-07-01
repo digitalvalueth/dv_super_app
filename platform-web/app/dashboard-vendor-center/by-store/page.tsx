@@ -4,105 +4,57 @@ import {
   ArrowDown,
   ArrowLeft,
   ArrowUp,
-  Calendar,
   ChevronRight,
-  Filter,
+  Download,
+  FileText,
+  Lock,
   Search,
 } from "lucide-react";
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { useBrand } from "../brand-context";
+import { db } from "@/lib/firebase";
+import { collection, getDocs, query, where } from "firebase/firestore";
+import * as XLSX from "xlsx";
+import jsPDF from "jspdf";
+import autoTable from "jspdf-autotable";
+import { toast } from "sonner";
+import { previousPeriodRange } from "@/lib/reports/period";
+import { aggregateByBranch } from "@/lib/reports/aggregate";
+import { useAuthStore } from "@/stores/auth.store";
+import { loadScopedBranchIds, isElevated } from "@/lib/reports/load-scoped-branches";
+
+interface DailySaleItem {
+  barcode: string;
+  productDescription: string;
+  price: number;
+  quantity: number;
+  revenue: number;
+  saleType: "normal" | "promotion";
+}
+
+interface DailySale {
+  id: string;
+  companyId: string;
+  branchId: string;
+  branchName: string;
+  employeeId: string;
+  employeeName: string;
+  saleDate: string;
+  items: DailySaleItem[];
+  totalItems: number;
+  totalRevenue: number;
+}
 
 type Row = {
+  branchId: string;
   store: string;
-  type: "Online" | "Offline";
   unitsSold: number;
   revenue: number;
-  revenueLastMonth: number;
-  growthMoM: number;
-  revenueLastYear: number;
-  growthYoY: number;
+  revenuePrev: number;
+  growth: number;
   contribution: number;
 };
-
-const rows: Row[] = [
-  {
-    store: "EVEANDBOY Siam Center",
-    type: "Offline",
-    unitsSold: 18,
-    revenue: 24500,
-    revenueLastMonth: 22000,
-    growthMoM: 11.4,
-    revenueLastYear: 19500,
-    growthYoY: 25.6,
-    contribution: 34.5,
-  },
-  {
-    store: "EVEANDBOY CentralWorld",
-    type: "Offline",
-    unitsSold: 14,
-    revenue: 18900,
-    revenueLastMonth: 17500,
-    growthMoM: 8.0,
-    revenueLastYear: 18000,
-    growthYoY: 5.0,
-    contribution: 26.6,
-  },
-  {
-    store: "EVEANDBOY Online",
-    type: "Online",
-    unitsSold: 12,
-    revenue: 12100,
-    revenueLastMonth: 14200,
-    growthMoM: -14.8,
-    revenueLastYear: 9800,
-    growthYoY: 23.5,
-    contribution: 17.0,
-  },
-  {
-    store: "EVEANDBOY EmQuartier",
-    type: "Offline",
-    unitsSold: 8,
-    revenue: 7700,
-    revenueLastMonth: 8900,
-    growthMoM: -13.5,
-    revenueLastYear: 7200,
-    growthYoY: 6.9,
-    contribution: 10.8,
-  },
-  {
-    store: "EVEANDBOY Terminal 21",
-    type: "Offline",
-    unitsSold: 6,
-    revenue: 4500,
-    revenueLastMonth: 4100,
-    growthMoM: 9.8,
-    revenueLastYear: 4400,
-    growthYoY: 2.3,
-    contribution: 6.3,
-  },
-  {
-    store: "EVEANDBOY Mega Bangna",
-    type: "Offline",
-    unitsSold: 5,
-    revenue: 2200,
-    revenueLastMonth: 2800,
-    growthMoM: -21.4,
-    revenueLastYear: 2600,
-    growthYoY: -15.4,
-    contribution: 3.1,
-  },
-  {
-    store: "EVEANDBOY Iconsiam",
-    type: "Offline",
-    unitsSold: 4,
-    revenue: 1201,
-    revenueLastMonth: 1100,
-    growthMoM: 9.2,
-    revenueLastYear: 1400,
-    growthYoY: -14.2,
-    contribution: 1.7,
-  },
-];
 
 const fmt = (n: number) => n.toLocaleString("en-US");
 
@@ -141,15 +93,190 @@ function Header({
   );
 }
 
+const matchBrand = (name: string, brand: "NEST ME" | "PRIMANEST") => {
+  const norm = (name || "").toLowerCase().replace(/\s+/g, "").trim();
+  if (brand === "NEST ME") {
+    return norm.includes("nestme") || norm.includes("nest me");
+  }
+  return norm.includes("primanest") || norm.includes("prima");
+};
+
+const formatDateToYmd = (d: Date) => {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+};
+
+const formatDateString = (dateStr: string) => {
+  if (!dateStr) return "";
+  const parts = dateStr.split("-");
+  if (parts.length !== 3) return dateStr;
+  const d = new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]));
+  const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+  return `${parts[2]} ${months[d.getMonth()]} ${parts[0]}`;
+};
+
+// Load Thai font for PDF (best-effort); returns true if registered.
+async function registerThaiFont(doc: jsPDF): Promise<boolean> {
+  try {
+    const response = await fetch("/GoogleSans-VariableFont.ttf");
+    if (!response.ok) return false;
+    const arrayBuffer = await response.arrayBuffer();
+    const bytes = new Uint8Array(arrayBuffer);
+    let binary = "";
+    for (let i = 0; i < bytes.byteLength; i++) {
+      binary += String.fromCharCode(bytes[i]);
+    }
+    const base64 = btoa(binary);
+    doc.addFileToVFS("GoogleSans.ttf", base64);
+    doc.addFont("GoogleSans.ttf", "GoogleSans", "normal");
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export default function Page() {
+  const { activeBrand } = useBrand();
+  const { userData } = useAuthStore();
+  const [rawSales, setRawSales] = useState<DailySale[]>([]);
+  const [scopedBranchIds, setScopedBranchIds] = useState<string[] | null>(null);
+  const [loading, setLoading] = useState(true);
+
   const [sortKey, setSortKey] = useState<SortKey>("revenue");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
   const [q, setQ] = useState("");
-  const [filter, setFilter] = useState<"ALL" | "Online" | "Offline">("ALL");
+  const [startDate, setStartDate] = useState("");
+  const [endDate, setEndDate] = useState("");
+  const [activePeriodBtn, setActivePeriodBtn] = useState("7 Days");
+
+  useEffect(() => {
+    async function loadData() {
+      if (userData && !isElevated(userData.role)) {
+        setLoading(false);
+        return;
+      }
+      setLoading(true);
+      try {
+        setScopedBranchIds(await loadScopedBranchIds(userData));
+
+        const companiesSnap = await getDocs(collection(db, "companies"));
+        const phithan = companiesSnap.docs.find((d) => {
+          const name = (d.data().name || "").toLowerCase();
+          const code = (d.data().code || "").toLowerCase();
+          return name.includes("phithan") || name.includes("พิธาน") || code.includes("phithan");
+        });
+        const targetCompanyId = phithan?.id || "";
+
+        const salesRef = collection(db, "dailySales");
+        const salesQuery = targetCompanyId
+          ? query(salesRef, where("companyId", "==", targetCompanyId))
+          : query(salesRef);
+        const salesSnap = await getDocs(salesQuery);
+        setRawSales(salesSnap.docs.map((d) => ({ id: d.id, ...d.data() })) as DailySale[]);
+      } catch (err) {
+        console.error("Error loading by-store data:", err);
+      } finally {
+        setLoading(false);
+      }
+    }
+    loadData();
+  }, [userData]);
+
+  // Restrict sales to the viewer's branch scope before any aggregation:
+  // null = admin/super_admin (all), [] = no branches, else only matching branchIds.
+  const scopedSales = useMemo(() => {
+    if (scopedBranchIds === null) return rawSales;
+    if (scopedBranchIds.length === 0) return [];
+    const set = new Set(scopedBranchIds);
+    return rawSales.filter((s) => set.has(s.branchId));
+  }, [rawSales, scopedBranchIds]);
+
+  // Filter daily sales to active brand items only
+  const brandSales = useMemo(() => {
+    return scopedSales
+      .map((sale) => {
+        const brandItems = (sale.items || []).filter((item) =>
+          matchBrand(item.productDescription || "", activeBrand),
+        );
+        if (brandItems.length === 0) return null;
+        return { ...sale, items: brandItems };
+      })
+      .filter(Boolean) as DailySale[];
+  }, [scopedSales, activeBrand]);
+
+  const sortedDates = useMemo(() => {
+    const dates = brandSales.map((s) => s.saleDate).filter(Boolean);
+    return Array.from(new Set(dates)).sort((a, b) => b.localeCompare(a));
+  }, [brandSales]);
+
+  const latestDate = sortedDates[0] || "";
+
+  // Default the range to last 7 days of available data
+  useEffect(() => {
+    if (latestDate) {
+      const parts = latestDate.split("-");
+      const d = new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]) - 6);
+      setStartDate(formatDateToYmd(d));
+      setEndDate(latestDate);
+      setActivePeriodBtn("7 Days");
+    }
+  }, [latestDate]);
+
+  const setPeriodFilter = (p: string) => {
+    if (!latestDate) return;
+    setActivePeriodBtn(p);
+    const parts = latestDate.split("-");
+    const year = Number(parts[0]);
+    const month = Number(parts[1]);
+    const day = Number(parts[2]);
+
+    if (p === "Yesterday") {
+      setStartDate(latestDate);
+      setEndDate(latestDate);
+    } else if (p === "7 Days") {
+      const d = new Date(year, month - 1, day - 6);
+      setStartDate(formatDateToYmd(d));
+      setEndDate(latestDate);
+    } else if (p === "MTD") {
+      setStartDate(`${year}-${String(month).padStart(2, "0")}-01`);
+      setEndDate(latestDate);
+    } else if (p === "Last Month") {
+      let lm = month - 1;
+      let ly = year;
+      if (lm === 0) {
+        lm = 12;
+        ly -= 1;
+      }
+      const firstDay = `${ly}-${String(lm).padStart(2, "0")}-01`;
+      const lastDayDate = new Date(ly, lm, 0);
+      setStartDate(firstDay);
+      setEndDate(formatDateToYmd(lastDayDate));
+    } else if (p === "YTD") {
+      setStartDate(`${year}-01-01`);
+      setEndDate(latestDate);
+    }
+  };
+
+  // Compute the immediately-preceding equal-length window for comparison
+  const prevWindow = useMemo(
+    () => previousPeriodRange(startDate, endDate),
+    [startDate, endDate],
+  );
+
+  const rows = useMemo<Row[]>(
+    () =>
+      aggregateByBranch(
+        brandSales,
+        { start: startDate, end: endDate },
+        prevWindow,
+      ),
+    [brandSales, startDate, endDate, prevWindow],
+  );
 
   const filtered = useMemo(() => {
     let r = rows;
-    if (filter !== "ALL") r = r.filter((x) => x.type === filter);
     if (q) r = r.filter((x) => x.store.toLowerCase().includes(q.toLowerCase()));
     return [...r].sort((a, b) => {
       const va = a[sortKey];
@@ -161,7 +288,7 @@ export default function Page() {
         ? String(va).localeCompare(String(vb))
         : String(vb).localeCompare(String(va));
     });
-  }, [sortKey, sortDir, q, filter]);
+  }, [rows, sortKey, sortDir, q]);
 
   const toggleSort = (k: SortKey) => {
     if (k === sortKey) setSortDir((d) => (d === "asc" ? "desc" : "asc"));
@@ -175,14 +302,134 @@ export default function Page() {
     (acc, r) => ({
       unitsSold: acc.unitsSold + r.unitsSold,
       revenue: acc.revenue + r.revenue,
-      revenueLastMonth: acc.revenueLastMonth + r.revenueLastMonth,
-      revenueLastYear: acc.revenueLastYear + r.revenueLastYear,
+      revenuePrev: acc.revenuePrev + r.revenuePrev,
     }),
-    { unitsSold: 0, revenue: 0, revenueLastMonth: 0, revenueLastYear: 0 },
+    { unitsSold: 0, revenue: 0, revenuePrev: 0 },
   );
 
+  const periodLabel =
+    startDate && endDate ? `${formatDateString(startDate)} - ${formatDateString(endDate)}` : "";
+
+  const handleExportExcel = () => {
+    if (filtered.length === 0) {
+      toast.error("ไม่มีข้อมูลที่จะส่งออก");
+      return;
+    }
+    const headers = [
+      "#",
+      "Store",
+      "Units Sold",
+      "Revenue (THB)",
+      "Prev Period (THB)",
+      "% Growth",
+      "% Contribution",
+    ];
+    const body = filtered.map((r, i) => [
+      i + 1,
+      r.store,
+      r.unitsSold,
+      Math.round(r.revenue),
+      Math.round(r.revenuePrev),
+      `${r.growth >= 0 ? "+" : ""}${r.growth.toFixed(1)}%`,
+      `${r.contribution.toFixed(1)}%`,
+    ]);
+    const ws = XLSX.utils.aoa_to_sheet([
+      [`By Store - ${activeBrand} - ${periodLabel}`],
+      [],
+      headers,
+      ...body,
+    ]);
+    ws["!cols"] = [6, 28, 12, 16, 16, 12, 14].map((w) => ({ wch: w }));
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "By Store");
+    const fileName = `${activeBrand.toLowerCase().replace(/\s+/g, "_")}_by_store_${new Date().toISOString().slice(0, 10)}.xlsx`;
+    XLSX.writeFile(wb, fileName);
+    toast.success("ดาวน์โหลดไฟล์ Excel เรียบร้อยแล้ว");
+  };
+
+  const handleExportPDF = async () => {
+    if (filtered.length === 0) {
+      toast.error("ไม่มีข้อมูลที่จะส่งออก");
+      return;
+    }
+    const doc = new jsPDF();
+    const hasThai = await registerThaiFont(doc);
+    const fontName = hasThai ? "GoogleSans" : "helvetica";
+    const pageWidth = doc.internal.pageSize.getWidth();
+
+    doc.setFont(fontName, "normal");
+    doc.setFontSize(16);
+    doc.text("By Store Sales Report", pageWidth / 2, 18, { align: "center" });
+    doc.setFontSize(10);
+    doc.text(`${activeBrand}  |  ${periodLabel}`, pageWidth / 2, 25, { align: "center" });
+
+    autoTable(doc, {
+      startY: 32,
+      head: [["#", "Store", "Units", "Revenue", "Prev Period", "% Growth", "% Contrib"]],
+      body: filtered.map((r, i) => [
+        (i + 1).toString(),
+        r.store,
+        fmt(r.unitsSold),
+        fmt(Math.round(r.revenue)),
+        fmt(Math.round(r.revenuePrev)),
+        `${r.growth >= 0 ? "+" : ""}${r.growth.toFixed(1)}%`,
+        `${r.contribution.toFixed(1)}%`,
+      ]),
+      foot: [
+        [
+          "",
+          "TOTAL",
+          fmt(totals.unitsSold),
+          fmt(Math.round(totals.revenue)),
+          fmt(Math.round(totals.revenuePrev)),
+          "",
+          "100.0%",
+        ],
+      ],
+      theme: "striped",
+      styles: { font: fontName, fontSize: 8, cellPadding: 2 },
+      headStyles: { fillColor: [229, 0, 126], font: fontName, fontSize: 8 },
+      footStyles: { fillColor: [252, 231, 243], textColor: [0, 0, 0], font: fontName, fontStyle: "normal" },
+    });
+
+    const fileName = `${activeBrand.toLowerCase().replace(/\s+/g, "_")}_by_store_${new Date().toISOString().slice(0, 10)}.pdf`;
+    doc.save(fileName);
+    if (!hasThai) {
+      toast.warning("ส่งออก PDF แล้ว (ฟอนต์ไทยไม่พร้อมใช้งาน ข้อความไทยอาจแสดงไม่ถูกต้อง)");
+    } else {
+      toast.success("ดาวน์โหลดไฟล์ PDF เรียบร้อยแล้ว");
+    }
+  };
+
+  if (userData && !isElevated(userData.role)) {
+    return (
+      <div className="flex h-[80vh] items-center justify-center bg-gray-50">
+        <div className="text-center max-w-md px-6">
+          <div className="mx-auto w-14 h-14 rounded-full bg-gray-100 flex items-center justify-center mb-4">
+            <Lock className="w-7 h-7 text-gray-400" />
+          </div>
+          <h2 className="text-lg font-bold text-gray-900 mb-1">ไม่มีสิทธิ์เข้าถึง</h2>
+          <p className="text-sm text-gray-500">
+            รายงานยอดขายรายสาขานี้สำหรับหัวหน้าทีม (Supervisor), ผู้จัดการ (Manager) และผู้ดูแลระบบเท่านั้น
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  if (loading) {
+    return (
+      <div className="flex h-[80vh] items-center justify-center bg-gray-50">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-pink-500 mx-auto"></div>
+          <p className="mt-4 text-gray-500 font-medium">กำลังโหลดข้อมูลยอดขายตามสาขา...</p>
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <div className="p-8 max-w-7xl mx-auto space-y-6">
+    <div className="p-6 md:p-8 w-full space-y-6">
       <div>
         <Link
           href="/dashboard-vendor-center"
@@ -190,9 +437,7 @@ export default function Page() {
         >
           <ArrowLeft className="w-3 h-3" /> Back to Dashboard
         </Link>
-        <h1 className="text-2xl font-bold text-gray-900">
-          Dashboard / By Store
-        </h1>
+        <h1 className="text-2xl font-bold text-gray-900">Dashboard / By Store</h1>
         <div className="text-xs text-gray-500 flex items-center gap-1 mt-1">
           <span>Home</span>
           <ChevronRight className="w-3 h-3" />
@@ -205,9 +450,48 @@ export default function Page() {
       </div>
 
       {/* Filters */}
-      <div className="bg-white rounded-xl shadow-sm border p-3 flex flex-col md:flex-row gap-3 items-center justify-between">
-        <div className="flex items-center gap-2 flex-1 w-full">
-          <div className="relative flex-1 max-w-sm">
+      <div className="bg-white rounded-xl shadow-sm border p-4 space-y-4">
+        <div className="flex flex-wrap gap-2">
+          {["Yesterday", "7 Days", "MTD", "Last Month", "YTD"].map((p) => (
+            <button
+              key={p}
+              onClick={() => setPeriodFilter(p)}
+              className={`px-4 py-1.5 text-[13px] rounded-full font-semibold transition-colors ${
+                activePeriodBtn === p
+                  ? "bg-[#E5007E] text-white"
+                  : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+              }`}
+            >
+              {p}
+            </button>
+          ))}
+        </div>
+        <div className="flex flex-wrap items-end gap-4">
+          <div className="flex items-center gap-2">
+            <label className="text-[13px] font-semibold text-gray-700">Start:</label>
+            <input
+              type="date"
+              value={startDate}
+              onChange={(e) => {
+                setStartDate(e.target.value);
+                setActivePeriodBtn("");
+              }}
+              className="px-3 py-1.5 border rounded-md text-sm focus:outline-none focus:border-pink-500"
+            />
+          </div>
+          <div className="flex items-center gap-2">
+            <label className="text-[13px] font-semibold text-gray-700">End:</label>
+            <input
+              type="date"
+              value={endDate}
+              onChange={(e) => {
+                setEndDate(e.target.value);
+                setActivePeriodBtn("");
+              }}
+              className="px-3 py-1.5 border rounded-md text-sm focus:outline-none focus:border-pink-500"
+            />
+          </div>
+          <div className="relative flex-1 min-w-[200px] max-w-sm">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
             <input
               value={q}
@@ -216,30 +500,28 @@ export default function Page() {
               className="w-full pl-9 pr-3 py-2 text-sm border rounded-md focus:outline-none focus:ring-2 focus:ring-pink-500 focus:border-pink-500"
             />
           </div>
-          <button className="flex items-center gap-1.5 bg-gray-50 px-3 py-2 rounded-md text-xs text-gray-700 hover:bg-gray-100 border">
-            <Calendar className="w-3.5 h-3.5" />
-            Yesterday
-          </button>
-          <button className="flex items-center gap-1.5 bg-gray-50 px-3 py-2 rounded-md text-xs text-gray-700 hover:bg-gray-100 border">
-            <Filter className="w-3.5 h-3.5" />
-            More filters
-          </button>
-        </div>
-        <div className="flex bg-gray-100 p-1 rounded-lg">
-          {(["ALL", "Offline", "Online"] as const).map((f) => (
+          <div className="flex items-center gap-2 ml-auto">
             <button
-              key={f}
-              onClick={() => setFilter(f)}
-              className={`px-4 py-1.5 rounded-md text-sm font-semibold transition ${
-                filter === f
-                  ? "bg-white text-pink-600 shadow-sm"
-                  : "text-gray-600 hover:text-gray-900"
-              }`}
+              onClick={handleExportExcel}
+              className="inline-flex items-center gap-1.5 bg-pink-600 hover:bg-pink-700 text-white px-3 py-2 rounded-lg text-xs font-semibold transition-colors shadow-sm"
             >
-              {f}
+              <Download className="w-3.5 h-3.5" /> Excel
             </button>
-          ))}
+            <button
+              onClick={handleExportPDF}
+              className="inline-flex items-center gap-1.5 bg-gray-800 hover:bg-gray-900 text-white px-3 py-2 rounded-lg text-xs font-semibold transition-colors shadow-sm"
+            >
+              <FileText className="w-3.5 h-3.5" /> PDF
+            </button>
+          </div>
         </div>
+        {periodLabel && (
+          <div className="text-xs text-gray-500">
+            แสดงยอดขายแบรนด์ <span className="font-semibold text-gray-700">{activeBrand}</span> ช่วง{" "}
+            {periodLabel} (เทียบกับช่วงก่อนหน้า {prevWindow.prevStart && formatDateString(prevWindow.prevStart)} -{" "}
+            {prevWindow.prevEnd && formatDateString(prevWindow.prevEnd)})
+          </div>
+        )}
       </div>
 
       {/* Table */}
@@ -249,122 +531,35 @@ export default function Page() {
             <thead className="bg-gray-50 text-[11px] uppercase tracking-wider text-gray-500">
               <tr>
                 <th className="px-4 py-3 text-left">#</th>
-                <Header
-                  k="store"
-                  label="Store"
-                  sortKey={sortKey}
-                  sortDir={sortDir}
-                  onSort={toggleSort}
-                />
-                <Header
-                  k="unitsSold"
-                  label="Unit Sold"
-                  align="right"
-                  sortKey={sortKey}
-                  sortDir={sortDir}
-                  onSort={toggleSort}
-                />
-                <Header
-                  k="revenue"
-                  label="Revenue"
-                  align="right"
-                  sortKey={sortKey}
-                  sortDir={sortDir}
-                  onSort={toggleSort}
-                />
-                <Header
-                  k="revenueLastMonth"
-                  label="Rev. Last Month"
-                  align="right"
-                  sortKey={sortKey}
-                  sortDir={sortDir}
-                  onSort={toggleSort}
-                />
-                <Header
-                  k="growthMoM"
-                  label="% Gr. MoM"
-                  align="right"
-                  sortKey={sortKey}
-                  sortDir={sortDir}
-                  onSort={toggleSort}
-                />
-                <Header
-                  k="revenueLastYear"
-                  label="Rev. Last Year"
-                  align="right"
-                  sortKey={sortKey}
-                  sortDir={sortDir}
-                  onSort={toggleSort}
-                />
-                <Header
-                  k="growthYoY"
-                  label="% Gr. YoY"
-                  align="right"
-                  sortKey={sortKey}
-                  sortDir={sortDir}
-                  onSort={toggleSort}
-                />
-                <Header
-                  k="contribution"
-                  label="% Contribution"
-                  align="right"
-                  sortKey={sortKey}
-                  sortDir={sortDir}
-                  onSort={toggleSort}
-                />
+                <Header k="store" label="Store" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />
+                <Header k="unitsSold" label="Unit Sold" align="right" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />
+                <Header k="revenue" label="Revenue" align="right" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />
+                <Header k="revenuePrev" label="Prev Period" align="right" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />
+                <Header k="growth" label="% Growth" align="right" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />
+                <Header k="contribution" label="% Contribution" align="right" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />
               </tr>
             </thead>
             <tbody className="divide-y">
               {filtered.map((r, i) => (
-                <tr key={r.store} className="hover:bg-gray-50">
+                <tr key={r.branchId} className="hover:bg-gray-50">
                   <td className="px-4 py-3 text-gray-500">{i + 1}</td>
                   <td className="px-4 py-3">
                     <div className="font-medium text-gray-900">{r.store}</div>
-                    <span
-                      className={`inline-block text-[10px] px-1.5 py-0.5 rounded mt-0.5 ${
-                        r.type === "Online"
-                          ? "bg-blue-50 text-blue-600"
-                          : "bg-gray-100 text-gray-600"
-                      }`}
-                    >
-                      {r.type}
-                    </span>
                   </td>
-                  <td className="px-4 py-3 text-right text-gray-700">
-                    {fmt(r.unitsSold)}
-                  </td>
-                  <td className="px-4 py-3 text-right font-semibold text-gray-900">
-                    ฿{fmt(r.revenue)}
-                  </td>
-                  <td className="px-4 py-3 text-right text-gray-600">
-                    ฿{fmt(r.revenueLastMonth)}
-                  </td>
+                  <td className="px-4 py-3 text-right text-gray-700">{fmt(r.unitsSold)}</td>
+                  <td className="px-4 py-3 text-right font-semibold text-gray-900">฿{fmt(Math.round(r.revenue))}</td>
+                  <td className="px-4 py-3 text-right text-gray-600">฿{fmt(Math.round(r.revenuePrev))}</td>
                   <td
                     className={`px-4 py-3 text-right font-semibold ${
-                      r.growthMoM >= 0 ? "text-green-600" : "text-red-500"
+                      r.revenuePrev === 0 ? "text-gray-400" : r.growth >= 0 ? "text-green-600" : "text-red-500"
                     }`}
                   >
-                    {r.growthMoM >= 0 ? "+" : ""}
-                    {r.growthMoM.toFixed(1)}%
-                  </td>
-                  <td className="px-4 py-3 text-right text-gray-600">
-                    ฿{fmt(r.revenueLastYear)}
-                  </td>
-                  <td
-                    className={`px-4 py-3 text-right font-semibold ${
-                      r.growthYoY >= 0 ? "text-green-600" : "text-red-500"
-                    }`}
-                  >
-                    {r.growthYoY >= 0 ? "+" : ""}
-                    {r.growthYoY.toFixed(1)}%
+                    {r.revenuePrev === 0 ? "—" : `${r.growth >= 0 ? "+" : ""}${r.growth.toFixed(1)}%`}
                   </td>
                   <td className="px-4 py-3 text-right">
                     <div className="inline-flex items-center gap-2">
                       <div className="w-16 bg-gray-100 rounded-full h-1.5 overflow-hidden">
-                        <div
-                          className="h-full bg-pink-500"
-                          style={{ width: `${r.contribution}%` }}
-                        />
+                        <div className="h-full bg-pink-500" style={{ width: `${r.contribution}%` }} />
                       </div>
                       <span className="text-xs font-medium text-gray-700 w-10 text-right">
                         {r.contribution.toFixed(1)}%
@@ -373,27 +568,28 @@ export default function Page() {
                   </td>
                 </tr>
               ))}
+              {filtered.length === 0 && (
+                <tr>
+                  <td colSpan={7} className="px-4 py-12 text-center text-gray-400 font-medium">
+                    ไม่พบข้อมูลยอดขายในช่วงที่กำหนด
+                  </td>
+                </tr>
+              )}
             </tbody>
-            <tfoot className="bg-pink-50 font-bold text-gray-900">
-              <tr>
-                <td colSpan={2} className="px-4 py-3 text-right">
-                  TOTAL
-                </td>
-                <td className="px-4 py-3 text-right">
-                  {fmt(totals.unitsSold)}
-                </td>
-                <td className="px-4 py-3 text-right">฿{fmt(totals.revenue)}</td>
-                <td className="px-4 py-3 text-right">
-                  ฿{fmt(totals.revenueLastMonth)}
-                </td>
-                <td className="px-4 py-3 text-right text-gray-500">—</td>
-                <td className="px-4 py-3 text-right">
-                  ฿{fmt(totals.revenueLastYear)}
-                </td>
-                <td className="px-4 py-3 text-right text-gray-500">—</td>
-                <td className="px-4 py-3 text-right">100.0%</td>
-              </tr>
-            </tfoot>
+            {filtered.length > 0 && (
+              <tfoot className="bg-pink-50 font-bold text-gray-900">
+                <tr>
+                  <td colSpan={2} className="px-4 py-3 text-right">
+                    TOTAL
+                  </td>
+                  <td className="px-4 py-3 text-right">{fmt(totals.unitsSold)}</td>
+                  <td className="px-4 py-3 text-right">฿{fmt(Math.round(totals.revenue))}</td>
+                  <td className="px-4 py-3 text-right">฿{fmt(Math.round(totals.revenuePrev))}</td>
+                  <td className="px-4 py-3 text-right text-gray-500">—</td>
+                  <td className="px-4 py-3 text-right">100.0%</td>
+                </tr>
+              </tfoot>
+            )}
           </table>
         </div>
       </div>

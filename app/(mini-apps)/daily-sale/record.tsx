@@ -1,16 +1,27 @@
 import {
   createDailySale,
   fetchActivePromoItems,
+  findDuplicateDailySaleBarcodes,
+  getDailySaleById,
   lookupProductByBarcode,
   PromoItem,
+  updateDailySale,
 } from "@/services/daily-sale.service";
+import {
+  findInFormDuplicateBarcodes,
+} from "@/services/daily-sale-duplicates";
+import {
+  isNonPromo,
+  isPromoActiveOnDate as isPromoActiveOnDateStr,
+  selectBestPromo,
+} from "@/services/daily-sale-promo";
 import { useAuthStore } from "@/stores/auth.store";
 import { useTheme } from "@/stores/theme.store";
 import { DailySaleItem, SaleType } from "@/types";
 import { Ionicons } from "@expo/vector-icons";
 import { CameraView, useCameraPermissions } from "expo-camera";
 import { Image } from "expo-image";
-import { router } from "expo-router";
+import { router, useLocalSearchParams } from "expo-router";
 import { useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
@@ -68,13 +79,8 @@ const MONTHS_TH = [
 const DAY_LABELS = ["อา", "จ", "อ", "พ", "พฤ", "ศ", "ส"];
 
 // ─── Promotion helpers ─────────────────────────────────────
-const NON_PROMO_REMARKS = ["buy 1", "buy1"];
-const isNonPromo = (remark?: string) =>
-  NON_PROMO_REMARKS.includes(
-    String(remark ?? "")
-      .trim()
-      .toLowerCase(),
-  );
+// isNonPromo / isPromoActiveOnDate / selectBestPromo live in the pure
+// `@/services/daily-sale-promo` module so they can be unit-tested.
 
 // ─── Item state (includes UI-only fields) ──────────────────
 type ItemState = Partial<DailySaleItem> & {
@@ -287,6 +293,11 @@ export default function DailySaleRecord() {
   const { colors, isDark } = useTheme();
   const user = useAuthStore((state) => state.user);
 
+  // ─── Edit mode (existing record id passed via route params) ──
+  const params = useLocalSearchParams<{ id?: string }>();
+  const editId = typeof params.id === "string" && params.id ? params.id : null;
+  const [loadingExisting, setLoadingExisting] = useState(!!editId);
+
   // ─── Branch (multi-branch support) ────────────────────────
   const availableBranches: { id: string; name: string }[] = (() => {
     if (user?.branchIds && user.branchIds.length > 0) {
@@ -315,6 +326,51 @@ export default function DailySaleRecord() {
   const [submitting, setSubmitting] = useState(false);
   const [lookingUp, setLookingUp] = useState<string | null>(null); // itemKey being looked up
 
+  // ─── Review/confirm summary modal (shown before final save) ──
+  const [reviewVisible, setReviewVisible] = useState(false);
+  const reviewResolveRef = useRef<((ok: boolean) => void) | null>(null);
+
+  // ─── Load existing record for editing ─────────────────────
+  useEffect(() => {
+    if (!editId) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const sale = await getDailySaleById(editId);
+        if (cancelled || !sale) return;
+        if (sale.branchId) setSelectedBranchId(sale.branchId);
+        if (sale.branchName) setSelectedBranchName(sale.branchName);
+        if (sale.saleDate) setSaleDate(sale.saleDate);
+        setWorkDescription(sale.workDescription || "");
+        setItems(
+          (sale.items ?? []).map((it) => ({
+            _key: String(Date.now() + Math.random()),
+            barcode: it.barcode,
+            productDescription: it.productDescription,
+            productImageUrl: it.productImageUrl,
+            price: it.price,
+            quantity: it.quantity,
+            revenue: it.revenue,
+            saleType: it.saleType,
+            hasFreebie: it.hasFreebie,
+            freebieBarcode: it.freebieBarcode,
+            freebieDescription: it.freebieDescription,
+            promotionRemark: it.promotionRemark,
+            availablePromos: [],
+          })),
+        );
+      } catch (e) {
+        console.error("Error loading daily sale for edit:", e);
+        Alert.alert("เกิดข้อผิดพลาด", "ไม่สามารถโหลดข้อมูลรายการได้");
+      } finally {
+        if (!cancelled) setLoadingExisting(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [editId]);
+
   // ─── Promotion list for selected month ─────────────────────
   const [promoItems, setPromoItems] = useState<PromoItem[]>([]);
   useEffect(() => {
@@ -339,57 +395,43 @@ export default function DailySaleRecord() {
   });
 
   /** Check if a promo is active on the exact saleDate */
-  const isPromoActiveOnDate = (promo: PromoItem): boolean => {
-    if (!promo.promoStart || !promo.promoEnd) return false;
-    const d = new Date(saleDate + "T00:00:00");
-    return promo.promoStart <= d && d <= promo.promoEnd;
-  };
+  const isPromoActiveOnDate = (promo: PromoItem): boolean =>
+    isPromoActiveOnDateStr(promo, saleDate);
 
   /** Apply promo master data when a barcode is scanned.
    *  - Filters to promos active on exact saleDate
    *  - Skips Buy1 (non-promo) entries
    *  - Auto-applies if exactly 1 real promo; sets availablePromos for user to pick if >1
+   *
+   *  The decision logic is extracted into the pure `selectBestPromo` helper.
    */
   const applyPromoToItem = (itemKey: string, barcode: string) => {
     const allPromos = promoMultiMap.get(barcode) ?? [];
-    const activePromos = allPromos.filter(isPromoActiveOnDate);
-    const realPromos = activePromos.filter((p) => !isNonPromo(p.remark));
+    const decision = selectBestPromo(allPromos, saleDate);
 
-    if (realPromos.length === 0) {
-      // No real promo — check if there's a Buy1 base-price entry
-      const buy1Entry = activePromos.find((p) => isNonPromo(p.remark));
-      if (buy1Entry) {
-        updateItem(itemKey, {
-          ...(buy1Entry.commPrice != null
-            ? { price: buy1Entry.commPrice }
-            : {}),
-          saleType: "normal",
-          promotionRemark: "",
-          promoStart: null,
-          promoEnd: null,
-          availablePromos: [],
-        });
-      }
-      // If no promos at all, leave the item unchanged (price from product catalog)
-    } else if (realPromos.length === 1) {
-      // Auto-apply the single real promo
-      const promo = realPromos[0];
+    if (decision.kind === "buy1") {
+      const buy1Entry = decision.buy1Entry!;
+      updateItem(itemKey, {
+        ...(buy1Entry.commPrice != null
+          ? { price: buy1Entry.commPrice }
+          : {}),
+        saleType: "normal",
+        promotionRemark: "",
+        promoStart: null,
+        promoEnd: null,
+        availablePromos: [],
+      });
+      // If no promos at all (kind === "none"), leave the item unchanged
+      // (price from product catalog).
+    } else if (decision.kind === "promotion") {
+      const promo = decision.selected!;
       updateItem(itemKey, {
         ...(promo.commPrice != null ? { price: promo.commPrice } : {}),
         saleType: "promotion",
         promotionRemark: promo.remark ?? "",
         promoStart: promo.promoStart,
         promoEnd: promo.promoEnd,
-        availablePromos: [],
-      });
-    } else {
-      // Multiple real promos — let the user pick
-      updateItem(itemKey, {
-        saleType: "promotion",
-        promotionRemark: "",
-        promoStart: null,
-        promoEnd: null,
-        availablePromos: realPromos,
+        availablePromos: decision.availablePromos,
       });
     }
   };
@@ -576,6 +618,58 @@ export default function DailySaleRecord() {
       (it) => it.barcode && it.productDescription && (it.quantity ?? 0) > 0,
     );
 
+    // ── Duplicate check (B1) ────────────────────────────────
+    const barcodes = validItems.map((it) => it.barcode!) as string[];
+
+    // 1) Duplicates within the current form
+    const dupInForm = new Set<string>(
+      findInFormDuplicateBarcodes(validItems),
+    );
+
+    // 2) Duplicates against already-saved records (same employee + saleDate)
+    let dupInDb: string[] = [];
+    try {
+      dupInDb = await findDuplicateDailySaleBarcodes(
+        user.uid,
+        saleDate,
+        barcodes,
+        editId ?? undefined,
+      );
+    } catch (e) {
+      console.error("Duplicate check failed:", e);
+    }
+
+    const allDup = Array.from(new Set([...dupInForm, ...dupInDb]));
+    if (allDup.length > 0) {
+      const lines: string[] = [];
+      if (dupInForm.size > 0) {
+        lines.push("รายการซ้ำในฟอร์มนี้:");
+        lines.push(...Array.from(dupInForm).map((b) => `• ${b}`));
+      }
+      if (dupInDb.length > 0) {
+        lines.push("บันทึกไปแล้วในวันเดียวกัน:");
+        lines.push(...dupInDb.map((b) => `• ${b}`));
+      }
+      const confirmed = await new Promise<boolean>((resolve) => {
+        Alert.alert(
+          "⚠ พบบาร์โค้ดซ้ำ",
+          lines.join("\n") + "\n\nต้องการบันทึกต่อหรือไม่?",
+          [
+            { text: "ยกเลิก", style: "cancel", onPress: () => resolve(false) },
+            { text: "บันทึกต่อ", onPress: () => resolve(true) },
+          ],
+        );
+      });
+      if (!confirmed) return;
+    }
+
+    // ── Review/confirm summary (B3) ─────────────────────────
+    const reviewed = await new Promise<boolean>((resolve) => {
+      reviewResolveRef.current = resolve;
+      setReviewVisible(true);
+    });
+    if (!reviewed) return;
+
     setSubmitting(true);
     try {
       const saleItems: DailySaleItem[] = validItems.map((it) => ({
@@ -595,26 +689,42 @@ export default function DailySaleRecord() {
       const totalItems = saleItems.reduce((s, i) => s + i.quantity, 0);
       const totalRevenue = saleItems.reduce((s, i) => s + i.revenue, 0);
 
-      await createDailySale({
-        companyId: user.companyId || "",
-        branchId: selectedBranchId,
-        branchName: selectedBranchName,
-        employeeId: user.uid,
-        baCode: (user as any).baCode,
-        employeeName: (user as any).fullName || user.name || user.email || "",
-        supervisorId: (user as any).supervisorId,
-        supervisorName: (user as any).supervisorName,
-        seller: (user as any).seller,
-        saleDate,
-        workDescription: workDescription.trim() || undefined,
-        items: saleItems,
-        totalItems,
-        totalRevenue,
-      });
-
-      Alert.alert("บันทึกสำเร็จ", `บันทึกยอดขายวันที่ ${saleDate} เรียบร้อย`, [
-        { text: "ตกลง", onPress: () => router.back() },
-      ]);
+      if (editId) {
+        await updateDailySale(editId, {
+          branchId: selectedBranchId,
+          branchName: selectedBranchName,
+          saleDate,
+          workDescription: workDescription.trim() || undefined,
+          items: saleItems,
+          totalItems,
+          totalRevenue,
+        });
+        Alert.alert(
+          "บันทึกสำเร็จ",
+          `แก้ไขยอดขายวันที่ ${saleDate} เรียบร้อย`,
+          [{ text: "ตกลง", onPress: () => router.back() }],
+        );
+      } else {
+        await createDailySale({
+          companyId: user.companyId || "",
+          branchId: selectedBranchId,
+          branchName: selectedBranchName,
+          employeeId: user.uid,
+          baCode: (user as any).baCode,
+          employeeName: (user as any).fullName || user.name || user.email || "",
+          supervisorId: (user as any).supervisorId,
+          supervisorName: (user as any).supervisorName,
+          seller: (user as any).seller,
+          saleDate,
+          workDescription: workDescription.trim() || undefined,
+          items: saleItems,
+          totalItems,
+          totalRevenue,
+        });
+        Alert.alert("บันทึกสำเร็จ", `บันทึกยอดขายวันที่ ${saleDate} เรียบร้อย`, [
+          { text: "ตกลง", onPress: () => router.back() },
+        ]);
+      }
     } catch (e) {
       console.error("Error saving daily sale:", e);
       Alert.alert("เกิดข้อผิดพลาด", "ไม่สามารถบันทึกได้ กรุณาลองใหม่");
@@ -622,6 +732,27 @@ export default function DailySaleRecord() {
       setSubmitting(false);
     }
   };
+
+  // Helpers to resolve the review modal from its buttons
+  const resolveReview = (ok: boolean) => {
+    setReviewVisible(false);
+    const resolve = reviewResolveRef.current;
+    reviewResolveRef.current = null;
+    resolve?.(ok);
+  };
+
+  // Derived totals for the review summary (valid items only)
+  const reviewItems = items.filter(
+    (it) => it.barcode && it.productDescription && (it.quantity ?? 0) > 0,
+  );
+  const reviewTotalItems = reviewItems.reduce(
+    (s, it) => s + (Number(it.quantity) || 1),
+    0,
+  );
+  const reviewTotalRevenue = reviewItems.reduce(
+    (s, it) => s + (Number(it.price) || 0) * (Number(it.quantity) || 1),
+    0,
+  );
 
   const inputStyle = {
     backgroundColor: isDark ? "#1F2937" : "#F9FAFB",
@@ -1582,12 +1713,169 @@ export default function DailySaleRecord() {
               <ActivityIndicator color="#fff" />
             ) : (
               <Text style={{ color: "#fff", fontWeight: "700", fontSize: 16 }}>
-                บันทึกยอดขาย
+                {editId ? "บันทึกการแก้ไข" : "บันทึกยอดขาย"}
               </Text>
             )}
           </TouchableOpacity>
         </ScrollView>
       </KeyboardAvoidingView>
+
+      {/* ── Review / confirm summary modal (B3) ── */}
+      <Modal
+        visible={reviewVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => resolveReview(false)}
+      >
+        <View
+          style={{
+            flex: 1,
+            backgroundColor: "rgba(0,0,0,0.45)",
+            justifyContent: "center",
+            padding: 20,
+          }}
+        >
+          <View
+            style={{
+              backgroundColor: colors.card,
+              borderRadius: 16,
+              padding: 18,
+              maxHeight: "80%",
+            }}
+          >
+            <Text
+              style={{
+                fontSize: 16,
+                fontWeight: "700",
+                color: colors.text,
+                marginBottom: 4,
+              }}
+            >
+              ตรวจสอบก่อนบันทึก
+            </Text>
+            <Text
+              style={{
+                fontSize: 12,
+                color: colors.textSecondary,
+                marginBottom: 12,
+              }}
+            >
+              วันที่ {formatDateTH(saleDate)}
+            </Text>
+
+            <ScrollView style={{ maxHeight: 320 }}>
+              {reviewItems.map((it, idx) => {
+                const lineRev =
+                  (Number(it.price) || 0) * (Number(it.quantity) || 1);
+                return (
+                  <View
+                    key={it._key}
+                    style={{
+                      flexDirection: "row",
+                      justifyContent: "space-between",
+                      paddingVertical: 8,
+                      borderBottomWidth: 1,
+                      borderBottomColor: colors.border,
+                      gap: 8,
+                    }}
+                  >
+                    <View style={{ flex: 1 }}>
+                      <Text
+                        style={{
+                          fontSize: 13,
+                          fontWeight: "600",
+                          color: colors.text,
+                        }}
+                      >
+                        {idx + 1}. {it.productDescription}
+                      </Text>
+                      <Text
+                        style={{
+                          fontSize: 11,
+                          color: colors.textSecondary,
+                          marginTop: 2,
+                        }}
+                      >
+                        {it.quantity ?? 1} x ฿
+                        {(Number(it.price) || 0).toLocaleString("th-TH", {
+                          minimumFractionDigits: 2,
+                        })}
+                      </Text>
+                    </View>
+                    <Text
+                      style={{
+                        fontSize: 13,
+                        fontWeight: "700",
+                        color: "#2563EB",
+                      }}
+                    >
+                      ฿
+                      {lineRev.toLocaleString("th-TH", {
+                        minimumFractionDigits: 2,
+                      })}
+                    </Text>
+                  </View>
+                );
+              })}
+            </ScrollView>
+
+            <View
+              style={{
+                flexDirection: "row",
+                justifyContent: "space-between",
+                marginTop: 12,
+                marginBottom: 16,
+              }}
+            >
+              <Text
+                style={{ fontSize: 13, color: colors.textSecondary }}
+              >
+                รวม {reviewTotalItems} ชิ้น
+              </Text>
+              <Text
+                style={{ fontSize: 15, fontWeight: "700", color: "#16A34A" }}
+              >
+                ฿
+                {reviewTotalRevenue.toLocaleString("th-TH", {
+                  minimumFractionDigits: 2,
+                })}
+              </Text>
+            </View>
+
+            <View style={{ flexDirection: "row", gap: 10 }}>
+              <TouchableOpacity
+                onPress={() => resolveReview(false)}
+                style={{
+                  flex: 1,
+                  paddingVertical: 12,
+                  borderRadius: 10,
+                  alignItems: "center",
+                  borderWidth: 1,
+                  borderColor: colors.border,
+                }}
+              >
+                <Text style={{ color: colors.textSecondary, fontWeight: "600" }}>
+                  แก้ไข
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                onPress={() => resolveReview(true)}
+                style={{
+                  flex: 1,
+                  paddingVertical: 12,
+                  borderRadius: 10,
+                  alignItems: "center",
+                  backgroundColor: "#F59E0B",
+                }}
+              >
+                <Text style={{ color: "#fff", fontWeight: "700" }}>
+                  ยืนยันบันทึก
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
 
       {/* ── Date picker modal ── */}
       <Modal
@@ -1681,6 +1969,28 @@ export default function DailySaleRecord() {
           </TouchableOpacity>
         </SafeAreaView>
       </Modal>
+
+      {/* ── Loading overlay while fetching record to edit ── */}
+      {loadingExisting && (
+        <View
+          style={{
+            position: "absolute",
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            backgroundColor: colors.background,
+            justifyContent: "center",
+            alignItems: "center",
+            gap: 12,
+          }}
+        >
+          <ActivityIndicator size="large" color="#F59E0B" />
+          <Text style={{ color: colors.textSecondary, fontSize: 13 }}>
+            กำลังโหลดข้อมูล...
+          </Text>
+        </View>
+      )}
     </SafeAreaView>
   );
 }

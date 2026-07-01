@@ -1,0 +1,38 @@
+openapi: 3.1.0
+info:
+  title: Shop Stock Receive API
+  version: 1.0.0
+  description: |
+    API ให้ ITP/ระบบภายนอกดึงข้อมูลการรับสินค้าเข้าสาขา (Firestore `shopStockReceives`)
+    รวม Sales/Test/Mkt qty, รูปยืนยัน, watermark.
+    **Authentication:** `X-API-Key` header.
+servers:
+  - url: https://app.fittbsa.com
+    description: Production
+  - url: https://uat-app.fittbsa.com
+    description: Sandbox
+security:
+  - ApiKeyAuth: []
+paths:
+  /api/shop-stock-receive:
+    get:
+      summary: ดึงข้อมูลการรับสินค้า (Transfer)
+      operationId: getShopStockReceives
+      parameters:
+        - { name: company_id, in: query, schema: { type: string } }
+        - { name: branch_id, in: query, schema: { type: string } }
+        - { name: branch_code, in: query, schema: { type: string }, example: "BL 41060" }
+        - { name: transfer_number, in: query, schema: { type: string }, example: "SR-20260617-7" }
+        - { name: start_date, in: query, schema: { type: string, format: date } }
+        - { name: end_date, in: query, schema: { type: string, format: date } }
+        - { name: limit, in: query, schema: { type: integer, default: 50, maximum: 200 } }
+        - { name: offset, in: query, schema: { type: integer, default: 0 } }
+      responses:
+        "200":
+          description: รายการการรับสินค้า
+components:
+  securitySchemes:
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-API-Key

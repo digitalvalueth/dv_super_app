@@ -484,3 +484,43 @@ export const subscribeToProductsWithAssignments = (
     }
   };
 };
+
+/**
+ * หา product ตาม barcode ที่สแกนได้ — ลอง match field `barcode` ก่อน
+ * ถ้าไม่เจอ ลอง `sku` (ในข้อมูลจริง barcode บางตัว = sku เช่น "UF-001-M")
+ */
+export const getProductByCode = async (
+  companyId: string,
+  code: string,
+): Promise<Product | null> => {
+  try {
+    const productsRef = collection(db, "products");
+
+    const byBarcode = await getDocs(
+      query(
+        productsRef,
+        where("companyId", "==", companyId),
+        where("barcode", "==", code),
+      ),
+    );
+    if (!byBarcode.empty) {
+      return byBarcode.docs[0].data() as Product;
+    }
+
+    const bySku = await getDocs(
+      query(
+        productsRef,
+        where("companyId", "==", companyId),
+        where("sku", "==", code),
+      ),
+    );
+    if (!bySku.empty) {
+      return bySku.docs[0].data() as Product;
+    }
+
+    return null;
+  } catch (error) {
+    console.error("Error getting product by code:", error);
+    throw error;
+  }
+};

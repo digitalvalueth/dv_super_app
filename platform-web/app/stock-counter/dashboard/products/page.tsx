@@ -4,6 +4,7 @@ import AssignPreviewModal from "@/components/stock-counter/assign-preview-modal"
 import {
   buildAssignPlan,
   commitAssignPlan,
+  resolveAssignPeriod,
   type AssignPlan,
   type PeriodHalf,
 } from "@/lib/assign-products";
@@ -71,6 +72,7 @@ export default function ProductsPage() {
     month: number;
     year: number;
     half: PeriodHalf;
+    isTemporaryOverride: boolean;
   } | null>(null);
   const [formData, setFormData] = useState({
     productId: "",
@@ -421,11 +423,14 @@ export default function ProductsPage() {
       toast.error("ไม่พบ companyId");
       return;
     }
-    const now = new Date();
+    // When "เปิดรับรูปชั่วคราว" is active, assign into the reopened round (the
+    // override target) so the work appears in the app instead of a future round.
+    const resolved = await resolveAssignPeriod(userData.companyId);
     const ctx = {
-      month: now.getMonth() + 1,
-      year: now.getFullYear(),
-      half: (now.getDate() <= 15 ? 1 : 2) as PeriodHalf,
+      month: resolved.month,
+      year: resolved.year,
+      half: resolved.half,
+      isTemporaryOverride: resolved.isTemporaryOverride,
     };
     setAssignContext(ctx);
     setAssignPlan(null);
@@ -857,7 +862,11 @@ export default function ProductsPage() {
           title="มอบหมายทุกสินค้าให้พนักงานทุกคน"
           subtitle={
             assignContext
-              ? `รอบ ${assignContext.half} • เดือน ${assignContext.month}/${assignContext.year}`
+              ? `รอบ ${assignContext.half} • เดือน ${assignContext.month}/${assignContext.year}${
+                  assignContext.isTemporaryOverride
+                    ? " • เปิดรับรูปชั่วคราว (ส่งล่าช้า)"
+                    : ""
+                }`
               : undefined
           }
           loading={assignLoading}

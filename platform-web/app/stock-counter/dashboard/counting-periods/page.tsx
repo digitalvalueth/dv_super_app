@@ -4,6 +4,7 @@ import AssignPreviewModal from "@/components/stock-counter/assign-preview-modal"
 import {
   buildAssignPlan,
   commitAssignPlan,
+  resolveAssignPeriod,
   type AssignPlan,
 } from "@/lib/assign-products";
 import { db } from "@/lib/firebase";
@@ -247,6 +248,12 @@ export default function CountingPeriodsPage() {
   const [temporaryOpenReason, setTemporaryOpenReason] = useState("");
   const [suggestedTargetPeriod, setSuggestedTargetPeriod] =
     useState<CountingPeriod | null>(null);
+  // Past periods a manager can reopen for late submission (latest first).
+  const [pastPeriods, setPastPeriods] = useState<CountingPeriod[]>([]);
+  // Manager's chosen reopen target; null = fall back to override/suggested default.
+  const [selectedTargetPeriodId, setSelectedTargetPeriodId] = useState<
+    string | null
+  >(null);
   const [companyEmployees, setCompanyEmployees] = useState<User[]>([]);
   const [restrictToSelectedUsers, setRestrictToSelectedUsers] = useState(false);
   const [selectedLateUserIds, setSelectedLateUserIds] = useState<string[]>([]);
@@ -294,10 +301,12 @@ export default function CountingPeriodsPage() {
       setCompanyEmployees([]);
       setRestrictToSelectedUsers(false);
       setSelectedLateUserIds([]);
+      setSelectedTargetPeriodId(null);
       setOverrideLoading(false);
       return;
     }
 
+    setSelectedTargetPeriodId(null);
     void loadUploadOverride(companyId);
     void loadSuggestedTargetPeriod(companyId);
     void loadCompanyEmployees(companyId);
@@ -419,7 +428,7 @@ export default function CountingPeriodsPage() {
         ),
       );
 
-      const latestPastPeriod = periodsSnap.docs
+      const sortedPastPeriods = periodsSnap.docs
         .map(
           (periodDoc) =>
             ({
@@ -431,11 +440,13 @@ export default function CountingPeriodsPage() {
         .sort(
           (left, right) =>
             right.endDate.toDate().getTime() - left.endDate.toDate().getTime(),
-        )[0];
+        );
 
-      setSuggestedTargetPeriod(latestPastPeriod ?? null);
+      setPastPeriods(sortedPastPeriods);
+      setSuggestedTargetPeriod(sortedPastPeriods[0] ?? null);
     } catch (err) {
       console.error(err);
+      setPastPeriods([]);
       setSuggestedTargetPeriod(null);
     }
   }
@@ -482,7 +493,10 @@ export default function CountingPeriodsPage() {
       return;
     }
 
-    if (!suggestedTargetPeriod) {
+    const targetPeriod =
+      pastPeriods.find((period) => period.id === selectedTargetPeriodId) ??
+      suggestedTargetPeriod;
+    if (!targetPeriod) {
       toast.error("ไม่พบรอบย้อนหลังสำหรับเปิดรับรูปชั่วคราว");
       return;
     }
@@ -514,14 +528,14 @@ export default function CountingPeriodsPage() {
           endAt: Timestamp.fromDate(endAt),
           reason: temporaryOpenReason.trim(),
           allowedUserIds: restrictToSelectedUsers ? selectedLateUserIds : [],
-          targetPeriodDocId: suggestedTargetPeriod.id,
-          targetPeriodKey: getPeriodKey(suggestedTargetPeriod),
-          targetYear: suggestedTargetPeriod.year,
-          targetMonth: suggestedTargetPeriod.month,
-          targetHalf: suggestedTargetPeriod.half,
-          targetPeriodLabel: getPeriodLabel(suggestedTargetPeriod),
-          targetStartDate: suggestedTargetPeriod.startDate,
-          targetEndDate: suggestedTargetPeriod.endDate,
+          targetPeriodDocId: targetPeriod.id,
+          targetPeriodKey: getPeriodKey(targetPeriod),
+          targetYear: targetPeriod.year,
+          targetMonth: targetPeriod.month,
+          targetHalf: targetPeriod.half,
+          targetPeriodLabel: getPeriodLabel(targetPeriod),
+          targetStartDate: targetPeriod.startDate,
+          targetEndDate: targetPeriod.endDate,
           updatedAt: serverTimestamp(),
           updatedBy: userData?.uid || userData?.id || "",
           updatedByName:
@@ -700,16 +714,23 @@ export default function CountingPeriodsPage() {
   }
 
   async function handleGlobalAutoAssign() {
-    const now = new Date();
-    const half: PeriodHalf = now.getDate() <= 15 ? 1 : 2;
-    const month = now.getMonth() + 1;
-    const year = now.getFullYear();
+    if (!companyId) {
+      toast.error("ไม่พบ companyId");
+      return;
+    }
+    // When "เปิดรับรูปชั่วคราว" is active, assign into the reopened round (the
+    // override target) so the work appears in the app, which resolves the same
+    // period. Otherwise use the current calendar period.
+    const resolved = await resolveAssignPeriod(companyId);
+    const baseLabel = `เดือน ${THAI_MONTHS[resolved.month]}/${resolved.year} รอบ ${resolved.half}`;
     await openAssignPreview(
-      month,
-      year,
-      null,
-      half,
-      `เดือน ${THAI_MONTHS[month]}/${year} รอบ ${half}`,
+      resolved.month,
+      resolved.year,
+      resolved.periodId,
+      resolved.half,
+      resolved.isTemporaryOverride
+        ? `${baseLabel} • เปิดรับรูปชั่วคราว (ส่งล่าช้า)`
+        : baseLabel,
     );
   }
 
@@ -1072,6 +1093,35 @@ export default function CountingPeriodsPage() {
 
             {canManageTemporaryOpen && (
               <div className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">
+                    เลือกรอบที่จะเปิดรับ (ส่งล่าช้า)
+                  </label>
+                  <select
+                    value={
+                      selectedTargetPeriodId ??
+                      uploadOverride?.targetPeriodDocId ??
+                      suggestedTargetPeriod?.id ??
+                      ""
+                    }
+                    onChange={(e) => setSelectedTargetPeriodId(e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  >
+                    {pastPeriods.length === 0 && (
+                      <option value="">ไม่พบรอบย้อนหลัง</option>
+                    )}
+                    {pastPeriods.map((period) => (
+                      <option key={period.id} value={period.id}>
+                        {getPeriodLabel(period)}
+                      </option>
+                    ))}
+                  </select>
+                  <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                    เลือกให้ตรงกับรอบที่พนักงานมีงานค้าง —
+                    งานที่มอบหมายไว้คนละรอบจะไม่แสดงในมือถือ
+                  </p>
+                </div>
+
                 <div className="grid gap-4 lg:grid-cols-2">
                   <div>
                     <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">
