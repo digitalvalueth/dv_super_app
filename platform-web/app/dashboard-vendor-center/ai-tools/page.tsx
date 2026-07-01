@@ -26,7 +26,7 @@ export default function AIInsightsPage() {
       : "0";
 
   return (
-    <div className="p-6 md:p-8 max-w-300 mx-auto space-y-6">
+    <div className="p-6 md:p-8 w-full space-y-6">
       <AIPageHeader
         title="AI Insights"
         subtitle="วิเคราะห์ปัญหาและให้คำแนะนำเชิงกลยุทธ์จากข้อมูลจริง"

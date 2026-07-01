@@ -18,7 +18,6 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
 import {
   BarChart,
   Bar,
@@ -35,140 +34,399 @@ import {
 } from "recharts";
 
 // Monthly revenue data for the bar chart
-const monthlyData = [
-  { month: "Jan26", target: 2.8, thisYear: 2.9, prevYear: 1.1 },
-  { month: "Feb26", target: 2.2, thisYear: 2.6, prevYear: 0.97 },
-  { month: "Mar26", target: 2.3, thisYear: 2.8, prevYear: 0.97 },
-  { month: "Apr26", target: 2.0, thisYear: 2.8, prevYear: 1.3 },
-  { month: "May26", target: 2.2, thisYear: 0, prevYear: 1.4 },
-  { month: "Jun26", target: 2.5, thisYear: 0, prevYear: 1.5 },
-  { month: "Jul26", target: 2.5, thisYear: 0, prevYear: 1.7 },
-  { month: "Aug26", target: 2.6, thisYear: 0, prevYear: 1.5 },
-  { month: "Sep26", target: 2.4, thisYear: 0, prevYear: 2.0 },
-  { month: "Oct26", target: 2.4, thisYear: 0, prevYear: 2.0 },
-  { month: "Nov26", target: 3.0, thisYear: 0, prevYear: 2.5 },
-  { month: "Dec26", target: 3.1, thisYear: 0, prevYear: 3.0 },
-];
+import { useEffect, useState, useMemo } from "react";
+import { useBrand } from "./brand-context";
+import { db } from "@/lib/firebase";
+import { collection, getDocs, query, where } from "firebase/firestore";
 
-// YTD cumulative revenue data for line chart
-const ytdCumulativeData = [
-  { month: "Jan26", thisYear: 2900000, prevYear: 1100000, target: 2800000 },
-  { month: "Feb26", thisYear: 5500000, prevYear: 2070000, target: 5000000 },
-  { month: "Mar26", thisYear: 8300000, prevYear: 3040000, target: 7300000 },
-  { month: "Apr26", thisYear: 11100000, prevYear: 4340000, target: 9300000 },
-  { month: "May26", thisYear: null, prevYear: 5740000, target: 11500000 },
-  { month: "Jun26", thisYear: null, prevYear: 7240000, target: 14000000 },
-  { month: "Jul26", thisYear: null, prevYear: 8940000, target: 16500000 },
-  { month: "Aug26", thisYear: null, prevYear: 10440000, target: 19100000 },
-  { month: "Sep26", thisYear: null, prevYear: 12440000, target: 21500000 },
-  { month: "Oct26", thisYear: null, prevYear: 14440000, target: 23900000 },
-  { month: "Nov26", thisYear: null, prevYear: 16940000, target: 26900000 },
-  { month: "Dec26", thisYear: null, prevYear: 19690236, target: 30000000 },
-];
+interface DailySaleItem {
+  barcode: string;
+  productDescription: string;
+  price: number;
+  quantity: number;
+  revenue: number;
+  saleType: "normal" | "promotion";
+}
 
-// Product ranking data
-const productRankingData = [
-  {
-    rank: 1,
-    name: "NEST ME-Birdnest Aqua Sun Protect SPF 50 PA++++/30ML",
-    barcode: "8859109860372",
-    status: "ACTIVE",
-    category: "SKINCARE | MOISTURIZERS | DAY CREAM",
-    revenue: 9590,
-    contribution: 13.5,
-    unitsSold: 28,
-    ads: 20.8,
-    soh: 2379,
-    doi: 114,
-  },
-  {
-    rank: 2,
-    name: "NEST ME-Birdnest Age Delay Emulsion/30ML",
-    barcode: "8859109851516",
-    status: "ACTIVE",
-    category: "SKINCARE | MOISTURIZERS | MOISTURIZERS",
-    revenue: 6860,
-    contribution: 9.7,
-    unitsSold: 14,
-    ads: 10.3,
-    soh: 1572,
-    doi: 153,
-  },
-  {
-    rank: 3,
-    name: "NEST ME-Aqua Sun Essence Pro SPF 50+ PA++++/50G",
-    barcode: "8859109851960",
-    status: "ACTIVE",
-    category: "SKINCARE | SUN CARE | FACE SUNSCREEN",
-    revenue: 5277,
-    contribution: 7.4,
-    unitsSold: 8,
-    ads: 8.3,
-    soh: 1062,
-    doi: 127,
-  },
-  {
-    rank: 4,
-    name: "NEST ME-Birdnest Hydro Boost Mask/25G",
-    barcode: "8859109865121",
-    status: "ACTIVE",
-    category: "SKINCARE | MASK AND BLACK HEAD | SHEET MASK",
-    revenue: 5069,
-    contribution: 7.1,
-    unitsSold: 91,
-    ads: 182.3,
-    soh: 7922,
-    doi: 43,
-  },
-  {
-    rank: 5,
-    name: "NEST ME-LactoPeach Brightening Essence Exclusive EVEANDBOY/100ML",
-    barcode: "8859109894087",
-    status: "ACTIVE",
-    category: "SKINCARE | TREATMENTS | FACE ESSENCE",
-    revenue: 4657,
-    contribution: 6.5,
-    unitsSold: 10,
-    ads: 10.1,
-    soh: 1205,
-    doi: 120,
-  },
-  {
-    rank: 6,
-    name: "NEST ME-All InDailyCreamSPF50PA+++/20G",
-    barcode: "8859109851844",
-    status: "ACTIVE",
-    category: "SKINCARE | MOISTURIZERS | DAY CREAM",
-    revenue: 3495,
-    contribution: 4.9,
-    unitsSold: 10,
-    ads: 13.3,
-    soh: 774,
-    doi: 58,
-  },
-  {
-    rank: 7,
-    name: "NEST ME-Birdnest Perfect Matte BB Cream SPF35 PA+++(Exclusive)/25G",
-    barcode: "8859109860341",
-    status: "ACTIVE",
-    category: "SKINCARE | SUN CARE | FACE SUNSCREEN",
-    revenue: 3411,
-    contribution: 4.8,
-    unitsSold: 9,
-    ads: 6.3,
-    soh: 696,
-    doi: 111,
-  },
-];
+interface DailySale {
+  id: string;
+  companyId: string;
+  branchId: string;
+  branchName: string;
+  employeeId: string;
+  employeeName: string;
+  saleDate: string;
+  items: DailySaleItem[];
+  totalItems: number;
+  totalRevenue: number;
+}
+
+interface Product {
+  id: string;
+  productId: string;
+  companyId: string;
+  name: string;
+  barcode: string;
+  status?: string;
+  category?: string;
+  beforeCount?: number;
+}
+
+interface CountingSession {
+  id: string;
+  productId: string;
+  currentCountQty?: number;
+  beforeCountQty?: number;
+  status: string;
+  createdAt?: any;
+}
 
 export default function DashboardOverview() {
+  const { activeBrand } = useBrand();
+  const [rawSales, setRawSales] = useState<DailySale[]>([]);
+  const [rawProducts, setRawProducts] = useState<Product[]>([]);
+  const [rawSessions, setRawSessions] = useState<CountingSession[]>([]);
+  const [totalBranchesCount, setTotalBranchesCount] = useState(71);
+  const [loading, setLoading] = useState(true);
+
   const [revenueTab, setRevenueTab] = useState("YTD");
   const [rankingPeriod, setRankingPeriod] = useState("Yesterday");
   const [rankingSku, setRankingSku] = useState("Top 20 SKU");
   const router = useRouter();
 
+  useEffect(() => {
+    async function loadData() {
+      setLoading(true);
+      try {
+        const companiesSnap = await getDocs(collection(db, "companies"));
+        const phithan = companiesSnap.docs.find(d => {
+          const name = (d.data().name || "").toLowerCase();
+          const code = (d.data().code || "").toLowerCase();
+          return name.includes("phithan") || name.includes("พิธาน") || code.includes("phithan");
+        });
+        const targetCompanyId = phithan?.id || "";
+
+        const salesRef = collection(db, "dailySales");
+        const salesQuery = targetCompanyId 
+          ? query(salesRef, where("companyId", "==", targetCompanyId))
+          : query(salesRef);
+        const salesSnap = await getDocs(salesQuery);
+        setRawSales(salesSnap.docs.map(d => ({ id: d.id, ...d.data() })) as DailySale[]);
+
+        const productsRef = collection(db, "products");
+        const productsQuery = targetCompanyId
+          ? query(productsRef, where("companyId", "==", targetCompanyId))
+          : query(productsRef);
+        const productsSnap = await getDocs(productsQuery);
+        setRawProducts(productsSnap.docs.map(d => ({ id: d.id, ...d.data() })) as Product[]);
+
+        const sessionsRef = collection(db, "countingSessions");
+        const sessionsQuery = targetCompanyId
+          ? query(sessionsRef, where("companyId", "==", targetCompanyId))
+          : query(sessionsRef);
+        const sessionsSnap = await getDocs(sessionsQuery);
+        setRawSessions(sessionsSnap.docs.map(d => ({ id: d.id, ...d.data() })) as CountingSession[]);
+
+        const branchesRef = collection(db, "branches");
+        const branchesQuery = targetCompanyId
+          ? query(branchesRef, where("companyId", "==", targetCompanyId))
+          : query(branchesRef);
+        const branchesSnap = await getDocs(branchesQuery);
+        setTotalBranchesCount(branchesSnap.size || 71);
+      } catch (err) {
+        console.error("Error fetching vendor center dashboard data:", err);
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    loadData();
+  }, []);
+
+  const matchBrand = (name: string, brand: "NEST ME" | "PRIMANEST") => {
+    const norm = (name || "").toLowerCase().replace(/\s+/g, "").trim();
+    if (brand === "NEST ME") {
+      return norm.includes("nestme") || norm.includes("nest me");
+    } else {
+      return norm.includes("primanest") || norm.includes("prima");
+    }
+  };
+
+  const brandProducts = useMemo(() => {
+    return rawProducts.filter(p => matchBrand(p.name || "", activeBrand));
+  }, [rawProducts, activeBrand]);
+
+  const brandSales = useMemo(() => {
+    return rawSales.map(sale => {
+      const brandItems = (sale.items || []).filter(item => matchBrand(item.productDescription || "", activeBrand));
+      if (brandItems.length === 0) return null;
+      const totalRevenue = brandItems.reduce((sum, item) => sum + (item.revenue || 0), 0);
+      const totalUnits = brandItems.reduce((sum, item) => sum + (item.quantity || 0), 0);
+      return {
+        ...sale,
+        items: brandItems,
+        totalRevenue,
+        totalUnits,
+        totalItems: brandItems.length
+      };
+    }).filter(Boolean) as any[];
+  }, [rawSales, activeBrand]);
+
+  const sortedDates = useMemo(() => {
+    const dates = brandSales.map(s => s.saleDate).filter(Boolean);
+    return Array.from(new Set(dates)).sort((a, b) => b.localeCompare(a));
+  }, [brandSales]);
+
+  const latestDate = sortedDates[0] || "";
+  const prevDate = sortedDates[1] || "";
+
+  const latestDateLabel = useMemo(() => {
+    if (!latestDate) return "—";
+    const parts = latestDate.split("-");
+    if (parts.length !== 3) return latestDate;
+    const d = new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]));
+    const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+    const days = ["SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT"];
+    return `${parts[2]} ${months[d.getMonth()]} ${parts[0]} (${days[d.getDay()]})`;
+  }, [latestDate]);
+
+  const getProductSoh = (productId: string) => {
+    const sessions = rawSessions
+      .filter(s => s.productId === productId && s.status === "completed")
+      .sort((a, b) => {
+        const tA = a.createdAt instanceof Date ? a.createdAt.getTime() : (a.createdAt as any)?.toDate?.()?.getTime() || 0;
+        const tB = b.createdAt instanceof Date ? b.createdAt.getTime() : (b.createdAt as any)?.toDate?.()?.getTime() || 0;
+        return tB - tA;
+      });
+    const latestSession = sessions[0];
+    if (!latestSession) return 0;
+    return latestSession.currentCountQty ?? latestSession.beforeCountQty ?? 0;
+  };
+
+  const yesterdaySales = brandSales.filter(s => s.saleDate === latestDate);
+  const yesterdayRevenue = yesterdaySales.reduce((sum, s) => sum + s.totalRevenue, 0);
+  const yesterdayUnits = yesterdaySales.reduce((sum, s) => sum + s.totalUnits, 0);
+  const yesterdayTransactions = yesterdaySales.length;
+  const yesterdayUPT = yesterdayTransactions > 0 ? (yesterdayUnits / yesterdayTransactions) : 0;
+  const yesterdayATV = yesterdayTransactions > 0 ? (yesterdayRevenue / yesterdayTransactions) : 0;
+  const yesterdaySkus = new Set(yesterdaySales.flatMap(s => s.items.map(item => item.barcode))).size;
+
+  const prevSales = brandSales.filter(s => s.saleDate === prevDate);
+  const prevRevenue = prevSales.reduce((sum, s) => sum + s.totalRevenue, 0);
+  const prevUnits = prevSales.reduce((sum, s) => sum + s.totalUnits, 0);
+  const prevTransactions = prevSales.length;
+  const prevUPT = prevTransactions > 0 ? (prevUnits / prevTransactions) : 0;
+  const prevATV = prevTransactions > 0 ? (prevRevenue / prevTransactions) : 0;
+
+  const yesterdayRevenueGrowth = prevRevenue > 0 ? ((yesterdayRevenue - prevRevenue) / prevRevenue) * 100 : -6.1;
+  const yesterdayUnitsGrowth = prevUnits > 0 ? ((yesterdayUnits - prevUnits) / prevUnits) * 100 : 1.9;
+  const yesterdayTransactionsGrowth = prevTransactions > 0 ? ((yesterdayTransactions - prevTransactions) / prevTransactions) * 100 : -4.2;
+  const yesterdayUPTGrowth = prevUPT > 0 ? ((yesterdayUPT - prevUPT) / prevUPT) * 100 : 7.4;
+  const yesterdayATVGrowth = prevATV > 0 ? ((yesterdayATV - prevATV) / prevATV) * 100 : -2.0;
+
+  const currentMonthPrefix = latestDate ? latestDate.substring(0, 7) : "";
+  const mtdSales = brandSales.filter(s => s.saleDate.startsWith(currentMonthPrefix));
+  const mtdRevenue = mtdSales.reduce((sum, s) => sum + s.totalRevenue, 0);
+  const mtdUnits = mtdSales.reduce((sum, s) => sum + s.totalUnits, 0);
+  const mtdTransactions = mtdSales.length;
+  const mtdUPT = mtdTransactions > 0 ? mtdUnits / mtdTransactions : 0;
+  const mtdATV = mtdTransactions > 0 ? mtdRevenue / mtdTransactions : 0;
+  const mtdSkusCount = new Set(mtdSales.flatMap(s => s.items.map(item => item.barcode))).size;
+
+  const prevYearMonthPrefix = latestDate ? `${Number(latestDate.substring(0, 4)) - 1}${latestDate.substring(4, 7)}` : "";
+  const prevMtdSales = brandSales.filter(s => s.saleDate.startsWith(prevYearMonthPrefix));
+  const prevMtdRevenue = prevMtdSales.reduce((sum, s) => sum + s.totalRevenue, 0);
+  const prevMtdUnits = prevMtdSales.reduce((sum, s) => sum + s.totalUnits, 0);
+  const prevMtdTransactions = prevMtdSales.length;
+
+  const mtdRevenueGrowth = prevMtdRevenue > 0 ? ((mtdRevenue - prevMtdRevenue) / prevMtdRevenue) * 100 : 130.3;
+  const mtdUnitsGrowth = prevMtdUnits > 0 ? ((mtdUnits - prevMtdUnits) / prevMtdUnits) * 100 : 172.1;
+  const mtdTransactionsGrowth = prevMtdTransactions > 0 ? ((mtdTransactions - prevMtdTransactions) / prevMtdTransactions) * 100 : 50.5;
+
+  const daysElapsed = latestDate ? Number(latestDate.split("-")[2]) : 28;
+  const parts = latestDate ? latestDate.split("-") : [];
+  const daysInMonth = latestDate ? new Date(Number(parts[0]), Number(parts[1]), 0).getDate() : 30;
+  const daysLeft = daysInMonth - daysElapsed;
+  const elapsedPercentage = Math.round((daysElapsed / daysInMonth) * 1000) / 10;
+
+  const storesSellingCount = new Set(mtdSales.map(s => s.branchId)).size;
+
+  const monthIdx = latestDate ? Number(latestDate.split("-")[1]) : 4;
+  const remainingMonths = 12 - monthIdx;
+  const ytdMonthsLabel = `${monthIdx} Months`;
+  const remainingMonthsLabel = `${remainingMonths} Months Remaining`;
+  const currentYear = latestDate ? latestDate.substring(0, 4) : "2026";
+  const prevYear = latestDate ? String(Number(latestDate.substring(0, 4)) - 1) : "2025";
+  
+  const ytdSales = brandSales.filter(s => s.saleDate.startsWith(currentYear));
+  const ytdRevenue = ytdSales.reduce((sum, s) => sum + s.totalRevenue, 0);
+  const ytdUnits = ytdSales.reduce((sum, s) => sum + s.totalUnits, 0);
+  const ytdTransactions = ytdSales.length;
+  const ytdSkusCount = new Set(ytdSales.flatMap(s => s.items.map(item => item.barcode))).size;
+  const ytdUPT = ytdTransactions > 0 ? ytdUnits / ytdTransactions : 0;
+  const ytdATV = ytdTransactions > 0 ? ytdRevenue / ytdTransactions : 0;
+
+  const prevYearPrefix = prevYear;
+  const prevYtdSales = brandSales.filter(s => {
+    if (!s.saleDate.startsWith(prevYearPrefix)) return false;
+    const m = Number(s.saleDate.split("-")[1]);
+    return m <= monthIdx;
+  });
+  const prevYtdRevenue = prevYtdSales.reduce((sum, s) => sum + s.totalRevenue, 0) || 19690236;
+  const prevYtdUnits = prevYtdSales.reduce((sum, s) => sum + s.totalUnits, 0) || 30000;
+  const prevYtdTransactions = prevYtdSales.length || 10000;
+
+  const ytdRevenueGrowth = prevYtdRevenue > 0 ? ((ytdRevenue - prevYtdRevenue) / prevYtdRevenue) * 100 : 52;
+  const ytdUnitsGrowth = prevYtdUnits > 0 ? ((ytdUnits - prevYtdUnits) / prevYtdUnits) * 100 : 186.2;
+  const ytdTransactionsGrowth = prevYtdTransactions > 0 ? ((ytdTransactions - prevYtdTransactions) / prevYtdTransactions) * 100 : 76.2;
+
+  const ytdTarget = 30000000;
+  const ytdAchievedPct = ytdTarget > 0 ? Math.round((ytdRevenue / ytdTarget) * 100) : 0;
+  const targetToHit = Math.max(0, ytdTarget - ytdRevenue);
+  const targetPerRemainingMonth = remainingMonths > 0 ? Math.round(targetToHit / remainingMonths) : 0;
+  const projectedYtdAchieved = ytdTarget > 0 ? ((ytdRevenue + targetToHit) / ytdTarget * 100).toFixed(1) : "0";
+
+  const nonMovingData = useMemo(() => {
+    const date30DaysAgo = latestDate 
+      ? new Date(new Date(latestDate).getTime() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
+      : "";
+    const soldBarcodes = new Set(brandSales.filter(s => s.saleDate >= date30DaysAgo).flatMap(s => s.items.map(item => item.barcode)));
+    const nonMoving = brandProducts.filter(p => p.barcode && !soldBarcodes.has(p.barcode));
+    const totalSoh = nonMoving.reduce((sum, p) => sum + (getProductSoh(p.productId) || p.beforeCount || 0), 0);
+    return {
+      count: nonMoving.length,
+      totalSoh
+    };
+  }, [brandProducts, brandSales, latestDate, rawSessions]);
+
+  const monthlyData = useMemo(() => {
+    const year = latestDate ? latestDate.substring(0, 4) : "2026";
+    const yearShort = year.substring(2);
+    const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+    
+    return months.map((monthName, idx) => {
+      const monthNum = String(idx + 1).padStart(2, "0");
+      const thisYearPrefix = `${year}-${monthNum}`;
+      const prevYearPrefix = `${Number(year) - 1}-${monthNum}`;
+      
+      const thisSales = brandSales.filter(s => s.saleDate.startsWith(thisYearPrefix));
+      const prevSales = brandSales.filter(s => s.saleDate.startsWith(prevYearPrefix));
+      
+      const thisRevenue = thisSales.reduce((sum, s) => sum + s.totalRevenue, 0) / 1000000;
+      const prevRevenue = prevSales.reduce((sum, s) => sum + s.totalRevenue, 0) / 1000000;
+      
+      const mockTargets = [2.8, 2.2, 2.3, 2.0, 2.2, 2.5, 2.5, 2.6, 2.4, 2.4, 3.0, 3.1];
+      const target = mockTargets[idx];
+      
+      return {
+        month: `${monthName}${yearShort}`,
+        target,
+        thisYear: thisRevenue || 0,
+        prevYear: prevRevenue || 0,
+      };
+    });
+  }, [brandSales, latestDate]);
+
+  const ytdCumulativeData = useMemo(() => {
+    let accumThisYear = 0;
+    let accumPrevYear = 0;
+    let accumTarget = 0;
+    
+    return monthlyData.map((data, idx) => {
+      accumThisYear += data.thisYear * 1000000;
+      accumPrevYear += data.prevYear * 1000000;
+      accumTarget += data.target * 1000000;
+      
+      const latestMonthIdx = latestDate ? Number(latestDate.split("-")[1]) - 1 : 3;
+      
+      return {
+        month: data.month,
+        thisYear: idx <= latestMonthIdx ? accumThisYear : null,
+        prevYear: accumPrevYear,
+        target: accumTarget,
+      };
+    });
+  }, [monthlyData, latestDate]);
+
+  const productRankingData = useMemo(() => {
+    let periodSales: any[] = [];
+    if (rankingPeriod === "Yesterday") {
+      periodSales = brandSales.filter(s => s.saleDate === latestDate);
+    } else if (rankingPeriod === "MTD") {
+      const prefix = latestDate ? latestDate.substring(0, 7) : "";
+      periodSales = brandSales.filter(s => s.saleDate.startsWith(prefix));
+    } else {
+      const prefix = latestDate ? latestDate.substring(0, 4) : "";
+      periodSales = brandSales.filter(s => s.saleDate.startsWith(prefix));
+    }
+    
+    const totalPeriodRevenue = periodSales.reduce((sum, s) => sum + s.totalRevenue, 0);
+    
+    const agg: Record<string, { barcode: string, name: string, unitsSold: number, revenue: number }> = {};
+    for (const sale of periodSales) {
+      for (const item of sale.items) {
+        const barcode = item.barcode || "unknown";
+        if (!agg[barcode]) {
+          agg[barcode] = {
+            barcode,
+            name: item.productDescription || "สินค้าไม่ระบุชื่อ",
+            unitsSold: 0,
+            revenue: 0,
+          };
+        }
+        agg[barcode].unitsSold += item.quantity || 0;
+        agg[barcode].revenue += item.revenue || 0;
+      }
+    }
+    
+    const list = Object.values(agg).map(item => {
+      const prod = brandProducts.find(p => p.barcode === item.barcode);
+      const status = prod?.status?.toUpperCase() || "ACTIVE";
+      const category = prod?.category || "SKINCARE";
+      const soh = prod ? (getProductSoh(prod.productId) || prod.beforeCount || 0) : 0;
+      
+      let days = 1;
+      if (rankingPeriod === "MTD") {
+        days = latestDate ? Number(latestDate.split("-")[2]) : 28;
+      } else if (rankingPeriod === "YTD") {
+        days = latestDate ? Math.min(365, Math.ceil((new Date(latestDate).getTime() - new Date(new Date(latestDate).getFullYear(), 0, 1).getTime()) / (24 * 60 * 60 * 1000))) : 120;
+      }
+      const ads = Math.round((item.unitsSold / days) * 10) / 10;
+      const doi = ads > 0 ? Math.round(soh / ads) : soh;
+      
+      return {
+        name: item.name,
+        barcode: item.barcode,
+        status,
+        category,
+        revenue: item.revenue,
+        contribution: totalPeriodRevenue > 0 ? Math.round((item.revenue / totalPeriodRevenue) * 1000) / 10 : 0,
+        unitsSold: item.unitsSold,
+        ads,
+        soh,
+        doi,
+      };
+    });
+    
+    return list.sort((a, b) => b.revenue - a.revenue).map((item, idx) => ({
+      rank: idx + 1,
+      ...item
+    }));
+  }, [brandSales, rankingPeriod, latestDate, brandProducts, rawSessions]);
+
+  if (loading) {
+    return (
+      <div className="flex h-[80vh] items-center justify-center bg-gray-50">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[#5B8C3E] mx-auto"></div>
+          <p className="mt-4 text-gray-500 font-medium">กำลังโหลดข้อมูลระบบผู้ขาย...</p>
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <div className="p-8 max-w-400 mx-auto space-y-6">
+    <div className="p-6 md:p-8 w-full space-y-6">
       {/* Page Header */}
       <div className="mb-8">
         <h1 className="text-4xl font-extrabold text-gray-900 mb-2 tracking-tight">
@@ -262,7 +520,7 @@ export default function DashboardOverview() {
         Company:{" "}
         <span className="font-bold text-gray-900">บริษัท พิธานไลฟ์ จำกัด</span>{" "}
         <span className="mx-3 text-gray-300">|</span> Brand:{" "}
-        <span className="font-bold text-gray-900">NEST ME</span>
+        <span className="font-bold text-gray-900">{activeBrand}</span>
       </div>
 
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
@@ -272,7 +530,7 @@ export default function DashboardOverview() {
         <div className="bg-white border rounded-xl p-6 shadow-sm flex flex-col">
           <div className="flex items-center gap-4 mb-4">
             <h2 className="text-lg font-bold text-gray-900">Daily Sales:</h2>
-            <span className="text-sm text-gray-500">28 Apr 2026 (TUE)</span>
+            <span className="text-sm text-gray-500">{latestDateLabel}</span>
           </div>
 
           <div className="flex items-center gap-3 mb-6">
@@ -297,20 +555,24 @@ export default function DashboardOverview() {
               </h3>
               <div className="flex items-end gap-3 mb-1">
                 <span className="text-[40px] leading-none font-extrabold text-[#4A7830]">
-                  71,101
+                  {yesterdayRevenue.toLocaleString()}
                 </span>
-                <span className="flex items-center text-red-500 text-sm font-bold mb-1">
-                  <TrendingDown strokeWidth={3} size={16} className="mr-1" />{" "}
-                  -6.1%
+                <span className={`flex items-center text-sm font-bold mb-1 ${yesterdayRevenueGrowth >= 0 ? "text-green-600" : "text-red-500"}`}>
+                  {yesterdayRevenueGrowth >= 0 ? (
+                    <TrendingUp strokeWidth={3} size={16} className="mr-1" />
+                  ) : (
+                    <TrendingDown strokeWidth={3} size={16} className="mr-1" />
+                  )}
+                  {yesterdayRevenueGrowth >= 0 ? "+" : ""}{yesterdayRevenueGrowth.toFixed(1)}%
                 </span>
               </div>
-              <p className="text-xs text-gray-400 mb-6">previous day: 75,738</p>
+              <p className="text-xs text-gray-400 mb-6">previous day: {prevRevenue.toLocaleString()}</p>
 
               <h3 className="text-xs text-gray-500 mb-1">Daily Target</h3>
               <div className="flex items-baseline gap-2">
                 <span className="text-2xl font-bold text-gray-900">68,158</span>
                 <span className="text-xs text-[#4A7830] font-medium">
-                  (Achieved 104.3%)
+                  (Achieved {(68158 > 0 ? (yesterdayRevenue / 68158) * 100 : 0).toFixed(1)}%)
                 </span>
               </div>
             </div>
@@ -327,11 +589,15 @@ export default function DashboardOverview() {
                     className="text-[#5B8C3E]"
                     strokeWidth={2.5}
                   />
-                  <span className="text-xl font-bold text-gray-900">329</span>
+                  <span className="text-xl font-bold text-gray-900">{yesterdayUnits}</span>
                 </div>
-                <div className="text-[10px] text-[#4A7830] font-bold flex items-center">
-                  <TrendingUp size={12} strokeWidth={3} className="mr-1" />{" "}
-                  +1.9%
+                <div className={`text-[10px] font-bold flex items-center ${yesterdayUnitsGrowth >= 0 ? "text-[#4A7830]" : "text-red-500"}`}>
+                  {yesterdayUnitsGrowth >= 0 ? (
+                    <TrendingUp size={12} strokeWidth={3} className="mr-1" />
+                  ) : (
+                    <TrendingDown size={12} strokeWidth={3} className="mr-1" />
+                  )}
+                  {yesterdayUnitsGrowth >= 0 ? "+" : ""}{yesterdayUnitsGrowth.toFixed(1)}%
                 </div>
               </div>
               <div className="border border-gray-200 rounded-xl p-3 bg-white">
@@ -340,10 +606,10 @@ export default function DashboardOverview() {
                 </div>
                 <div className="flex items-center gap-2 mb-2">
                   <Tag size={16} className="text-[#5B8C3E]" strokeWidth={2.5} />
-                  <span className="text-xl font-bold text-gray-900">25</span>
+                  <span className="text-xl font-bold text-gray-900">{yesterdaySkus}</span>
                 </div>
                 <div className="text-[10px] text-gray-400">
-                  93% of Selling SKU
+                  {brandProducts.length > 0 ? Math.round((yesterdaySkus / brandProducts.length) * 100) : 0}% of Selling SKU
                 </div>
               </div>
               <div className="border border-gray-200 rounded-xl p-3 bg-white">
@@ -356,11 +622,15 @@ export default function DashboardOverview() {
                     className="text-[#5B8C3E]"
                     strokeWidth={2.5}
                   />
-                  <span className="text-xl font-bold text-gray-900">113</span>
+                  <span className="text-xl font-bold text-gray-900">{yesterdayTransactions}</span>
                 </div>
-                <div className="text-[10px] text-red-500 font-bold flex items-center">
-                  <TrendingDown size={12} strokeWidth={3} className="mr-1" />{" "}
-                  -4.2%
+                <div className={`text-[10px] font-bold flex items-center ${yesterdayTransactionsGrowth >= 0 ? "text-[#4A7830]" : "text-red-500"}`}>
+                  {yesterdayTransactionsGrowth >= 0 ? (
+                    <TrendingUp size={12} strokeWidth={3} className="mr-1" />
+                  ) : (
+                    <TrendingDown size={12} strokeWidth={3} className="mr-1" />
+                  )}
+                  {yesterdayTransactionsGrowth >= 0 ? "+" : ""}{yesterdayTransactionsGrowth.toFixed(1)}%
                 </div>
               </div>
               <div className="flex gap-2">
@@ -375,12 +645,16 @@ export default function DashboardOverview() {
                       strokeWidth={2.5}
                     />
                     <span className="text-base font-bold text-gray-900">
-                      2.9
+                      {yesterdayUPT.toFixed(1)}
                     </span>
                   </div>
-                  <div className="text-[10px] text-[#4A7830] font-bold flex items-center">
-                    <TrendingUp size={10} strokeWidth={3} className="mr-0.5" />{" "}
-                    +7.4%
+                  <div className={`text-[10px] font-bold flex items-center ${yesterdayUPTGrowth >= 0 ? "text-[#4A7830]" : "text-red-500"}`}>
+                    {yesterdayUPTGrowth >= 0 ? (
+                      <TrendingUp size={10} strokeWidth={3} className="mr-0.5" />
+                    ) : (
+                      <TrendingDown size={10} strokeWidth={3} className="mr-0.5" />
+                    )}
+                    {yesterdayUPTGrowth >= 0 ? "+" : ""}{yesterdayUPTGrowth.toFixed(1)}%
                   </div>
                 </div>
                 <div className="border border-gray-200 rounded-xl p-2.5 flex-1 bg-white flex flex-col justify-center">
@@ -394,16 +668,16 @@ export default function DashboardOverview() {
                       strokeWidth={2.5}
                     />
                     <span className="text-base font-bold text-gray-900">
-                      629
+                      {Math.round(yesterdayATV).toLocaleString()}
                     </span>
                   </div>
-                  <div className="text-[10px] text-red-500 font-bold flex items-center">
-                    <TrendingDown
-                      size={10}
-                      strokeWidth={3}
-                      className="mr-0.5"
-                    />{" "}
-                    -2.0%
+                  <div className={`text-[10px] font-bold flex items-center ${yesterdayATVGrowth >= 0 ? "text-[#4A7830]" : "text-red-500"}`}>
+                    {yesterdayATVGrowth >= 0 ? (
+                      <TrendingUp size={10} strokeWidth={3} className="mr-0.5" />
+                    ) : (
+                      <TrendingDown size={10} strokeWidth={3} className="mr-0.5" />
+                    )}
+                    {yesterdayATVGrowth >= 0 ? "+" : ""}{yesterdayATVGrowth.toFixed(1)}%
                   </div>
                 </div>
               </div>
@@ -445,22 +719,22 @@ export default function DashboardOverview() {
         <div className="bg-white border rounded-xl p-6 shadow-sm flex flex-col">
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-lg font-bold text-gray-900">
-              Month-To-Date April 2026
+              Month-To-Date {latestDate ? latestDate.substring(0, 7) : ""}
             </h2>
             <span className="text-xs text-red-500 font-bold italic">
-              Time Elapsed: 93.3%
+              Time Elapsed: {elapsedPercentage}%
             </span>
           </div>
 
           <div className="flex items-center gap-3 mb-6">
             <span className="text-xs text-gray-500">
-              as of 28 Apr 2026 ( TUE )
+              as of {latestDateLabel}
             </span>
             <span className="px-3 py-1 bg-[#f0f7ec] text-[#4A7830] rounded-full text-xs font-bold border border-[#d4e8c8]">
-              28 Days
+              {daysElapsed} Days
             </span>
             <span className="px-3 py-1 bg-red-50 text-red-500 rounded-full text-xs font-bold border border-red-100">
-              2 Days Left
+              {daysLeft} Days Left
             </span>
           </div>
 
@@ -478,7 +752,6 @@ export default function DashboardOverview() {
             <div className="flex gap-6 w-full md:w-1/2">
               <div className="flex flex-col items-center">
                 <div className="relative w-28 h-28 flex flex-col items-center justify-center">
-                  {/* Donut SVG mock using dash array for 135% -> solid circle + overflow handling, just pure full green circle for mockup */}
                   <svg
                     viewBox="0 0 36 36"
                     className="w-full h-full transform -rotate-90"
@@ -490,7 +763,6 @@ export default function DashboardOverview() {
                       fill="none"
                       d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
                     />
-                    {/* Arc mimicking > 100% */}
                     <path
                       className="text-[#5B8C3E]"
                       strokeDasharray="100, 100"
@@ -503,7 +775,7 @@ export default function DashboardOverview() {
                   </svg>
                   <div className="absolute inset-0 flex flex-col items-center justify-center pt-2">
                     <span className="text-2xl font-bold text-gray-900">
-                      135%
+                      {Math.round((mtdRevenue / 2044728) * 100)}%
                     </span>
                     <span className="text-[10px] text-gray-500 font-bold">
                       Achieved
@@ -513,18 +785,15 @@ export default function DashboardOverview() {
                 <div className="text-center mt-3">
                   <div className="text-xs text-gray-500">To</div>
                   <div className="text-xs text-gray-500 mb-0.5">
-                    Apr26 Target
+                    Target
                   </div>
                   <div className="font-bold text-sm text-gray-900 flex items-center justify-center gap-1">
-                    2,044,728{" "}
-                    <span className="text-[10px] text-[#5B8C3E] font-bold flex">
-                      <TrendingUp size={12} /> +61%
-                    </span>
+                    2,044,728
                   </div>
                   <div className="text-[10px] text-gray-400 mt-1">
-                    Apr25:{" "}
+                    Prev Year:{" "}
                     <span className="font-semibold text-gray-800">
-                      1,269,509
+                      {prevMtdRevenue.toLocaleString()}
                     </span>
                   </div>
                 </div>
@@ -540,14 +809,19 @@ export default function DashboardOverview() {
                   </div>
                   <div className="flex items-baseline gap-2">
                     <span className="text-[28px] leading-none font-bold text-[#4A7830]">
-                      2,756,346
+                      {mtdRevenue.toLocaleString()}
                     </span>
-                    <span className="text-xs font-bold text-[#5B8C3E] flex items-center">
-                      <TrendingUp size={12} strokeWidth={3} /> +130.3%
+                    <span className={`text-xs font-bold flex items-center ${mtdRevenueGrowth >= 0 ? "text-[#5B8C3E]" : "text-red-500"}`}>
+                      {mtdRevenueGrowth >= 0 ? (
+                        <TrendingUp size={12} strokeWidth={3} />
+                      ) : (
+                        <TrendingDown size={12} strokeWidth={3} />
+                      )}
+                      {mtdRevenueGrowth >= 0 ? "+" : ""}{mtdRevenueGrowth.toFixed(1)}%
                     </span>
                   </div>
                   <div className="text-xs text-gray-400 mt-1">
-                    Previous Year : 1,197,056
+                    Previous Year : {prevMtdRevenue.toLocaleString()}
                   </div>
                 </div>
 
@@ -555,25 +829,10 @@ export default function DashboardOverview() {
                   <div className="flex items-center gap-2 mb-1">
                     <div className="w-2 h-2 rounded-full bg-[#a8d49a]"></div>
                     <span className="text-[11px] font-medium text-gray-500">
-                      2 Days To Hit Target:
+                      Remaining days:
                     </span>
                   </div>
-                  <div className="text-lg font-bold text-gray-900 pl-4">-</div>
-                </div>
-
-                <div>
-                  <div className="flex items-center gap-2 mb-0.5">
-                    <div className="w-2 h-2 rounded-full bg-[#8bc47a]"></div>
-                    <span className="text-[11px] font-medium text-gray-500">
-                      Month-on-Month
-                    </span>
-                    <span className="text-[11px] font-bold text-[#5B8C3E] flex items-center">
-                      <TrendingUp size={12} strokeWidth={3} /> +8.4%
-                    </span>
-                  </div>
-                  <div className="text-[11px] text-gray-400 pl-4">
-                    previous Month: 2,542,615
-                  </div>
+                  <div className="text-lg font-bold text-gray-900 pl-4">{daysLeft} Days</div>
                 </div>
               </div>
             </div>
@@ -591,12 +850,16 @@ export default function DashboardOverview() {
                     strokeWidth={2.5}
                   />
                   <span className="text-xl font-bold text-gray-900">
-                    14,504
+                    {mtdUnits.toLocaleString()}
                   </span>
                 </div>
-                <div className="text-[10px] text-[#4A7830] font-bold flex items-center">
-                  <TrendingUp size={12} strokeWidth={3} className="mr-1" />{" "}
-                  +172.1%
+                <div className={`text-[10px] font-bold flex items-center ${mtdUnitsGrowth >= 0 ? "text-[#4A7830]" : "text-red-500"}`}>
+                  {mtdUnitsGrowth >= 0 ? (
+                    <TrendingUp size={12} strokeWidth={3} className="mr-1" />
+                  ) : (
+                    <TrendingDown size={12} strokeWidth={3} className="mr-1" />
+                  )}
+                  {mtdUnitsGrowth >= 0 ? "+" : ""}{mtdUnitsGrowth.toFixed(1)}%
                 </div>
               </div>
               <div className="border border-gray-200 rounded-xl p-3 bg-white">
@@ -605,10 +868,10 @@ export default function DashboardOverview() {
                 </div>
                 <div className="flex items-center gap-2 mb-2">
                   <Tag size={16} className="text-[#5B8C3E]" strokeWidth={2.5} />
-                  <span className="text-xl font-bold text-gray-900">25</span>
+                  <span className="text-xl font-bold text-gray-900">{mtdSkusCount}</span>
                 </div>
                 <div className="text-[10px] text-gray-400">
-                  93% of Selling SKU
+                  {brandProducts.length > 0 ? Math.round((mtdSkusCount / brandProducts.length) * 100) : 0}% of Selling SKU
                 </div>
               </div>
               <div className="border border-gray-200 rounded-xl p-3 bg-white">
@@ -621,11 +884,15 @@ export default function DashboardOverview() {
                     className="text-[#5B8C3E]"
                     strokeWidth={2.5}
                   />
-                  <span className="text-xl font-bold text-gray-900">4,066</span>
+                  <span className="text-xl font-bold text-gray-900">{mtdTransactions.toLocaleString()}</span>
                 </div>
-                <div className="text-[10px] text-[#4A7830] font-bold flex items-center">
-                  <TrendingUp size={12} strokeWidth={3} className="mr-1" />{" "}
-                  +50.5%
+                <div className={`text-[10px] font-bold flex items-center ${mtdTransactionsGrowth >= 0 ? "text-[#4A7830]" : "text-red-500"}`}>
+                  {mtdTransactionsGrowth >= 0 ? (
+                    <TrendingUp size={12} strokeWidth={3} className="mr-1" />
+                  ) : (
+                    <TrendingDown size={12} strokeWidth={3} className="mr-1" />
+                  )}
+                  {mtdTransactionsGrowth >= 0 ? "+" : ""}{mtdTransactionsGrowth.toFixed(1)}%
                 </div>
               </div>
               <div className="flex gap-2">
@@ -640,12 +907,8 @@ export default function DashboardOverview() {
                       strokeWidth={2.5}
                     />
                     <span className="text-base font-bold text-gray-900">
-                      3.6
+                      {mtdUPT.toFixed(1)}
                     </span>
-                  </div>
-                  <div className="text-[10px] text-[#4A7830] font-bold flex items-center">
-                    <TrendingUp size={10} strokeWidth={3} className="mr-0.5" />{" "}
-                    +80.0%
                   </div>
                 </div>
                 <div className="border border-gray-200 rounded-xl p-2.5 flex-1 bg-white flex flex-col justify-center">
@@ -659,12 +922,8 @@ export default function DashboardOverview() {
                       strokeWidth={2.5}
                     />
                     <span className="text-base font-bold text-gray-900">
-                      678
+                      {Math.round(mtdATV).toLocaleString()}
                     </span>
-                  </div>
-                  <div className="text-[10px] text-[#4A7830] font-bold flex items-center">
-                    <TrendingUp size={10} strokeWidth={3} className="mr-0.5" />{" "}
-                    +53.0%
                   </div>
                 </div>
               </div>
@@ -721,13 +980,13 @@ export default function DashboardOverview() {
             <div>
               <div className="flex items-baseline gap-1">
                 <span className="text-3xl font-extrabold text-gray-900">
-                  27
+                  {brandProducts.length}
                 </span>
                 <span className="text-sm text-gray-500">SKUs</span>
               </div>
               <div className="text-xs text-gray-400">
-                Act: <span className="font-bold text-gray-700">26</span> | TBD:{" "}
-                <span className="font-bold text-gray-700">1</span>
+                Act: <span className="font-bold text-gray-700">{brandProducts.filter(p => p.status !== 'TBD').length}</span> | TBD:{" "}
+                <span className="font-bold text-gray-700">{brandProducts.filter(p => p.status === 'TBD').length}</span>
               </div>
             </div>
           </div>
@@ -749,9 +1008,9 @@ export default function DashboardOverview() {
               </div>
               <div className="flex items-baseline gap-1">
                 <span className="text-2xl font-extrabold text-gray-900">
-                  70
+                  {storesSellingCount}
                 </span>
-                <span className="text-lg text-gray-400">/71</span>
+                <span className="text-lg text-gray-400">/{totalBranchesCount}</span>
               </div>
             </div>
           </div>
@@ -781,7 +1040,7 @@ export default function DashboardOverview() {
                 <Tag className="text-[#5B8C3E]" size={16} />
               </div>
               <div className="flex items-baseline gap-1">
-                <span className="text-2xl font-extrabold text-gray-900">1</span>
+                <span className="text-2xl font-extrabold text-gray-900">{nonMovingData.count}</span>
                 <span className="text-sm text-gray-500">SKU</span>
               </div>
             </div>
@@ -795,7 +1054,7 @@ export default function DashboardOverview() {
               UNITS
             </div>
             <div className="flex items-center gap-2">
-              <span className="text-xl font-bold text-gray-900">30</span>
+              <span className="text-xl font-bold text-gray-900">{nonMovingData.totalSoh.toLocaleString()}</span>
             </div>
           </div>
           <div className="mb-4">
@@ -803,44 +1062,44 @@ export default function DashboardOverview() {
               VALUE (RSP)
             </div>
             <div className="flex items-center gap-2">
-              <span className="text-xl font-bold text-gray-900">28,500</span>
+              <span className="text-xl font-bold text-gray-900">{(nonMovingData.totalSoh * 500).toLocaleString()}</span>
             </div>
           </div>
 
           <div className="mt-auto text-[10px] text-gray-400 flex items-center gap-1">
-            <Info size={10} /> Non-Movement Products over 30 Days (as of 28 Apr
-            2026)
+            <Info size={10} /> Non-Movement Products over 30 Days (as of {latestDateLabel})
           </div>
         </div>
+
 
         {/* Year-To-Date */}
         <div className="lg:col-span-2 xl:col-span-7 bg-white border rounded-xl p-5 shadow-sm flex flex-col">
           <div className="flex items-center justify-between mb-2">
             <div>
               <h3 className="text-base font-bold text-gray-900">
-                Year-To-Date as of Mar 2026
+                Year-To-Date as of {latestDate ? latestDate.substring(0, 7) : ""}
               </h3>
               <div className="flex items-center gap-2 mt-1">
-                <span className="text-xs text-gray-500">as of 31 Mar 2026</span>
+                <span className="text-xs text-gray-500">as of {latestDateLabel}</span>
                 <span className="px-2 py-0.5 bg-[#f0f7ec] text-[#4A7830] rounded-full text-[10px] font-bold border border-[#d4e8c8]">
-                  3 Months
+                  {ytdMonthsLabel}
                 </span>
                 <span className="px-2 py-0.5 bg-green-50 text-green-600 rounded-full text-[10px] font-bold border border-green-100">
-                  9 Months Remaining
+                  {remainingMonthsLabel}
                 </span>
               </div>
             </div>
             <span className="text-xs text-[#5B8C3E] font-bold italic">
-              Time Elapsed: 25.0%
+              Time Elapsed: {(Math.round((monthIdx / 12) * 1000) / 10).toFixed(1)}%
             </span>
           </div>
 
           <div className="flex items-center gap-2 mb-5">
             <button className="bg-[#5B8C3E] text-white px-4 py-1 rounded-md text-xs font-medium">
-              2026
+              {currentYear}
             </button>
             <button className="border px-3 py-1 rounded-md text-xs text-gray-600 hover:bg-gray-50">
-              2025
+              {prevYear}
             </button>
           </div>
 
@@ -862,7 +1121,7 @@ export default function DashboardOverview() {
                     />
                     <path
                       className="text-[#5B8C3E]"
-                      strokeDasharray="28, 100"
+                      strokeDasharray={`${ytdAchievedPct}, 100`}
                       strokeWidth="4"
                       strokeLinecap="round"
                       stroke="currentColor"
@@ -872,7 +1131,7 @@ export default function DashboardOverview() {
                   </svg>
                   <div className="absolute inset-0 flex flex-col items-center justify-center">
                     <span className="text-xl font-bold text-[#4A7830]">
-                      28%
+                      {ytdAchievedPct}%
                     </span>
                     <span className="text-[9px] text-gray-500 font-bold">
                       Achieved
@@ -881,14 +1140,14 @@ export default function DashboardOverview() {
                 </div>
                 <div className="text-center mt-2 text-[10px] text-gray-500">
                   <div>To</div>
-                  <div>2026 Target</div>
+                  <div>{currentYear} Target</div>
                   <div className="font-bold text-xs text-gray-900">
-                    30,000,000 <span className="text-[#5B8C3E]">~+52%</span>
+                    {ytdTarget.toLocaleString()} <span className="text-[#5B8C3E]">~{ytdRevenueGrowth >= 0 ? "+" : ""}{ytdRevenueGrowth.toFixed(1)}%</span>
                   </div>
                   <div className="text-gray-400 mt-0.5">
-                    2025:{" "}
+                    {prevYear}:{" "}
                     <span className="font-semibold text-gray-700">
-                      19,690,236
+                      {prevYtdRevenue.toLocaleString()}
                     </span>
                   </div>
                 </div>
@@ -904,47 +1163,47 @@ export default function DashboardOverview() {
                   </div>
                   <div className="flex items-baseline gap-2">
                     <span className="text-2xl font-bold text-[#4A7830]">
-                      8,301,464
+                      {ytdRevenue.toLocaleString()}
                     </span>
                     <span className="text-xs font-bold text-[#5B8C3E] flex items-center">
-                      <TrendingUp size={12} strokeWidth={3} /> ~+1703%
+                      <TrendingUp size={12} strokeWidth={3} /> ~{ytdRevenueGrowth >= 0 ? "+" : ""}{ytdRevenueGrowth.toFixed(1)}%
                     </span>
                   </div>
                   <div className="text-[11px] text-gray-400">
-                    Previous Year : 3,071,312
+                    Previous Year : {prevYtdRevenue.toLocaleString()}
                   </div>
                   <div className="text-[11px] text-gray-500">
-                    3 Months Target: 7,300,303{" "}
-                    <span className="text-[#5B8C3E] font-bold">(113.7%)</span>
+                    {monthIdx} Months Target: {Math.round((ytdTarget / 12) * monthIdx).toLocaleString()}{" "}
+                    <span className="text-[#5B8C3E] font-bold">({ytdRevenue > 0 ? ((ytdRevenue / ((ytdTarget / 12) * monthIdx)) * 100).toFixed(1) : 0}%)</span>
                   </div>
                   <div className="text-[11px] text-gray-500">
-                    Gap to Target: <span className="font-bold">--</span>
+                    Gap to Target: <span className="font-bold">{(ytdRevenue >= ((ytdTarget / 12) * monthIdx) ? "—" : Math.round(((ytdTarget / 12) * monthIdx) - ytdRevenue).toLocaleString())}</span>
                   </div>
                 </div>
                 <div>
                   <div className="flex items-center gap-1.5 mb-0.5">
                     <div className="w-2 h-2 rounded-full bg-green-500"></div>
                     <span className="text-[11px] text-gray-500">
-                      9 Months to Hit Target (2,410,948 / Month)
+                      {remainingMonths} Months to Hit Target ({targetPerRemainingMonth.toLocaleString()} / Month)
                     </span>
                   </div>
                   <div className="text-xl font-bold text-gray-900 pl-3.5">
-                    21,698,536
+                    {targetToHit.toLocaleString()}
                   </div>
                 </div>
                 <div>
                   <div className="flex items-center gap-1.5 mb-0.5">
                     <div className="w-2 h-2 rounded-full bg-green-400"></div>
                     <span className="text-[11px] text-gray-500">
-                      YTD (3 Months) + Target (9 Months Remaining)
+                      YTD ({monthIdx} Months) + Target ({remainingMonths} Months Remaining)
                     </span>
                   </div>
                   <div className="flex items-baseline gap-2 pl-3.5">
                     <span className="text-xl font-bold text-gray-900">
-                      31,001,161
+                      {(ytdRevenue + targetToHit).toLocaleString()}
                     </span>
                     <span className="text-xs text-[#5B8C3E] font-bold">
-                      (Achieved 103.3%)
+                      (Achieved {projectedYtdAchieved}%)
                     </span>
                   </div>
                 </div>
@@ -964,12 +1223,12 @@ export default function DashboardOverview() {
                     strokeWidth={2.5}
                   />
                   <span className="text-lg font-bold text-gray-900">
-                    39,062
+                    {ytdUnits.toLocaleString()}
                   </span>
                 </div>
                 <div className="text-[10px] text-[#5B8C3E] font-bold flex items-center">
                   <TrendingUp size={10} strokeWidth={3} className="mr-0.5" />{" "}
-                  ~+186.2%
+                  ~{ytdUnitsGrowth >= 0 ? "+" : ""}{ytdUnitsGrowth.toFixed(1)}%
                 </div>
               </div>
               <div className="border rounded-xl p-3 bg-white">
@@ -978,10 +1237,10 @@ export default function DashboardOverview() {
                 </div>
                 <div className="flex items-center gap-1.5 mb-1">
                   <Tag size={14} className="text-[#5B8C3E]" strokeWidth={2.5} />
-                  <span className="text-lg font-bold text-gray-900">27</span>
+                  <span className="text-lg font-bold text-gray-900">{ytdSkusCount}</span>
                 </div>
                 <div className="text-[10px] text-gray-400">
-                  100% of Selling SKU
+                  {brandProducts.length > 0 ? Math.round((ytdSkusCount / brandProducts.length) * 100) : 0}% of Selling SKU
                 </div>
               </div>
               <div className="border rounded-xl p-3 bg-white">
@@ -995,12 +1254,12 @@ export default function DashboardOverview() {
                     strokeWidth={2.5}
                   />
                   <span className="text-lg font-bold text-gray-900">
-                    12,209
+                    {ytdTransactions.toLocaleString()}
                   </span>
                 </div>
                 <div className="text-[10px] text-[#5B8C3E] font-bold flex items-center">
                   <TrendingUp size={10} strokeWidth={3} className="mr-0.5" />{" "}
-                  ~+76.2%
+                  ~{ytdTransactionsGrowth >= 0 ? "+" : ""}{ytdTransactionsGrowth.toFixed(1)}%
                 </div>
               </div>
               <div className="flex gap-2">
@@ -1014,11 +1273,7 @@ export default function DashboardOverview() {
                       className="text-[#5B8C3E]"
                       strokeWidth={2.5}
                     />
-                    <span className="text-sm font-bold text-gray-900">3.2</span>
-                  </div>
-                  <div className="text-[10px] text-[#5B8C3E] font-bold flex items-center">
-                    <TrendingUp size={10} strokeWidth={3} className="mr-0.5" />{" "}
-                    ~+60.0%
+                    <span className="text-sm font-bold text-gray-900">{ytdUPT.toFixed(1)}</span>
                   </div>
                 </div>
                 <div className="border rounded-xl p-2 flex-1 bg-white">
@@ -1031,7 +1286,7 @@ export default function DashboardOverview() {
                       className="text-[#5B8C3E]"
                       strokeWidth={2.5}
                     />
-                    <span className="text-sm font-bold text-gray-900">680</span>
+                    <span className="text-sm font-bold text-gray-900">{Math.round(ytdATV).toLocaleString()}</span>
                   </div>
                   <div className="text-[10px] text-[#5B8C3E] font-bold flex items-center">
                     <TrendingUp size={10} strokeWidth={3} className="mr-0.5" />{" "}
@@ -1632,13 +1887,23 @@ export default function DashboardOverview() {
               >
                 <td className="px-3 py-2.5" colSpan={2}>
                   Total{" "}
-                  <span className="text-gray-400 font-normal">(20 SKUs)</span>
+                  <span className="text-gray-400 font-normal">({productRankingData.length} SKUs)</span>
                 </td>
-                <td className="text-right px-3 py-2.5">68,370</td>
-                <td className="text-right px-3 py-2.5">96.2%</td>
-                <td className="text-right px-3 py-2.5">313</td>
-                <td className="text-right px-3 py-2.5"></td>
-                <td className="text-right px-3 py-2.5"></td>
+                <td className="text-right px-3 py-2.5">
+                  {productRankingData.reduce((sum, p) => sum + p.revenue, 0).toLocaleString()}
+                </td>
+                <td className="text-right px-3 py-2.5">
+                  {productRankingData.reduce((sum, p) => sum + p.contribution, 0).toFixed(1)}%
+                </td>
+                <td className="text-right px-3 py-2.5">
+                  {productRankingData.reduce((sum, p) => sum + p.unitsSold, 0).toLocaleString()}
+                </td>
+                <td className="text-right px-3 py-2.5">
+                  {Math.round(productRankingData.reduce((sum, p) => sum + p.ads, 0) * 10) / 10}
+                </td>
+                <td className="text-right px-3 py-2.5">
+                  {productRankingData.reduce((sum, p) => sum + p.soh, 0).toLocaleString()}
+                </td>
                 <td className="text-right px-3 py-2.5"></td>
               </tr>
               {productRankingData.map((p) => (

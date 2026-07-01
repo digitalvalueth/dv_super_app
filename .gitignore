@@ -53,3 +53,6 @@ app-example
 # temp folder
 /demo_1
 fittbsa-798ba3e87223.json
+.next_emu/
+platform-web/.next-emu/*
+platform-web/cypress/*

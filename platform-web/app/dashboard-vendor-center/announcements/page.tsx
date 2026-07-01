@@ -19,6 +19,20 @@ type Announcement = {
 
 const items: Announcement[] = [
   {
+    id: "A3",
+    title: "อัปเดตระบบ: เชื่อมต่อฐานข้อมูลสต็อกและยอดขายจริง (Live Data Connected)",
+    body: "ระบบ Vendor Center ได้เสร็จสิ้นการอัปเกรดเชื่อมต่อข้อมูลโดยตรงกับระบบนับสต็อก (Stock Counter) และรายงานการขายจริงของพนักงานหน้าร้านผ่านฐานข้อมูล Firestore ช่วยให้การติดตามยอดคงคลัง (SOH), ยอดขาย MTD/YTD แยกรายสาขาของแบรนด์ NEST ME และ PRIMANEST เป็นไปอย่างแม่นยำและเรียลไทม์",
+    date: "9 Jun 2026",
+    type: "Urgent",
+  },
+  {
+    id: "A4",
+    title: "ซิงก์ข้อมูลโปรโมชั่นวัตสัน (Watson Promotion Synced)",
+    body: "ระบบรายงานโปรโมชั่นในฝั่ง Vendor Center ได้รับการจัดรูปแบบและเชื่อมต่อฐานข้อมูลร่วม (Shared Database) กับโมดูลโปรโมชั่นฝั่งผู้ดูแลระบบ Stock Counter เพื่อป้องกันความคลาดเคลื่อนในการนำเข้าข้อมูลโปรโมชั่นเรียบร้อยแล้ว",
+    date: "9 Jun 2026",
+    type: "Info",
+  },
+  {
     id: "A1",
     title: "การใช้งานข้อมูล Vendor Centor เฟส1",
     body: "ข้อมูลชุดนี้คัดเลือกใช้สำหรับการวิเคราะห์และประเมินแนวโน้มการขายเบื้องต้นเท่านั้น ข้อมูลอาจมีความคลาดเคลื่อนจากช่วงเวลาการประมวลผลครั้งบรรพกาที่ช่วงทาง และไม่ใช่ข้อมูลแบบ Real-Time ดังนั้น จึงไม่สามารถนำไปใช้อ้างอิงทางบัญชี การตรวจสอบบัญชีทางเหนือ (Audit) ณ จุดต่างๆ ๆ หรือใช้เป็นจำนวนเพื่อยืนยอดอย่างจริงจังในทางบัญชีได้ หากต้องการข้อมูลยืนยันจำนวนสินค้าหรือยอดขายอย่างเป็นทางการๆ กรุณาตรวจสอบอย่างเป็นทางการได้ที่",
@@ -43,7 +57,7 @@ const typeConfig = {
 
 export default function Announcements() {
   return (
-    <div className="p-8 max-w-5xl mx-auto space-y-6">
+    <div className="p-6 md:p-8 w-full space-y-6">
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">

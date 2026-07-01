@@ -13,7 +13,7 @@ import {
 
 export default function Profile() {
   return (
-    <div className="p-8 max-w-4xl mx-auto space-y-6">
+    <div className="p-6 md:p-8 w-full space-y-6">
       <div>
         <h1 className="text-2xl font-bold text-gray-900">Profile</h1>
         <div className="text-xs text-gray-500 flex items-center gap-1 mt-1">

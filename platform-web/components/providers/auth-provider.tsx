@@ -4,7 +4,11 @@ import { auth, db } from "@/lib/firebase";
 import { syncModuleAccessFromWhitelist } from "@/lib/module-service";
 import { useAuthStore } from "@/stores/auth.store";
 import { User } from "@/types";
-import { onAuthStateChanged } from "firebase/auth";
+import {
+  onAuthStateChanged,
+  signInWithEmailAndPassword,
+  signOut,
+} from "firebase/auth";
 import {
   addDoc,
   collection,
@@ -18,6 +22,27 @@ import { useEffect } from "react";
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const { setUser, setUserData, setLoading } = useAuthStore();
+
+  // E2E test bridge: in emulator mode only, expose real sign-in/out helpers and
+  // the auth store on `window` so Cypress can authenticate against the local
+  // emulator. No-op in production (guarded by the emulator env flag).
+  useEffect(() => {
+    if (
+      process.env.NEXT_PUBLIC_USE_FIREBASE_EMULATOR !== "1" ||
+      typeof window === "undefined"
+    ) {
+      return;
+    }
+    const w = window as typeof window & {
+      __authStore?: typeof useAuthStore;
+      __signIn?: (email: string, password: string) => Promise<unknown>;
+      __signOut?: () => Promise<void>;
+    };
+    w.__authStore = useAuthStore;
+    w.__signIn = (email, password) =>
+      signInWithEmailAndPassword(auth, email, password);
+    w.__signOut = () => signOut(auth);
+  }, []);
 
   useEffect(() => {
     let userUnsubscribe: (() => void) | null = null;

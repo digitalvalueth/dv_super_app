@@ -1,7 +1,9 @@
 "use client";
 
-import { ChevronRight, MapPin, Search, ExternalLink, Phone } from "lucide-react";
-import { useMemo, useState } from "react";
+import { ChevronRight, MapPin, Search, ExternalLink, Phone, Loader2 } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { db } from "@/lib/firebase";
+import { collection, getDocs, query, where } from "firebase/firestore";
 
 type Store = {
   id: string;
@@ -13,32 +15,96 @@ type Store = {
   mapUrl: string;
 };
 
-const storesAll: Store[] = Array.from({ length: 35 }).map((_, i) => {
-  const sample = [
-    { name: "EVEANDBOY Siam Center", province: "Bangkok", phone: "02-658-1456" },
-    { name: "EVEANDBOY CentralWorld", province: "Bangkok", phone: "02-646-1000" },
-    { name: "EVEANDBOY EmQuartier", province: "Bangkok", phone: "02-269-1000" },
-    { name: "EVEANDBOY Iconsiam", province: "Bangkok", phone: "02-495-7000" },
-    { name: "EVEANDBOY Mega Bangna", province: "Samut Prakan", phone: "02-105-1000" },
-    { name: "EVEANDBOY Terminal 21", province: "Bangkok", phone: "02-108-0888" },
-    { name: "EVEANDBOY CentralFestival ChiangMai", province: "Chiang Mai", phone: "053-998-999" },
-    { name: "EVEANDBOY CentralFestival Phuket", province: "Phuket", phone: "076-291-111" },
-  ];
-  const s = sample[i % sample.length];
-  return {
-    id: `STORE-${(i + 1).toString().padStart(3, "0")}`,
-    name: i < sample.length ? s.name : `${s.name} Branch ${Math.floor(i / sample.length) + 1}`,
-    type: i % 12 === 0 ? "Online" : "Offline",
-    address: `${100 + i} Main Road, ${s.province}`,
-    phone: s.phone,
-    province: s.province,
-    mapUrl: "https://maps.google.com",
-  };
-});
-
 export default function StoreLocations() {
+  const [storesAll, setStoresAll] = useState<Store[]>([]);
+  const [loading, setLoading] = useState(true);
   const [q, setQ] = useState("");
   const [filter, setFilter] = useState<"ALL" | "Online" | "Offline">("ALL");
+
+  useEffect(() => {
+    async function loadStores() {
+      try {
+        // Find companyId of Phithan
+        const companiesSnap = await getDocs(collection(db, "companies"));
+        const phithan = companiesSnap.docs.find(d => {
+          const name = (d.data().name || "").toLowerCase();
+          const code = (d.data().code || "").toLowerCase();
+          return name.includes("phithan") || name.includes("พิธาน") || code.includes("phithan");
+        });
+        const targetCompanyId = phithan?.id || "";
+
+        // Query branches
+        const branchesRef = collection(db, "branches");
+        const branchesQuery = targetCompanyId
+          ? query(branchesRef, where("companyId", "==", targetCompanyId))
+          : query(branchesRef);
+        const branchesSnap = await getDocs(branchesQuery);
+
+        const loaded: Store[] = branchesSnap.docs.map((doc) => {
+          const data = doc.data();
+          const name = data.name || "Unnamed Branch";
+          const address = data.address || "No Address Provided";
+          
+          // Determine type (Online / Offline)
+          const isOnline = 
+            name.toLowerCase().includes("online") || 
+            (data.sellerCategory || "").toLowerCase().includes("online") ||
+            address.toLowerCase().includes("online");
+          const type = isOnline ? "Online" : "Offline";
+
+          // Determine province
+          const getProvince = (addr: string) => {
+            const lower = addr.toLowerCase();
+            if (lower.includes("bangkok") || lower.includes("กรุงเทพ")) return "Bangkok";
+            if (lower.includes("chiang mai") || lower.includes("เชียงใหม่")) return "Chiang Mai";
+            if (lower.includes("phuket") || lower.includes("ภูเก็ต")) return "Phuket";
+            if (lower.includes("samut prakan") || lower.includes("สมุทรปราการ")) return "Samut Prakan";
+            if (lower.includes("nonthaburi") || lower.includes("นนทบุรี")) return "Nonthaburi";
+            if (lower.includes("chonburi") || lower.includes("ชลบุรี")) return "Chonburi";
+            if (lower.includes("pathum thani") || lower.includes("ปทุมธานี")) return "Pathum Thani";
+            return "Other";
+          };
+          const province = getProvince(address);
+
+          // Determine phone / contact info
+          let phoneVal = "—";
+          if (data.phone) {
+            phoneVal = data.phone;
+          } else if (data.supervisorPhone) {
+            phoneVal = data.supervisorPhone;
+          } else if (data.supervisorName || data.supervisorEmail) {
+            phoneVal = [data.supervisorName, data.supervisorEmail].filter(Boolean).join(" (") + (data.supervisorEmail ? ")" : "");
+          }
+
+          // Determine mapUrl
+          let mapUrl = "https://maps.google.com";
+          if (data.latitude != null && data.longitude != null) {
+            mapUrl = `https://www.google.com/maps/search/?api=1&query=${data.latitude},${data.longitude}`;
+          } else {
+            mapUrl = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(name + ' ' + address)}`;
+          }
+
+          return {
+            id: data.code || doc.id,
+            name,
+            type,
+            address,
+            phone: phoneVal,
+            province,
+            mapUrl,
+          };
+        });
+
+        setStoresAll(loaded);
+      } catch (err) {
+        console.error("Error loading branches from Firestore:", err);
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    loadStores();
+  }, []);
 
   const filtered = useMemo(() => {
     let r = storesAll;
@@ -48,13 +114,25 @@ export default function StoreLocations() {
         (s) =>
           s.name.toLowerCase().includes(q.toLowerCase()) ||
           s.province.toLowerCase().includes(q.toLowerCase()) ||
-          s.address.toLowerCase().includes(q.toLowerCase())
+          s.address.toLowerCase().includes(q.toLowerCase()) ||
+          s.id.toLowerCase().includes(q.toLowerCase())
       );
     return r;
-  }, [q, filter]);
+  }, [q, filter, storesAll]);
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center min-h-[400px] w-full">
+        <div className="text-center space-y-3">
+          <Loader2 className="w-10 h-10 animate-spin text-pink-600 mx-auto" />
+          <p className="text-sm text-gray-500 font-medium">Loading store locations...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
-    <div className="p-8 max-w-7xl mx-auto space-y-6">
+    <div className="p-6 md:p-8 w-full space-y-6">
       <div>
         <h1 className="text-2xl font-bold text-gray-900">Store Locations</h1>
         <div className="text-xs text-gray-500 flex items-center gap-1 mt-1">
@@ -95,7 +173,7 @@ export default function StoreLocations() {
           <input
             value={q}
             onChange={(e) => setQ(e.target.value)}
-            placeholder="Search store, province, or address..."
+            placeholder="Search store name, ID, province, or address..."
             className="w-full pl-9 pr-3 py-2 text-sm border rounded-md focus:outline-none focus:ring-2 focus:ring-pink-500 focus:border-pink-500"
           />
         </div>
@@ -128,7 +206,7 @@ export default function StoreLocations() {
                 <th className="px-4 py-3 text-left">Type</th>
                 <th className="px-4 py-3 text-left">Province</th>
                 <th className="px-4 py-3 text-left">Address</th>
-                <th className="px-4 py-3 text-left">Phone</th>
+                <th className="px-4 py-3 text-left">Contact Info</th>
                 <th className="px-4 py-3 text-right">Map</th>
               </tr>
             </thead>
@@ -154,11 +232,11 @@ export default function StoreLocations() {
                     </span>
                   </td>
                   <td className="px-4 py-3 text-gray-700">{s.province}</td>
-                  <td className="px-4 py-3 text-gray-600 text-xs">
+                  <td className="px-4 py-3 text-gray-600 text-xs max-w-xs truncate" title={s.address}>
                     {s.address}
                   </td>
                   <td className="px-4 py-3 text-gray-600 text-xs flex items-center gap-1">
-                    <Phone className="w-3 h-3" /> {s.phone}
+                    <Phone className="w-3 h-3 text-gray-400 shrink-0" /> <span className="truncate max-w-[180px]">{s.phone}</span>
                   </td>
                   <td className="px-4 py-3 text-right">
                     <a
@@ -174,6 +252,13 @@ export default function StoreLocations() {
                   </td>
                 </tr>
               ))}
+              {filtered.length === 0 && (
+                <tr>
+                  <td colSpan={8} className="px-4 py-8 text-center text-gray-500">
+                    No store locations found matching your search.
+                  </td>
+                </tr>
+              )}
             </tbody>
           </table>
         </div>

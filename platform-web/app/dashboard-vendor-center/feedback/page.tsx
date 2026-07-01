@@ -8,14 +8,20 @@ import {
   X,
 } from "lucide-react";
 import { useState } from "react";
+import { useBrand } from "../brand-context";
+import { useActivityLogger } from "@/hooks/watson/useActivityLogger";
+import { toast } from "sonner";
 
 const MAX_TEXT = 5000;
 const MAX_FILES = 3;
 const MAX_FILE_SIZE = 10 * 1024 * 1024;
 
 export default function Feedback() {
+  const { activeBrand } = useBrand();
+  const { logAction } = useActivityLogger();
   const [text, setText] = useState("");
   const [files, setFiles] = useState<File[]>([]);
+  const [submitting, setSubmitting] = useState(false);
 
   const handleAdd = (list: FileList | null) => {
     if (!list) return;
@@ -35,8 +41,29 @@ export default function Feedback() {
 
   const canSubmit = text.trim().length > 0;
 
+  const handleSubmit = async () => {
+    setSubmitting(true);
+    try {
+      await logAction("submit_feedback", `ส่งรายงานปัญหา / ข้อเสนอแนะการใช้งานระบบ (${text.substring(0, 30)}...)`, {
+        brand: activeBrand,
+        feedbackLength: text.length,
+        imageCount: files.length,
+        feedbackPreview: text.substring(0, 100),
+      });
+      
+      toast.success("ส่งข้อมูลข้อเสนอแนะเรียบร้อยแล้ว ขอบคุณสำหรับความคิดเห็น!");
+      setText("");
+      setFiles([]);
+    } catch (err) {
+      console.error(err);
+      toast.error("ส่งข้อมูลไม่สำเร็จ กรุณาลองใหม่อีกครั้ง");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
   return (
-    <div className="p-8 max-w-3xl mx-auto space-y-6">
+    <div className="p-6 md:p-8 w-full space-y-6">
       <div>
         <h1 className="text-2xl font-bold text-gray-900">Feedback & Report Issue</h1>
         <div className="text-xs text-gray-500 flex items-center gap-1 mt-1">
@@ -119,15 +146,16 @@ export default function Feedback() {
         {/* Submit */}
         <div className="mt-5 text-right">
           <button
-            disabled={!canSubmit}
-            className={`inline-flex items-center gap-1.5 px-5 py-2 rounded-md text-sm font-semibold transition ${
-              canSubmit
+            onClick={handleSubmit}
+            disabled={!canSubmit || submitting}
+            className={`inline-flex items-center gap-1.5 px-5 py-2 rounded-md text-sm font-semibold transition cursor-pointer ${
+              canSubmit && !submitting
                 ? "bg-pink-600 hover:bg-pink-700 text-white"
                 : "bg-pink-200 text-white cursor-not-allowed"
             }`}
           >
             <Send className="w-3.5 h-3.5" />
-            Submit Feedback
+            {submitting ? "Submitting..." : "Submit Feedback"}
           </button>
         </div>
       </div>
