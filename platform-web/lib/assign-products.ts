@@ -3,6 +3,7 @@ import {
   addDoc,
   collection,
   doc,
+  getDoc,
   getDocs,
   query,
   serverTimestamp,
@@ -11,6 +12,88 @@ import {
 } from "firebase/firestore";
 
 export type PeriodHalf = 1 | 2;
+
+export interface ResolvedAssignPeriod {
+  month: number;
+  year: number;
+  half: PeriodHalf;
+  /** CountingPeriod doc id when known (from an active override), else null. */
+  periodId: string | null;
+  /** True when the period comes from an active "เปิดรับรูปชั่วคราว" override. */
+  isTemporaryOverride: boolean;
+}
+
+/**
+ * Resolves which counting period a company-wide "assign all" should target.
+ *
+ * When a temporary upload override (เปิดรับรูปชั่วคราว) is active, new assignments
+ * MUST land on the override's target period (e.g. the reopened previous half-month),
+ * because the mobile app resolves that same override-first period when listing
+ * assignments (getEffectiveCountingPeriod). Stamping "today's" period instead makes
+ * the freshly-assigned work invisible in the app on a period boundary (the 1st/16th).
+ * Falls back to the current calendar period when no override is active.
+ *
+ * NOTE: the per-row "Auto-assign" button intentionally bypasses this — it already
+ * targets an explicitly chosen period row.
+ */
+export async function resolveAssignPeriod(
+  companyId: string,
+  now: Date = new Date(),
+): Promise<ResolvedAssignPeriod> {
+  const fallback: ResolvedAssignPeriod = {
+    month: now.getMonth() + 1,
+    year: now.getFullYear(),
+    half: now.getDate() <= 15 ? 1 : 2,
+    periodId: null,
+    isTemporaryOverride: false,
+  };
+
+  if (!companyId) return fallback;
+
+  try {
+    const snap = await getDoc(doc(db, "countingUploadOverrides", companyId));
+    if (!snap.exists()) return fallback;
+
+    const override = snap.data() as {
+      enabled?: boolean;
+      startAt?: { toDate: () => Date };
+      endAt?: { toDate: () => Date };
+      targetMonth?: number;
+      targetYear?: number;
+      targetHalf?: PeriodHalf;
+      targetPeriodDocId?: string;
+    };
+
+    if (
+      !override.enabled ||
+      !override.endAt ||
+      override.targetMonth == null ||
+      override.targetYear == null ||
+      override.targetHalf == null
+    ) {
+      return fallback;
+    }
+
+    const nowMs = now.getTime();
+    const startMs = override.startAt?.toDate().getTime() ?? 0;
+    const endMs = override.endAt.toDate().getTime();
+    if (nowMs < startMs || nowMs > endMs) return fallback;
+
+    return {
+      month: override.targetMonth,
+      year: override.targetYear,
+      half: override.targetHalf,
+      periodId: override.targetPeriodDocId ?? null,
+      isTemporaryOverride: true,
+    };
+  } catch (error) {
+    console.error(
+      "resolveAssignPeriod failed; falling back to current period",
+      error,
+    );
+    return fallback;
+  }
+}
 
 export interface AssignPlanRow {
   userId: string;

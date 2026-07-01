@@ -8,6 +8,7 @@ import {
 } from "@/types/watson/promotion";
 import { RawRow } from "@/types/watson/invoice";
 import { savePromotionData, getPromotionData } from "@/lib/watson-firebase";
+import { getEffectivePriceInfo } from "@/lib/watson/promo-pricing";
 
 export function usePromotionData() {
   const [promotionItems, setPromotionItems] = useState<PromotionItem[]>(
@@ -87,23 +88,7 @@ export function usePromotionData() {
         return null;
       }
 
-      const checkDate = invoiceDate || new Date();
-      let isPromoActive = false;
-
-      if (item.promoPrice && item.promoStart && item.promoEnd) {
-        isPromoActive =
-          checkDate >= item.promoStart && checkDate <= item.promoEnd;
-      }
-
-      return {
-        itemCode: item.itemCode,
-        stdPrice: item.stdPrice,
-        promoPrice: item.promoPrice,
-        isPromoActive,
-        promoStart: item.promoStart,
-        promoEnd: item.promoEnd,
-        priceDiff: item.promoPrice ? item.stdPrice - item.promoPrice : null,
-      };
+      return getEffectivePriceInfo(item, invoiceDate || new Date());
     },
     [promotionItems],
   );

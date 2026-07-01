@@ -40,6 +40,15 @@ service firebase.storage {
       allow read: if isAuthenticated();
     }
 
+    // ==================== SHOP STOCK RECEIVE IMAGES ====================
+    // Path: shop-stock-receives/{userId}/{date}/{filename}
+    match /shop-stock-receives/{userId}/{allPaths=**} {
+      allow write: if isAuthenticated() && request.auth.uid == userId
+                   && request.resource.size < 10 * 1024 * 1024
+                   && request.resource.contentType.matches('image/.*');
+      allow read: if isAuthenticated();
+    }
+
     // ==================== PRODUCT IMAGES ====================
     // Path: products/{companyId}/{filename}
     match /products/{companyId}/{allPaths=**} {

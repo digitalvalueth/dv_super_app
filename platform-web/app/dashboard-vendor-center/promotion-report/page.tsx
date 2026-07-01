@@ -1,13 +1,16 @@
 "use client";
 
+import BigCImportPreview from "@/components/watson/BigCImportPreview";
 import { usePromotionUploadHistory } from "@/hooks/watson/usePromotionUploadHistory";
 import { parseWatsonDate } from "@/lib/parse-watson-date";
 import { getPromotionData, savePromotionData } from "@/lib/watson-firebase";
 import { PromotionItem } from "@/types/watson/promotion";
+import { useBrand } from "../brand-context";
 import {
   AlertTriangle,
   Check,
   CheckCircle,
+  ChevronDown,
   ChevronRight,
   Clock,
   Download,
@@ -199,7 +202,6 @@ const EXCEL_MAP: Record<string, keyof Row> = {
   invoice62incv: "invoice62IncV",
   "invoice 62 incv": "invoice62IncV",
   "invoice 62 % incv": "invoice62IncV",
-  // typo variants (from actual Excel files)
   "invoce62% incv": "invoice62IncV",
   "invoce 62% incv": "invoice62IncV",
   "invoice62% exv": "invoice62ExV",
@@ -211,13 +213,11 @@ const EXCEL_MAP: Record<string, keyof Row> = {
   invoice62exv: "invoice62ExV",
   "invoice 62 exv": "invoice62ExV",
   "invoice 62 % exv": "invoice62ExV",
-  // typo variants (from actual Excel files)
   "incoice 62% exv": "invoice62ExV",
   "incoice62% exv": "invoice62ExV",
   remark: "remark",
 };
 
-// Required fields for a row to be considered complete enough to allow adding another
 const REQUIRED_KEYS: (keyof Row)[] = [
   "itemCode",
   "barcode",
@@ -236,7 +236,18 @@ const isRowIncomplete = (r: Row) =>
     return v === null || v === undefined || v === "" || v === 0;
   });
 
+// Vendor-only: scope the master table to the brand chosen in the topbar
+// switcher. (The stock-counter copy of this page has no brand switcher and
+// shows every brand.)
+const matchBrand = (name: string, brand: "NEST ME" | "PRIMANEST") => {
+  const norm = (name || "").toLowerCase().replace(/\s+/g, "");
+  return brand === "NEST ME"
+    ? norm.includes("nestme")
+    : norm.includes("primanest") || norm.includes("prima");
+};
+
 export default function PromotionReportPage() {
+  const { activeBrand } = useBrand();
   const [rows, setRows] = useState<Row[]>([emptyRow()]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -281,11 +292,14 @@ export default function PromotionReportPage() {
     Record<number, "discarded" | "kept">
   >({});
   const [showHistory, setShowHistory] = useState(false);
+  const [showBigCPreview, setShowBigCPreview] = useState(false);
+  const [importMenuOpen, setImportMenuOpen] = useState(false);
+  const [previewShop, setPreviewShop] = useState("BigC");
   const [showImportDetails, setShowImportDetails] = useState(false);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<
     "all" | "active" | "inactive"
-  >("all");
+  >("active");
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
   const [validateIds, setValidateIds] = useState<Set<string>>(new Set());
@@ -296,8 +310,8 @@ export default function PromotionReportPage() {
     label: string;
   } | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
-  // Keep a ref always pointing to the latest rows to avoid stale closures in async reader.onload
   const rowsRef = useRef(rows);
+
   useEffect(() => {
     rowsRef.current = rows;
   }, [rows]);
@@ -310,7 +324,8 @@ export default function PromotionReportPage() {
   } = usePromotionUploadHistory();
 
   // ── Load from Firestore ────────────────────────────────────────────
-  useEffect(() => {
+  const reloadRows = useCallback(() => {
+    setLoading(true);
     getPromotionData()
       .then((items) => {
         if (items.length > 0) {
@@ -351,6 +366,10 @@ export default function PromotionReportPage() {
       .finally(() => setLoading(false));
   }, []);
 
+  useEffect(() => {
+    reloadRows();
+  }, [reloadRows]);
+
   // ── Cell update ────────────────────────────────────────────────────
   const updateCell = useCallback((id: string, key: keyof Row, raw: string) => {
     setRows((prev) =>
@@ -369,7 +388,6 @@ export default function PromotionReportPage() {
 
   const addRow = () => {
     if (!editMode) return;
-    // Block if the first row (last added) still has required fields empty
     const firstRow = rows[0];
     if (firstRow && isRowIncomplete(firstRow)) {
       setValidateIds((prev) => new Set(prev).add(firstRow._id));
@@ -380,7 +398,6 @@ export default function PromotionReportPage() {
       return;
     }
     setRows((p) => [emptyRow(), ...p]);
-    // Clear filters so the new empty row is always visible
     setSearch("");
     setStatusFilter("all");
     setDateFrom("");
@@ -467,7 +484,6 @@ export default function PromotionReportPage() {
             .trim(),
         );
 
-        // Normalize key: strip all non-alphanumeric for lookup
         const normalize = (s: string) =>
           s.replace(/[^a-z0-9]/gi, "").toLowerCase();
         const normalizedMap: Record<string, keyof Row> = {};
@@ -475,15 +491,12 @@ export default function PromotionReportPage() {
           normalizedMap[normalize(k)] = v;
         }
 
-        // ── Strict column validation ──────────────────────────────────
-        // Identify which Row keys are covered by the file's headers
         const mappedKeys = new Set(
           headers
             .map((h) => EXCEL_MAP[h] ?? normalizedMap[normalize(h)])
             .filter(Boolean),
         );
 
-        // Required fields that MUST be present
         const REQUIRED: { key: keyof Row; label: string }[] = [
           { key: "itemCode", label: "Watson Code" },
           { key: "barcode", label: "Barcode" },
@@ -505,7 +518,6 @@ export default function PromotionReportPage() {
           );
           return;
         }
-        // ─────────────────────────────────────────────────────────────
 
         const imported: Row[] = raw.slice(1).map((rowArr) => {
           const r = emptyRow();
@@ -532,16 +544,10 @@ export default function PromotionReportPage() {
           (r) => r.itemCode || r.barcode || r.itemName,
         );
 
-        // ── Compute upsert preview WITHOUT touching rows state ───────
-        // Use rowsRef to get the latest state (avoids stale closure in async onload)
-        // Only compare against rows that have real data (same filter as badge count)
         const existingRows = rowsRef.current.filter(
           (r) => r.itemCode || r.barcode || r.itemName,
         );
 
-        // Composite key: Watson Code (or barcode) + Start + End + Remark
-        // This allows the SAME Watson Code to have multiple legitimate rows
-        // (different promo periods, or different pricing tiers like Buy1 vs Bundle).
         const rowKey = (r: Row) => {
           const code = (r.itemCode || r.barcode || "").trim();
           const start = fmtDate(r.promoStart);
@@ -552,16 +558,12 @@ export default function PromotionReportPage() {
           return `${code}||${start}||${end}||${remark}`;
         };
 
-        // For duplicate composite keys within the file, keep only the LAST occurrence.
-        // If two rows share the same key but have different numeric prices, record a
-        // conflict warning so the user knows one row was silently discarded.
         const lastIdxByKey = new Map<string, number>();
         filtered.forEach((r, i) => lastIdxByKey.set(rowKey(r), i));
         const uniqueFiltered = filtered.filter(
           (r, i) => lastIdxByKey.get(rowKey(r)) === i,
         );
 
-        // Detect intra-file conflicts: same key, different prices/values
         const conflictWarnings: Array<{
           key: string;
           itemCode: string;
@@ -573,7 +575,6 @@ export default function PromotionReportPage() {
         uniqueFiltered.forEach((r) => keptByKey.set(rowKey(r), r));
         filtered.forEach((r, i) => {
           if (lastIdxByKey.get(rowKey(r)) !== i) {
-            // This row was discarded — check if prices differ from the kept row
             const kept = keptByKey.get(rowKey(r));
             if (
               kept &&
@@ -593,7 +594,6 @@ export default function PromotionReportPage() {
           }
         });
 
-        // Detect overlapping date ranges: same Watson Code, different composite key, but promo periods overlap
         const overlapWarnings: Array<{
           itemCode: string;
           itemName: string;
@@ -612,11 +612,8 @@ export default function PromotionReportPage() {
             for (let b = a + 1; b < codeRows.length; b++) {
               const rowA = codeRows[a];
               const rowB = codeRows[b];
-              // Skip if same composite key (already handled as conflictWarning)
               if (rowKey(rowA) === rowKey(rowB)) continue;
-              // Skip if either row is non-promo (Buy 1 = base price, overlapping with promos is normal)
               if (isNonPromo(rowA.remark) || isNonPromo(rowB.remark)) continue;
-              // Check date range overlap: A.start <= B.end AND B.start <= A.end
               if (
                 rowA.promoStart &&
                 rowA.promoEnd &&
@@ -636,8 +633,7 @@ export default function PromotionReportPage() {
           }
         });
 
-        // Build O(1) lookup map from DB snapshot
-        const existingByKey = new Map<string, number>(); // key → index in existingRows
+        const existingByKey = new Map<string, number>();
         existingRows.forEach((r, i) => existingByKey.set(rowKey(r), i));
 
         const result = [...existingRows];
@@ -654,11 +650,9 @@ export default function PromotionReportPage() {
           const key = rowKey(incoming);
 
           if (existingByKey.has(key)) {
-            // Row exists in DB with same composite key → compare fields for changes
             const existingIdx = existingByKey.get(key)!;
             const existing = existingRows[existingIdx];
 
-            // Collect field-level diffs using normalized comparators
             const diffFields: Array<{
               label: string;
               from: string;
@@ -723,13 +717,11 @@ export default function PromotionReportPage() {
               duplicate++;
             }
           } else {
-            // Not in DB → new row
             result.push({ ...incoming, _id: nextId() });
             added++;
           }
         }
 
-        // Store pending — wait for user confirmation before applying
         setPendingImport({
           file,
           mergedRows: result,
@@ -746,16 +738,14 @@ export default function PromotionReportPage() {
         setError("ไม่สามารถอ่านไฟล์ได้ กรุณาตรวจสอบ format");
       }
     };
-    reader.readAsArrayBuffer(file);
+    reader.readAsDataURL(file);
     e.target.value = "";
   };
 
-  // ── Confirm pending import ─────────────────────────────────────────
   const confirmImport = async () => {
     if (!pendingImport) return;
-    const { file, added, updated, duplicate } = pendingImport;
+    const { added, updated, duplicate } = pendingImport;
 
-    // Apply user conflict choices: if user picked "discarded", swap the kept row out
     const mergedRows = [...pendingImport.mergedRows];
     pendingImport.conflictWarnings.forEach((w, i) => {
       if (conflictChoices[i] === "discarded") {
@@ -776,7 +766,6 @@ export default function PromotionReportPage() {
     setConflictChoices({});
     setShowImportDetails(false);
 
-    // Show saving state INSIDE the modal (don't close yet)
     setImportProgress("saving");
     setError(null);
     try {
@@ -788,7 +777,6 @@ export default function PromotionReportPage() {
       setImportProgress("success");
       setSaved(true);
       setTimeout(() => setSaved(false), 3000);
-      // Auto-close after 2.5s
       setTimeout(() => {
         setPendingImport(null);
         setImportProgress("idle");
@@ -798,10 +786,14 @@ export default function PromotionReportPage() {
       setImportProgress("error");
       setError(e.message || "บันทึกไม่สำเร็จ");
     }
+  };
 
-    // Save history record + upload original file in background
-    addUploadRecord(file, {
-      itemCount: mergedRows.length,
+  // Save history record + upload original file in background
+  const handleConfirmImport = async () => {
+    if (!pendingImport) return;
+    const { added, updated, duplicate } = pendingImport;
+    addUploadRecord(pendingImport.file, {
+      itemCount: pendingImport.mergedRows.length,
       added,
       updated,
       duplicate,
@@ -839,7 +831,6 @@ export default function PromotionReportPage() {
         ]),
     ];
     const ws = XLSX.utils.aoa_to_sheet(data);
-    // Column widths
     ws["!cols"] = [14, 18, 40, 12, 12, 14, 14, 14, 14, 10].map((w) => ({
       wch: w,
     }));
@@ -853,7 +844,12 @@ export default function PromotionReportPage() {
 
   // ── Stats & filter ─────────────────────────────────────────────────
   const today = new Date();
-  const validRows = rows.filter((r) => r.itemCode || r.barcode || r.itemName);
+  // Vendor view is scoped to the brand picked in the topbar (rows with no name
+  // are kept so nothing is silently hidden).
+  const inBrand = (r: Row) => !r.itemName || matchBrand(r.itemName, activeBrand);
+  const validRows = rows.filter(
+    (r) => (r.itemCode || r.barcode || r.itemName) && inBrand(r),
+  );
   const activeCount = validRows.filter(
     (r) =>
       r.promoStart &&
@@ -866,7 +862,8 @@ export default function PromotionReportPage() {
   const dateToObj = dateTo ? new Date(dateTo + "T23:59:59") : null;
 
   const filteredRows = rows.filter((r) => {
-    // Status filter
+    // Scope to the brand selected in the topbar switcher.
+    if (!inBrand(r)) return false;
     const isActive =
       r.promoStart &&
       r.promoEnd &&
@@ -875,7 +872,6 @@ export default function PromotionReportPage() {
     if (statusFilter === "active" && !isActive) return false;
     if (statusFilter === "inactive" && isActive) return false;
 
-    // Date range filter — promo period must overlap with [dateFrom, dateTo]
     if (dateFromObj || dateToObj) {
       const start = r.promoStart;
       const end = r.promoEnd;
@@ -884,7 +880,6 @@ export default function PromotionReportPage() {
       if (dateToObj && start > dateToObj) return false;
     }
 
-    // Text search
     const q = search.trim().toLowerCase();
     if (!q) return true;
     return (
@@ -895,9 +890,72 @@ export default function PromotionReportPage() {
     );
   });
 
+  // ── Group the view by product ────────────────────────────────────────
+  // A product (same barcode, or Watson code when it has no barcode) usually
+  // has several promo periods/mechanics. Grouping those rows together makes
+  // the master table much easier to scan. Grouping applies in VIEW mode only;
+  // edit mode keeps the raw order so adding/editing rows stays predictable.
+  const groupKeyOf = (r: Row) =>
+    (r.barcode || "").trim() || (r.itemCode || "").trim() || "—";
+  const startMs = (d: Row["promoStart"]) =>
+    d instanceof Date ? d.getTime() : d ? new Date(d).getTime() : 0;
+  const isRowActive = (r: Row) =>
+    !!(r.promoStart && r.promoEnd && r.promoStart <= today && r.promoEnd >= today);
+
+  const groupSizes = new Map<string, number>();
+  const groupHasActive = new Map<string, boolean>();
+  for (const r of filteredRows) {
+    const k = groupKeyOf(r);
+    groupSizes.set(k, (groupSizes.get(k) ?? 0) + 1);
+    if (isRowActive(r)) groupHasActive.set(k, true);
+    else if (!groupHasActive.has(k)) groupHasActive.set(k, false);
+  }
+
+  const groupedSorted = [...filteredRows].sort((a, b) => {
+    const ka = groupKeyOf(a);
+    const kb = groupKeyOf(b);
+    // Active products first (a group is active if any of its promos is active).
+    const ga = groupHasActive.get(ka) ? 0 : 1;
+    const gb = groupHasActive.get(kb) ? 0 : 1;
+    if (ga !== gb) return ga - gb;
+    if (ka !== kb) return ka.localeCompare(kb);
+    // Within a product, the active promo sits at the top of the group.
+    const ra = isRowActive(a) ? 0 : 1;
+    const rb = isRowActive(b) ? 0 : 1;
+    if (ra !== rb) return ra - rb;
+    return startMs(a.promoStart) - startMs(b.promoStart);
+  });
+
+  const displayRows: {
+    row: Row;
+    grouped: boolean;
+    isFirst: boolean;
+    groupIndex: number;
+    groupSize: number;
+  }[] = [];
+  if (editMode) {
+    for (const row of filteredRows)
+      displayRows.push({ row, grouped: false, isFirst: true, groupIndex: 0, groupSize: 1 });
+  } else {
+    let prevKey: string | null = null;
+    let gi = -1;
+    for (const row of groupedSorted) {
+      const key = groupKeyOf(row);
+      const isFirst = key !== prevKey;
+      if (isFirst) gi++;
+      prevKey = key;
+      displayRows.push({
+        row,
+        grouped: true,
+        isFirst,
+        groupIndex: gi,
+        groupSize: groupSizes.get(key) ?? 1,
+      });
+    }
+  }
+
   const isFiltered = search || statusFilter !== "all" || dateFrom || dateTo;
 
-  // ─────────────────────────────────────────────────────────────────────
   return (
     <div className="flex flex-col h-full min-h-screen bg-gray-50">
       {/* ── Header ── */}
@@ -928,13 +986,62 @@ export default function PromotionReportPage() {
               className="hidden"
               onChange={handleImport}
             />
-            <button
-              onClick={() => fileRef.current?.click()}
-              className="inline-flex items-center gap-1.5 px-3 py-2 text-sm border border-gray-200 rounded-lg hover:bg-gray-50 text-gray-700 bg-white"
-            >
-              <Upload className="w-4 h-4" />
-              นำเข้า Excel
-            </button>
+            <div className="relative">
+              <button
+                onClick={() => setImportMenuOpen((v) => !v)}
+                className="inline-flex items-center gap-1.5 px-3 py-2 text-sm border border-gray-200 rounded-lg hover:bg-gray-50 text-gray-700 bg-white"
+              >
+                <Upload className="w-4 h-4" />
+                นำเข้า Excel
+                <ChevronDown className="w-4 h-4" />
+              </button>
+              {importMenuOpen && (
+                <>
+                  <div
+                    className="fixed inset-0 z-10"
+                    onClick={() => setImportMenuOpen(false)}
+                  />
+                  <div className="absolute left-0 mt-1 z-20 w-48 bg-white border border-gray-200 rounded-lg shadow-lg py-1">
+                    <button
+                      onClick={() => {
+                        setImportMenuOpen(false);
+                        setPreviewShop("Watson");
+                        setShowBigCPreview(true);
+                      }}
+                      className="w-full text-left px-3 py-2 text-sm text-emerald-700 hover:bg-emerald-50"
+                    >
+                      Watson (Preview)
+                    </button>
+                    <button
+                      onClick={() => {
+                        setImportMenuOpen(false);
+                        setPreviewShop("BigC");
+                        setShowBigCPreview(true);
+                      }}
+                      className="w-full text-left px-3 py-2 text-sm text-emerald-700 hover:bg-emerald-50"
+                    >
+                      BigC (Preview)
+                    </button>
+                    <button
+                      onClick={() => {
+                        setImportMenuOpen(false);
+                        fileRef.current?.click();
+                      }}
+                      className="w-full text-left px-3 py-2 text-sm text-gray-500 hover:bg-gray-50"
+                    >
+                      Watson (Excel เดิม)
+                    </button>
+                    <button
+                      disabled
+                      title="ยังไม่รองรับ"
+                      className="w-full text-left px-3 py-2 text-sm text-gray-300 cursor-not-allowed"
+                    >
+                      Lotus (เร็ว ๆ นี้)
+                    </button>
+                  </div>
+                </>
+              )}
+            </div>
             <button
               onClick={() => setShowHistory((v) => !v)}
               className={`inline-flex items-center gap-1.5 px-3 py-2 text-sm border rounded-lg transition-colors ${
@@ -958,7 +1065,6 @@ export default function PromotionReportPage() {
               <Download className="w-4 h-4" />
               Export
             </button>
-            {/* Edit mode toggle */}
             <button
               onClick={() => {
                 setEditMode((v) => !v);
@@ -984,7 +1090,7 @@ export default function PromotionReportPage() {
               <button
                 onClick={handleSave}
                 disabled={saving}
-                className="inline-flex items-center gap-1.5 px-4 py-2 text-sm font-semibold rounded-lg text-white bg-[#5B8C3E] hover:bg-[#4A7830] disabled:opacity-60 transition-colors"
+                className="inline-flex items-center gap-1.5 px-4 py-2 text-sm font-semibold rounded-lg text-white bg-blue-600 hover:bg-blue-700 disabled:opacity-60 transition-colors"
               >
                 {saving ? (
                   <Loader2 className="w-4 h-4 animate-spin" />
@@ -999,9 +1105,8 @@ export default function PromotionReportPage() {
           </div>
         </div>
 
-        {/* Stats + error strip */}
         <div className="flex items-center gap-3 mt-3 flex-wrap">
-          <span className="px-3 py-1 bg-green-50 text-green-700 rounded-full text-xs font-medium border border-green-100">
+          <span className="px-3 py-1 bg-blue-50 text-blue-700 rounded-full text-xs font-medium border border-blue-100">
             {activeCount} Active วันนี้
           </span>
           <span className="px-3 py-1 bg-gray-100 text-gray-600 rounded-full text-xs">
@@ -1017,6 +1122,15 @@ export default function PromotionReportPage() {
           )}
         </div>
       </div>
+
+      {/* ── BigC Import Preview (preview only — no DB write) ── */}
+      {showBigCPreview && (
+        <BigCImportPreview
+          shop={previewShop}
+          onClose={() => setShowBigCPreview(false)}
+          onSaved={reloadRows}
+        />
+      )}
 
       {/* ── Upload History Panel ── */}
       {showHistory && (
@@ -1144,7 +1258,6 @@ export default function PromotionReportPage() {
       <div className="flex-1 overflow-auto p-4">
         {/* Search + filter bar */}
         <div className="flex items-center gap-2 mb-3 flex-wrap">
-          {/* Text search */}
           <div className="relative flex-1 min-w-50 max-w-xs">
             <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400 pointer-events-none" />
             <input
@@ -1152,7 +1265,7 @@ export default function PromotionReportPage() {
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder="Code, Barcode, ชื่อสินค้า, Remark..."
-              className="w-full pl-8 pr-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:border-[#5B8C3E] focus:ring-1 focus:ring-[#5B8C3E] bg-white"
+              className="w-full pl-8 pr-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 bg-white"
             />
             {search && (
               <button
@@ -1164,7 +1277,6 @@ export default function PromotionReportPage() {
             )}
           </div>
 
-          {/* Date range filter */}
           <div className="flex items-center gap-1.5 bg-white border border-gray-200 rounded-lg px-2.5 py-1.5">
             <span className="text-xs text-gray-400 whitespace-nowrap">โปร</span>
             <input
@@ -1193,7 +1305,6 @@ export default function PromotionReportPage() {
             )}
           </div>
 
-          {/* Status filter */}
           <div className="flex items-center gap-1 bg-white border border-gray-200 rounded-lg p-1">
             {(["all", "active", "inactive"] as const).map((f) => (
               <button
@@ -1205,7 +1316,7 @@ export default function PromotionReportPage() {
                       ? "bg-green-500 text-white"
                       : f === "inactive"
                         ? "bg-gray-400 text-white"
-                        : "bg-[#5B8C3E] text-white"
+                        : "bg-blue-600 text-white"
                     : "text-gray-500 hover:bg-gray-50"
                 }`}
               >
@@ -1218,17 +1329,15 @@ export default function PromotionReportPage() {
             ))}
           </div>
 
-          {/* Add row — top right (edit mode only) */}
           {editMode && (
             <button
               onClick={addRow}
-              className="ml-auto inline-flex items-center gap-1.5 px-3 py-2 text-sm border border-dashed border-[#5B8C3E] text-[#5B8C3E] rounded-lg hover:bg-green-50 font-medium transition-colors whitespace-nowrap"
+              className="ml-auto inline-flex items-center gap-1.5 px-3 py-2 text-sm border border-dashed border-blue-500 text-blue-600 rounded-lg hover:bg-blue-50/50 font-medium transition-colors whitespace-nowrap"
             >
               <Plus className="w-4 h-4" />
               เพิ่มรายการใหม่
             </button>
           )}
-          {/* Bulk delete (edit mode + selection) */}
           {editMode && selectedIds.size > 0 && (
             <button
               onClick={() =>
@@ -1294,22 +1403,29 @@ export default function PromotionReportPage() {
                       </td>
                     </tr>
                   )}
-                  {filteredRows.map((row, idx) => {
+                  {displayRows.map(
+                    ({ row, grouped, isFirst, groupIndex, groupSize }, idx) => {
                     const isActive =
                       row.promoStart &&
                       row.promoEnd &&
                       row.promoStart <= today &&
                       row.promoEnd >= today;
                     const isSelected = selectedIds.has(row._id);
+                    const band =
+                      grouped && groupIndex % 2 === 1 ? "bg-slate-50/60" : "";
                     return (
                       <tr
                         key={row._id}
                         className={`border-b border-gray-100 transition-colors ${
+                          grouped && isFirst && idx > 0
+                            ? "border-t-2 border-t-gray-200"
+                            : ""
+                        } ${
                           isSelected
                             ? "bg-red-50/60"
                             : isActive
-                              ? "bg-green-50/40 hover:bg-green-50/70"
-                              : "hover:bg-amber-50/20"
+                              ? "bg-blue-50/30 hover:bg-blue-50/50"
+                              : `${band} hover:bg-amber-50/20`
                         }`}
                       >
                         {editMode && (
@@ -1323,9 +1439,16 @@ export default function PromotionReportPage() {
                           </td>
                         )}
                         <td className="px-2 py-1 text-center text-xs text-gray-400 select-none">
-                          {isActive ? (
+                          {grouped && isFirst && groupSize > 1 ? (
                             <span
-                              className="inline-block w-2 h-2 rounded-full bg-green-400"
+                              className="inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full bg-blue-100 text-blue-700 text-[10px] font-bold"
+                              title={`สินค้านี้มี ${groupSize} โปรโมชั่น`}
+                            >
+                              {groupSize}
+                            </span>
+                          ) : isActive ? (
+                            <span
+                              className="inline-block w-2 h-2 rounded-full bg-blue-400"
                               title="Active"
                             />
                           ) : (
@@ -1333,6 +1456,23 @@ export default function PromotionReportPage() {
                           )}
                         </td>
                         {COLS.map((col) => {
+                          // In the grouped view, show the product identity
+                          // (barcode / Watson code / name) only on the first
+                          // row of each group — continuation rows stay blank so
+                          // the group reads as one product.
+                          const isGroupCol =
+                            col.key === "barcode" ||
+                            col.key === "itemCode" ||
+                            col.key === "itemName";
+                          if (grouped && !isFirst && isGroupCol) {
+                            return (
+                              <td key={col.key} className="px-1 py-1">
+                                <div className="px-2 py-1.5 text-xs text-gray-300 select-none">
+                                  {col.key === "barcode" ? "↳" : ""}
+                                </div>
+                              </td>
+                            );
+                          }
                           const rawVal = row[col.key];
                           const val =
                             col.type === "date"
@@ -1377,7 +1517,7 @@ export default function PromotionReportPage() {
                                     ? "bg-transparent border-transparent cursor-default"
                                     : isInvalid
                                       ? "border-red-400 bg-red-50/40 focus:border-red-500 focus:ring-red-300 focus:bg-white"
-                                      : "border-transparent hover:border-gray-300 focus:border-[#5B8C3E] focus:ring-[#5B8C3E] bg-transparent focus:bg-white"
+                                      : "border-transparent hover:border-gray-300 focus:border-blue-500 focus:ring-blue-500 bg-transparent focus:bg-white"
                                 } ${
                                   col.key === "remark"
                                     ? isNonPromo(row.remark)
@@ -1651,7 +1791,6 @@ export default function PromotionReportPage() {
                           key={i}
                           className="bg-white rounded-xl border border-orange-100 overflow-hidden"
                         >
-                          {/* Header: what's the same */}
                           <div className="px-3 py-2 bg-orange-50/80 border-b border-orange-100">
                             <p className="text-xs font-semibold text-gray-700">
                               <span className="font-mono">{w.itemCode}</span> —{" "}
@@ -1666,7 +1805,6 @@ export default function PromotionReportPage() {
                                 : ""}
                             </p>
                           </div>
-                          {/* Two options side by side */}
                           <div className="grid grid-cols-2 divide-x divide-orange-100">
                             <button
                               onClick={() =>
@@ -1803,7 +1941,6 @@ export default function PromotionReportPage() {
                 </div>
               )}
 
-              {/* ── Update details ── */}
               {showImportDetails && pendingImport.updatedDetails.length > 0 && (
                 <div className="mt-1 rounded-xl border border-amber-200 overflow-hidden">
                   <div className="bg-amber-50 px-3 py-1.5 text-xs font-semibold text-amber-700 border-b border-amber-200">
@@ -1852,7 +1989,6 @@ export default function PromotionReportPage() {
               </p>
             </div>
 
-            {/* ── Progress overlay (saving / success / error) ── */}
             {importProgress !== "idle" && (
               <div className="absolute inset-0 rounded-2xl flex flex-col items-center justify-center bg-white/95 z-10 gap-4 px-8">
                 {importProgress === "saving" && (

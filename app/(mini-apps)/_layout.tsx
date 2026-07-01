@@ -69,6 +69,13 @@ export default function MiniAppsLayout() {
           title: "บันทึกยอดขาย",
         }}
       />
+      <Stack.Screen
+        name="shop-stock-receive"
+        options={{
+          headerShown: false,
+          title: "รับสินค้า (Transfer)",
+        }}
+      />
     </Stack>
   );
 }

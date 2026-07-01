@@ -1,23 +1,22 @@
 import { db } from "@/config/firebase";
+import {
+  computeDuplicateBarcodes,
+  stripUndefined,
+} from "@/services/daily-sale-duplicates";
 import { DailySale } from "@/types";
 import {
   addDoc,
   collection,
+  deleteDoc,
   doc,
   getDoc,
   getDocs,
   orderBy,
   query,
   Timestamp,
+  updateDoc,
   where,
 } from "firebase/firestore";
-
-/** Strip undefined values from an object so Firestore doesn't reject them. */
-function stripUndefined<T extends Record<string, any>>(obj: T): Partial<T> {
-  return Object.fromEntries(
-    Object.entries(obj).filter(([, v]) => v !== undefined),
-  ) as Partial<T>;
-}
 
 export const createDailySale = async (
   data: Omit<DailySale, "id" | "createdAt" | "updatedAt">,
@@ -34,6 +33,66 @@ export const createDailySale = async (
 
   const docRef = await addDoc(ref, cleaned);
   return docRef.id;
+};
+
+export const getDailySaleById = async (
+  id: string,
+): Promise<DailySale | null> => {
+  const ref = doc(db, "dailySales", id);
+  const snap = await getDoc(ref);
+  if (!snap.exists()) return null;
+  return { id: snap.id, ...snap.data() } as DailySale;
+};
+
+export const updateDailySale = async (
+  id: string,
+  data: Partial<Omit<DailySale, "id" | "createdAt">>,
+): Promise<void> => {
+  const ref = doc(db, "dailySales", id);
+
+  // Strip undefined from top-level and (if present) per-item fields
+  const cleaned = stripUndefined({
+    ...data,
+    ...(data.items
+      ? { items: data.items.map((item) => stripUndefined(item)) }
+      : {}),
+    updatedAt: Timestamp.now(),
+  });
+
+  await updateDoc(ref, cleaned);
+};
+
+export const deleteDailySale = async (id: string): Promise<void> => {
+  const ref = doc(db, "dailySales", id);
+  await deleteDoc(ref);
+};
+
+/**
+ * Find barcodes already saved in the DB for the same employee + saleDate
+ * that collide with the given list of barcodes (for duplicate detection).
+ * @param excludeId optional dailySale id to ignore (when editing an existing record)
+ */
+export const findDuplicateDailySaleBarcodes = async (
+  employeeId: string,
+  saleDate: string,
+  barcodes: string[],
+  excludeId?: string,
+): Promise<string[]> => {
+  if (barcodes.filter(Boolean).length === 0) return [];
+
+  const ref = collection(db, "dailySales");
+  const q = query(
+    ref,
+    where("employeeId", "==", employeeId),
+    where("saleDate", "==", saleDate),
+  );
+  const snap = await getDocs(q);
+
+  const existingSales = snap.docs.map((d) => ({
+    ...(d.data() as DailySale),
+    id: d.id,
+  }));
+  return computeDuplicateBarcodes(existingSales, barcodes, excludeId);
 };
 
 export const getDailySalesByEmployee = async (
