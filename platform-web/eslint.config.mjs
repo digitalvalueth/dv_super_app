@@ -23,6 +23,15 @@ const eslintConfig = defineConfig([
       ],
     },
   },
+  // Cypress support files legitimately use triple-slash references and
+  // `namespace`/`global` augmentation to extend the `cy` command types.
+  {
+    files: ["cypress/support/**/*.{ts,tsx}"],
+    rules: {
+      "@typescript-eslint/triple-slash-reference": "off",
+      "@typescript-eslint/no-namespace": "off",
+    },
+  },
 ]);
 
 export default eslintConfig;

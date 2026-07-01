@@ -47,7 +47,7 @@ export default function AlertsPage() {
   ];
 
   return (
-    <div className="p-6 md:p-8 max-w-300 mx-auto space-y-6">
+    <div className="p-6 md:p-8 w-full space-y-6">
       <AIPageHeader
         title="Alerts"
         subtitle="ตรวจจับความผิดปกติและความเสี่ยงในธุรกิจแบบ Real-time"

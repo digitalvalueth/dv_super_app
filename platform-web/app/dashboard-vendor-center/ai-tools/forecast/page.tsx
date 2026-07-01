@@ -33,7 +33,7 @@ export default function ForecastPage() {
   const growthPositive = metrics.revenueGrowthPct >= 0;
 
   return (
-    <div className="p-6 md:p-8 max-w-300 mx-auto space-y-6">
+    <div className="p-6 md:p-8 w-full space-y-6">
       <AIPageHeader
         title="Forecasting"
         subtitle="พยากรณ์ยอดขายและแนวโน้มรายได้ด้วย AI"
